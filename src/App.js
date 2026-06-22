@@ -29,7 +29,7 @@ const BLOCK_COLORS = {
   University: '#a78bfa', Rest: '#4a6080', Personal: '#ff9f43', Other: '#ff4d6d'
 };
 
-const HABIT_ICONS = { default: Flame, code: Zap, study: BookOpen, fitness: Dumbbell };
+const _HABIT_ICONS = { default: Flame, code: Zap, study: BookOpen, fitness: Dumbbell };
 
 function getWeekDates() {
   const today = new Date();
@@ -270,8 +270,8 @@ function Dashboard({ leads, habits, habitsToday, totalIncome, totalExpenses, pro
     return { date, level: lvl };
   });
 
-  const todayHabits = habits.filter(h => !h.completions?.[todayStr]);
-  const todayDone   = habits.filter(h => h.completions?.[todayStr]);
+  const _todayHabits = habits.filter(h => !h.completions?.[todayStr]);
+  const _todayDone   = habits.filter(h => h.completions?.[todayStr]);
 
   return (
     <div className="section">
