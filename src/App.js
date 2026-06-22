@@ -29,7 +29,7 @@ const BLOCK_COLORS = {
   University: '#a78bfa', Rest: '#4a6080', Personal: '#ff9f43', Other: '#ff4d6d'
 };
 
-const _HABIT_ICONS = { default: Flame, code: Zap, study: BookOpen, fitness: Dumbbell };
+const HABIT_ICONS = { default: Flame, code: Zap, study: BookOpen, fitness: Dumbbell };
 
 function getWeekDates() {
   const today = new Date();
@@ -190,9 +190,16 @@ export default function App() {
 
       {/* Content */}
       {loading ? (
-        <div className="loading">
-          <div className="spinner" />
-          <p>Loading your console…</p>
+        <div className="splash">
+          <div className="splash-logo">
+            <div className="splash-logo-j">J</div>
+            <div className="splash-logo-c">C</div>
+          </div>
+          <div className="splash-name">JCommerce</div>
+          <div className="splash-tag">Founder Console</div>
+          <div className="splash-bar-wrap">
+            <div className="splash-bar" />
+          </div>
         </div>
       ) : (
         <main className="main">
@@ -208,8 +215,26 @@ export default function App() {
           )}
           {tab === 'pipeline' && (
             <Pipeline leads={leads}
+              finances={finances}
               onAdd={d => add('leads', d)}
-              onUpdate={(id, d) => update('leads', id, d)}
+              onUpdate={async (id, d) => {
+                const prev = leads.find(l => l.id === id);
+                await update('leads', id, d);
+                // Auto-add income when status changes to Paid
+                if (d.status === 'Paid' && prev?.status !== 'Paid' && d.value) {
+                  const alreadyLogged = finances.some(f => f.pipelineLeadId === id);
+                  if (!alreadyLogged) {
+                    await add('finances', {
+                      type: 'income',
+                      description: `${d.businessName} — Client Payment`,
+                      amount: Number(d.value),
+                      category: 'Setup Fee',
+                      date: new Date().toISOString().slice(0, 10),
+                      pipelineLeadId: id,
+                    });
+                  }
+                }
+              }}
               onDelete={id => remove('leads', id)} />
           )}
           {tab === 'habits' && (
@@ -384,7 +409,7 @@ function StatCard({ label, value, icon: Icon, color }) {
 }
 
 // ─── PIPELINE ─────────────────────────────────────────────────────────────────
-function Pipeline({ leads, onAdd, onUpdate, onDelete }) {
+function Pipeline({ leads, finances, onAdd, onUpdate, onDelete }) {
   const [form, setForm] = useState(null);
   const [filter, setFilter] = useState('All');
   const filtered = filter === 'All' ? leads : leads.filter(l => l.status === filter);
@@ -393,19 +418,37 @@ function Pipeline({ leads, onAdd, onUpdate, onDelete }) {
     .reduce((s, l) => s + (Number(l.value) || 0), 0);
 
   return (
-    <div className="section">
+    <div className="section" style={{ touchAction: 'pan-y', width: '100%' }}>
       <div className="page-hero">
         <div className="page-hero-eyebrow">Sales Pipeline</div>
         <div className="page-hero-title">J${totalPipelineValue.toLocaleString()}</div>
         <div className="page-hero-sub">{leads.filter(l => l.status === 'Paid').length} paid · {leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length} open</div>
       </div>
 
-      <div className="row-between">
-        <div style={{ overflowX: 'auto', flex: 1 }}>
-          <div className="tab-group" style={{ minWidth: 'max-content' }}>
-            <button className={`tab-btn ${filter === 'All' ? 'active' : ''}`} onClick={() => setFilter('All')}>All</button>
-            {LEAD_STATUSES.map(s => (
-              <button key={s} className={`tab-btn ${filter === s ? 'active' : ''}`} onClick={() => setFilter(s)}>{s}</button>
+      {/* Filter tabs — horizontally scrollable strip, add button outside */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+        <div style={{ flex: 1, overflowX: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+          <div style={{ display: 'flex', gap: '0.375rem', paddingBottom: '2px', width: 'max-content' }}>
+            {['All', ...LEAD_STATUSES].map(s => (
+              <button key={s}
+                onClick={() => setFilter(s)}
+                style={{
+                  padding: '0.35rem 0.75rem',
+                  borderRadius: 'var(--radius-full)',
+                  border: '1px solid',
+                  borderColor: filter === s ? 'var(--cerulean)' : 'var(--border)',
+                  background: filter === s ? 'var(--cerulean-glow)' : 'var(--bg-raised)',
+                  color: filter === s ? 'var(--cerulean)' : 'var(--text-muted)',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '10.5px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s',
+                }}>
+                {s}
+              </button>
             ))}
           </div>
         </div>
@@ -752,7 +795,7 @@ function Finance({ finances, totalIncome, totalExpenses, profit, onAdd, onUpdate
   })();
 
   return (
-    <div className="section">
+    <div className="section" style={{ width: '100%' }}>
       <div className="page-hero">
         <div className="page-hero-eyebrow">Finance Tracker</div>
         <div className="page-hero-title" style={{ color: profit >= 0 ? '#00f5c4' : '#ff4d6d' }}>
@@ -767,13 +810,13 @@ function Finance({ finances, totalIncome, totalExpenses, profit, onAdd, onUpdate
       </div>
 
       {monthlyData.length > 0 && (
-        <div className="card">
+        <div className="card" style={{ width: '100%' }}>
           <div className="card-title">Monthly Overview</div>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={monthlyData}>
+            <BarChart data={monthlyData} margin={{ left: 0, right: 0, top: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2f52" />
               <XAxis dataKey="month" tick={{ fill: '#4a6080', fontSize: 9 }} />
-              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} />
+              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} width={45} />
               <Tooltip contentStyle={{ background: '#0d1425', border: '1px solid #1e2f52', borderRadius: '0.75rem', color: '#e8f0ff' }} />
               <Bar dataKey="income"   fill="#00f5c4" radius={[4,4,0,0]} name="Income" />
               <Bar dataKey="expenses" fill="#ff4d6d" radius={[4,4,0,0]} name="Expenses" />
@@ -782,33 +825,38 @@ function Finance({ finances, totalIncome, totalExpenses, profit, onAdd, onUpdate
         </div>
       )}
 
-      <div className="row-between">
-        <div className="tab-group">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', width: '100%' }}>
+        <div className="tab-group" style={{ flex: 1 }}>
           {['all','income','expense'].map(t => (
             <button key={t} className={`tab-btn ${filter === t ? 'active' : ''}`} onClick={() => setFilter(t)}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
-        <button className="btn btn-primary" onClick={() => setForm({})}><Plus size={14} /></button>
+        <button className="btn btn-primary" onClick={() => setForm({})} style={{ flexShrink: 0 }}><Plus size={14} /></button>
       </div>
 
       {filtered.length === 0 ? <Empty text="No transactions yet." /> : (
-        <div className="list">
+        <div className="list" style={{ width: '100%' }}>
           {filtered.map(f => (
-            <div key={f.id} className="card lead-card">
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600 }}>{f.description}</div>
+            <div key={f.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
+              {/* Color indicator */}
+              <div style={{
+                width: 4, alignSelf: 'stretch', borderRadius: 2, flexShrink: 0,
+                background: f.type === 'income' ? '#00f5c4' : '#ff4d6d'
+              }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {f.description}
+                </div>
                 <div className="muted small">{f.category} · {f.date}</div>
               </div>
-              <div className="lead-actions">
-                <div className="mono" style={{ fontWeight: 700, color: f.type === 'income' ? '#00f5c4' : '#ff4d6d' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+                <div className="mono" style={{ fontWeight: 700, fontSize: '13px', color: f.type === 'income' ? '#00f5c4' : '#ff4d6d' }}>
                   {f.type === 'income' ? '+' : '-'}J${Number(f.amount).toLocaleString()}
                 </div>
-                <div className="row-gap">
-                  <button className="icon-btn" onClick={() => setForm(f)}><Pencil size={12} /></button>
-                  <button className="icon-btn danger" onClick={() => onDelete(f.id)}><Trash2 size={12} /></button>
-                </div>
+                <button className="icon-btn" onClick={() => setForm(f)}><Pencil size={12} /></button>
+                <button className="icon-btn danger" onClick={() => onDelete(f.id)}><Trash2 size={12} /></button>
               </div>
             </div>
           ))}
