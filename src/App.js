@@ -1103,7 +1103,7 @@ function Finance({ finances, leads, totalIncome, totalExpenses, profit, xp, leve
             <div className="card-title" style={{ marginBottom:'0.5rem', color: emotion.color }}>Finance Health Score</div>
             {/* Color spectrum bar */}
             <div style={{ height:'8px', borderRadius:'99px', background:'linear-gradient(90deg, #00aaff, #00f5c4, #f5c84c, #ff9f43, #ff4d6d)', marginBottom:'0.5rem', position:'relative' }}>
-              <div style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', left:`${Math.max(2, Math.min(96, (4-emotionIdx)/4*100))}%`, width:'12px', height:'12px', borderRadius:'50%', background:'white', border:`2px solid ${emotion.color}`, boxShadow:`0 0 8px ${emotion.color}` }} />
+              <div style={{ position:'absolute', top:'50%', transform:'translateY(-50%)', left:`${Math.max(2, Math.min(96, (emotionIdx/4*100)))}%`, width:'12px', height:'12px', borderRadius:'50%', background:'white', border:`2px solid ${emotion.color}`, boxShadow:`0 0 8px ${emotion.color}` }} />
             </div>
             <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'1rem' }}>
               <span className="mono small" style={{ color:'#00aaff' }}>Thriving</span>
