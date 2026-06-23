@@ -12,7 +12,7 @@ import {
   TrendingUp, Users, Target, DollarSign, Flame,
   LayoutDashboard, Briefcase, Heart, Calendar,
   PiggyBank, Flag, AlertCircle, Zap, BookOpen, Dumbbell,
-  ChevronDown, ChevronUp, ListTodo
+  Bell, ChevronDown, ChevronUp, ListTodo
 } from 'lucide-react';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -60,16 +60,14 @@ function getLast20Weeks() {
   return weeks;
 }
 
-// XP: habit completion = 10 XP, paid client = 200 XP, todo done = 1 XP
-function calcXP(habits, leads, todos, todayStr) {
+// XP calculation — each habit completion = 10 XP, each paid client = 200 XP
+function calcXP(habits, leads) {
   let xp = 0;
   habits.forEach(h => {
-    xp += Object.values(h.completions || {}).filter(Boolean).length * 10;
+    const completions = Object.values(h.completions || {}).filter(Boolean).length;
+    xp += completions * 10;
   });
   leads.filter(l => l.status === 'Paid').forEach(() => { xp += 200; });
-  todos.forEach(t => {
-    xp += Object.values(t.doneOn || {}).filter(Boolean).length * 1;
-  });
   return xp;
 }
 
@@ -88,7 +86,6 @@ export default function App() {
   const [schedule, setSchedule] = useState([]);
   const [finances, setFinances] = useState([]);
   const [goals, setGoals] = useState([]);
-  const [todos, setTodos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const weekDates = getWeekDates();
@@ -103,7 +100,6 @@ export default function App() {
       ['schedule', setSchedule],
       ['finances', setFinances],
       ['goals', setGoals],
-      ['todos', setTodos],
     ];
     cols.forEach(([col, setter]) => {
       try {
@@ -142,10 +138,6 @@ export default function App() {
     const completions = { ...(habit.completions || {}), [date]: !habit.completions?.[date] };
     await update('habits', habit.id, { completions });
   };
-  const toggleTodo = async (todo, date) => {
-    const doneOn = { ...(todo.doneOn || {}), [date]: !todo.doneOn?.[date] };
-    await update('todos', todo.id, { doneOn });
-  };
 
   const totalIncome = finances.filter(f => f.type === 'income').reduce((s, f) => s + (Number(f.amount) || 0), 0);
   const totalExpenses = finances.filter(f => f.type === 'expense').reduce((s, f) => s + (Number(f.amount) || 0), 0);
@@ -155,14 +147,13 @@ export default function App() {
   const habitsToday = habits.length
     ? Math.round(habits.filter(h => h.completions?.[todayStr]).length / habits.length * 100)
     : 0;
-  const xp = calcXP(habits, leads, todos, todayStr);
+  const xp = calcXP(habits, leads);
   const { level, progress, xpInLevel } = xpToLevel(xp);
 
   const navItems = [
     { id: 'dashboard', label: 'Home',     icon: LayoutDashboard },
     { id: 'pipeline',  label: 'Pipeline', icon: Briefcase       },
     { id: 'habits',    label: 'Habits',   icon: Heart           },
-    { id: 'todos',     label: 'Tasks',    icon: ListTodo        },
     { id: 'schedule',  label: 'Schedule', icon: Calendar        },
     { id: 'finance',   label: 'Finance',  icon: PiggyBank       },
     { id: 'goals',     label: 'Goals',    icon: Flag            },
@@ -170,6 +161,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Header */}
       <header className="header">
         <div className="brand">
           <div className="brand-mark">J</div>
@@ -186,6 +178,7 @@ export default function App() {
         </div>
       </header>
 
+      {/* Error */}
       {error && (
         <div className="error-banner">
           <AlertCircle size={15} />
@@ -194,6 +187,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Content */}
       {loading ? (
         <div className="splash">
           <div className="splash-logo">
@@ -211,11 +205,11 @@ export default function App() {
           {tab === 'dashboard' && (
             <Dashboard
               leads={leads} habits={habits} finances={finances} goals={goals}
-              todos={todos} habitsToday={habitsToday} totalIncome={totalIncome}
+              habitsToday={habitsToday} totalIncome={totalIncome}
               totalExpenses={totalExpenses} profit={profit}
               paidLeads={paidLeads} openLeads={openLeads}
               todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel}
-              onToggleHabit={toggleHabit} onToggleTodo={toggleTodo}
+              onToggleHabit={toggleHabit}
             />
           )}
           {tab === 'pipeline' && (
@@ -225,6 +219,7 @@ export default function App() {
               onUpdate={async (id, d) => {
                 const prev = leads.find(l => l.id === id);
                 await update('leads', id, d);
+                // Auto-add income when status changes to Paid
                 if (d.status === 'Paid' && prev?.status !== 'Paid' && d.value) {
                   const alreadyLogged = finances.some(f => f.pipelineLeadId === id);
                   if (!alreadyLogged) {
@@ -248,13 +243,6 @@ export default function App() {
               onDelete={id => remove('habits', id)}
               onToggle={toggleHabit} />
           )}
-          {tab === 'todos' && (
-            <Todos todos={todos} todayStr={todayStr}
-              onAdd={d => add('todos', { ...d, doneOn: {} })}
-              onUpdate={(id, d) => update('todos', id, d)}
-              onDelete={id => remove('todos', id)}
-              onToggle={toggleTodo} />
-          )}
           {tab === 'schedule' && (
             <Schedule schedule={schedule}
               onAdd={d => add('schedule', d)}
@@ -277,11 +265,12 @@ export default function App() {
         </main>
       )}
 
+      {/* Bottom nav */}
       <nav className="bottom-nav">
         {navItems.map(n => (
           <button key={n.id} className={`nav-item ${tab === n.id ? 'active' : ''}`}
             onClick={() => setTab(n.id)}>
-            <n.icon size={19} />
+            <n.icon size={20} />
             <div className="nav-dot" />
             <span className="nav-label">{n.label}</span>
           </button>
@@ -292,8 +281,8 @@ export default function App() {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpenses, profit,
-  paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo }) {
+function Dashboard({ leads, habits, habitsToday, totalIncome, totalExpenses, profit,
+  paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit }) {
 
   const weeks = getLast20Weeks();
   const allDates = weeks.flat();
@@ -305,11 +294,12 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
     return { date, level: lvl };
   });
 
-  const todayTodos = todos.filter(t => !t.doneOn?.[todayStr]);
-  const doneTodayCount = todos.filter(t => t.doneOn?.[todayStr]).length;
+  const _todayHabits = habits.filter(h => !h.completions?.[todayStr]);
+  const _todayDone   = habits.filter(h => h.completions?.[todayStr]);
 
   return (
     <div className="section">
+      {/* XP Banner */}
       <div className="xp-banner">
         <div className="xp-avatar">J</div>
         <div className="xp-info">
@@ -322,6 +312,7 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
         </div>
       </div>
 
+      {/* Stats */}
       <div className="stats-grid">
         <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}   icon={TrendingUp} color={profit >= 0 ? '#00f5c4' : '#ff4d6d'} />
         <StatCard label="Paid Clients"  value={paidLeads.length}                  icon={Users}      color="#00aaff" />
@@ -329,6 +320,7 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
         <StatCard label="Habits Today"  value={`${habitsToday}%`}                 icon={Flame}      color="#ff9f43" />
       </div>
 
+      {/* Today's habits quick-check */}
       {habits.length > 0 && (
         <div className="card">
           <div className="card-title">Today's Habits</div>
@@ -336,17 +328,17 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
             {habits.map(h => (
               <div key={h.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <button className="check-btn" onClick={() => onToggleHabit(h, todayStr)}
-                  style={{ color: h.completions?.[todayStr] ? '#00f5c4' : '#283449', flexShrink: 0 }}>
+                  style={{ color: h.completions?.[todayStr] ? '#00f5c4' : '#283449' }}>
                   {h.completions?.[todayStr] ? <CheckCircle2 size={22} /> : <Circle size={22} />}
                 </button>
                 <span style={{
-                  fontSize: '14px', flex: 1, minWidth: 0,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontSize: '14px',
                   color: h.completions?.[todayStr] ? 'var(--text-muted)' : 'var(--text-primary)',
                   textDecoration: h.completions?.[todayStr] ? 'line-through' : 'none',
+                  flex: 1
                 }}>{h.name}</span>
                 {h.completions?.[todayStr] && (
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#00f5c4', flexShrink: 0 }}>+10 XP</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#00f5c4' }}>+10 XP</span>
                 )}
               </div>
             ))}
@@ -354,31 +346,7 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
         </div>
       )}
 
-      {todos.length > 0 && (
-        <div className="card">
-          <div className="card-title">Today's Tasks · {doneTodayCount}/{todos.length} done</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {todos.map(t => (
-              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <button className="check-btn" onClick={() => onToggleTodo(t, todayStr)}
-                  style={{ color: t.doneOn?.[todayStr] ? '#a78bfa' : '#283449', flexShrink: 0 }}>
-                  {t.doneOn?.[todayStr] ? <CheckCircle2 size={22} /> : <Circle size={22} />}
-                </button>
-                <span style={{
-                  fontSize: '14px', flex: 1, minWidth: 0,
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  color: t.doneOn?.[todayStr] ? 'var(--text-muted)' : 'var(--text-primary)',
-                  textDecoration: t.doneOn?.[todayStr] ? 'line-through' : 'none',
-                }}>{t.title}</span>
-                {t.doneOn?.[todayStr] && (
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#a78bfa', flexShrink: 0 }}>+1 XP</span>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
+      {/* Heatmap */}
       <div className="card">
         <div className="card-title">Consistency — Last 20 Weeks</div>
         <div className="heatmap">
@@ -405,6 +373,7 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
         </div>
       </div>
 
+      {/* Pipeline chart */}
       {leads.length > 0 && (
         <div className="card">
           <div className="card-title">Pipeline by Stage</div>
@@ -415,8 +384,8 @@ function Dashboard({ leads, habits, todos, habitsToday, totalIncome, totalExpens
             }>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2f52" />
               <XAxis dataKey="name" tick={{ fill: '#4a6080', fontSize: 9 }} />
-              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} allowDecimals={false} width={25} />
-              <Tooltip contentStyle={{ background: '#0d1425', border: '1px solid #1e2f52', borderRadius: '0.75rem', color: '#e8f0ff' }} />
+              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} allowDecimals={false} />
+              <Tooltip contentStyle={{ background: '#0d1425', border: '1px solid #1e2f52', borderRadius: '0.75rem', color: '#e8f0ff', fontFamily: 'Space Grotesk' }} />
               <Bar dataKey="count" fill="#00aaff" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -447,6 +416,33 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete }) {
     .filter(l => !['Flaked','Lost'].includes(l.status))
     .reduce((s, l) => s + (Number(l.value) || 0), 0);
 
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Retainer payment due alert helper
+  const getRetainerAlert = (lead) => {
+    if (lead.status !== 'Paid' || !lead.retainerAmount || !lead.retainerDueDay) return null;
+    const today = new Date();
+    const dueDay = parseInt(lead.retainerDueDay);
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 1, dueDay);
+    const daysUntilThis = Math.ceil((thisMonth - today) / (1000 * 60 * 60 * 24));
+    const daysUntilNext = Math.ceil((nextMonth - today) / (1000 * 60 * 60 * 24));
+    const daysUntil = daysUntilThis >= 0 ? daysUntilThis : daysUntilNext;
+    const isOverdue = daysUntilThis < 0 && Math.abs(daysUntilThis) <= 5;
+    return { daysUntil: isOverdue ? daysUntilThis : daysUntil, isOverdue };
+  };
+
+  // Overdue retainer count for badge
+  const overdueCount = leads.filter(l => {
+    const a = getRetainerAlert(l);
+    return a?.isOverdue;
+  }).length;
+
+  const duesSoon = leads.filter(l => {
+    const a = getRetainerAlert(l);
+    return a && !a.isOverdue && a.daysUntil <= 7;
+  }).length;
+
   return (
     <div className="section">
       <div className="page-hero">
@@ -454,15 +450,15 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete }) {
         <div className="page-hero-title">J${totalPipelineValue.toLocaleString()}</div>
         <div className="page-hero-sub">
           {leads.filter(l => l.status === 'Paid').length} paid · {leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length} open
+          {overdueCount > 0 && <span style={{ color: 'var(--rose)', marginLeft: '0.5rem' }}>· {overdueCount} retainer overdue</span>}
+          {duesSoon > 0 && overdueCount === 0 && <span style={{ color: 'var(--gold)', marginLeft: '0.5rem' }}>· {duesSoon} due soon</span>}
         </div>
       </div>
 
-      <div className="pipeline-filter-row">
-        <div className="pipeline-filter-scroll">
+      <div className="filter-strip-wrap">
+        <div className="filter-strip">
           {['All', ...LEAD_STATUSES].map(s => (
-            <button key={s}
-              className={`pill-btn ${filter === s ? 'active' : ''}`}
-              onClick={() => setFilter(s)}>
+            <button key={s} className={`pill-btn ${filter === s ? 'active' : ''}`} onClick={() => setFilter(s)}>
               {s}
             </button>
           ))}
@@ -474,36 +470,55 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete }) {
 
       {filtered.length === 0 ? <Empty text="No leads here yet." /> : (
         <div className="list">
-          {filtered.map(l => (
-            <div key={l.id} className="card">
-              <div className="pipeline-card-row">
-                <div className="pipeline-card-left">
-                  <div className="pipeline-card-name">
-                    {l.businessName}
-                    <span className="badge" style={{ background: `${STATUS_COLOR[l.status]}22`, color: STATUS_COLOR[l.status] }}>
-                      {l.status}
-                    </span>
-                  </div>
-                  <div className="muted small">{l.contactName}{l.phone ? ` · ${l.phone}` : ''}</div>
-                  {l.notes && <div className="muted small" style={{ marginTop: '0.25rem' }}>{l.notes}</div>}
-                  {l.nextActionDate && (
-                    <div className="mono small" style={{ color: '#f5c84c', marginTop: '0.25rem' }}>
-                      ↳ {l.nextAction} — {l.nextActionDate}
+          {filtered.map(l => {
+            const alert = getRetainerAlert(l);
+            return (
+              <div key={l.id} className="card">
+                <div className="lead-card-body">
+                  <div className="lead-card-left">
+                    <div className="lead-name">
+                      {l.businessName}
+                      <span className="badge" style={{ background: `${STATUS_COLOR[l.status]}22`, color: STATUS_COLOR[l.status] }}>
+                        {l.status}
+                      </span>
+                      {l.retainerAmount && (
+                        <span className="badge" style={{ background: '#a78bfa22', color: 'var(--lavender)' }}>
+                          Retainer
+                        </span>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="pipeline-card-right">
-                  <div className="mono" style={{ fontWeight: 700, color: STATUS_COLOR[l.status], fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
+                    <div className="muted small">{l.contactName}{l.phone ? ` · ${l.phone}` : ''}</div>
+                    {l.notes && <div className="muted small" style={{ marginTop: '0.25rem' }}>{l.notes}</div>}
+                    {l.nextActionDate && (
+                      <div className="mono small" style={{ color: 'var(--gold)', marginTop: '0.25rem' }}>
+                        ↳ {l.nextAction} — {l.nextActionDate}
+                      </div>
+                    )}
+                    {alert && (
+                      <div className={`retainer-alert ${alert.isOverdue ? 'retainer-alert-overdue' : ''}`}>
+                        <Bell size={12} />
+                        {alert.isOverdue
+                          ? `Retainer overdue by ${Math.abs(alert.daysUntil)} day${Math.abs(alert.daysUntil) !== 1 ? 's' : ''} — J$${Number(l.retainerAmount).toLocaleString()} due`
+                          : alert.daysUntil === 0
+                            ? `Retainer due TODAY — J$${Number(l.retainerAmount).toLocaleString()}`
+                            : `Retainer due in ${alert.daysUntil} day${alert.daysUntil !== 1 ? 's' : ''} — J$${Number(l.retainerAmount).toLocaleString()}`
+                        }
+                      </div>
+                    )}
                   </div>
-                  <div className="row-gap">
-                    <button className="icon-btn" onClick={() => setForm(l)}><Pencil size={13} /></button>
-                    <button className="icon-btn danger" onClick={() => onDelete(l.id)}><Trash2 size={13} /></button>
+                  <div className="lead-card-right">
+                    <div className="mono" style={{ fontWeight: 700, color: STATUS_COLOR[l.status], fontSize: '13px', whiteSpace: 'nowrap' }}>
+                      {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
+                    </div>
+                    <div className="row-gap">
+                      <button className="icon-btn" onClick={() => setForm(l)}><Pencil size={13} /></button>
+                      <button className="icon-btn danger" onClick={() => onDelete(l.id)}><Trash2 size={13} /></button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -519,7 +534,8 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete }) {
 function LeadModal({ data, onSave, onClose }) {
   const [f, setF] = useState({
     businessName: '', contactName: '', phone: '',
-    status: 'New', value: '', notes: '', nextAction: '', nextActionDate: '', ...data
+    status: 'New', value: '', notes: '', nextAction: '', nextActionDate: '',
+    retainerAmount: '', retainerDueDay: '', ...data
   });
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   return (
@@ -539,8 +555,16 @@ function LeadModal({ data, onSave, onClose }) {
             {LEAD_STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
         </Field>
-        <Field label="Value (JMD)">
+        <Field label="Setup Value (JMD)">
           <input className="input" type="number" value={f.value} onChange={e => set('value', e.target.value)} placeholder="45000" />
+        </Field>
+      </div>
+      <div className="grid-2">
+        <Field label="Monthly Retainer (JMD)">
+          <input className="input" type="number" value={f.retainerAmount} onChange={e => set('retainerAmount', e.target.value)} placeholder="15000" />
+        </Field>
+        <Field label="Payment Due Day">
+          <input className="input" type="number" value={f.retainerDueDay} onChange={e => set('retainerDueDay', e.target.value)} placeholder="1–28" min="1" max="28" />
         </Field>
       </div>
       <Field label="Notes">
@@ -562,9 +586,8 @@ function LeadModal({ data, onSave, onClose }) {
 // ─── HABITS ───────────────────────────────────────────────────────────────────
 function Habits({ habits, weekDates, todayStr, onAdd, onUpdate, onDelete, onToggle }) {
   const [form, setForm] = useState(null);
-  const [expanded, setExpanded] = useState(null); // habit id that's open
+  const [expanded, setExpanded] = useState(null);
   const weeks = getLast20Weeks();
-  const allDates = weeks.flat();
 
   const streakFor = (habit) => {
     let streak = 0;
@@ -600,32 +623,31 @@ function Habits({ habits, weekDates, todayStr, onAdd, onUpdate, onDelete, onTogg
             const isOpen = expanded === h.id;
             return (
               <div key={h.id} className="card habit-drawer">
-                {/* Header row — always visible */}
                 <div className="habit-drawer-header" onClick={() => setExpanded(isOpen ? null : h.id)}>
-                  <button className="check-btn" onClick={e => { e.stopPropagation(); onToggle(h, todayStr); }}
+                  <button className="check-btn"
+                    onClick={e => { e.stopPropagation(); onToggle(h, todayStr); }}
                     style={{ color: h.completions?.[todayStr] ? '#00f5c4' : '#1e2f52', flexShrink: 0 }}>
                     {h.completions?.[todayStr] ? <CheckCircle2 size={24} /> : <Circle size={24} />}
                   </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{
-                      fontWeight: 600, fontSize: '15px', minWidth: 0,
+                      fontWeight: 600, fontSize: '15px',
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                       color: h.completions?.[todayStr] ? 'var(--text-muted)' : 'var(--text-primary)',
                       textDecoration: h.completions?.[todayStr] ? 'line-through' : 'none'
                     }}>{h.name}</div>
                     <div style={{ display: 'flex', gap: '0.75rem', marginTop: '2px' }}>
-                      <span className="mono small" style={{ color: '#f5c84c' }}>🔥 {streak}</span>
+                      <span className="mono small" style={{ color: 'var(--gold)' }}>🔥 {streak}</span>
                       <span className="mono small muted">{total} done</span>
                     </div>
                   </div>
                   <div className="row-gap" style={{ flexShrink: 0 }}>
                     <button className="icon-btn" onClick={e => { e.stopPropagation(); setForm(h); }}><Pencil size={12} /></button>
                     <button className="icon-btn danger" onClick={e => { e.stopPropagation(); onDelete(h.id); }}><Trash2 size={12} /></button>
-                    {isOpen ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+                    {isOpen ? <ChevronUp size={15} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={15} style={{ color: 'var(--text-muted)' }} />}
                   </div>
                 </div>
 
-                {/* Drawer body — habit-specific stats */}
                 {isOpen && (
                   <div className="habit-drawer-body">
                     <div className="card-title" style={{ marginBottom: '0.5rem' }}>20-Week History</div>
@@ -643,12 +665,11 @@ function Habits({ habits, weekDates, todayStr, onAdd, onUpdate, onDelete, onTogg
                         ))}
                       </div>
                     </div>
-
-                    <div className="card-title" style={{ marginTop: '0.875rem', marginBottom: '0.5rem' }}>This Week</div>
+                    <div className="card-title" style={{ marginTop: '1rem', marginBottom: '0.5rem' }}>This Week</div>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.25rem' }}>
                       {weekDates.map((date, i) => (
                         <div key={date} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '8px', color: date === todayStr ? 'var(--cerulean)' : 'var(--text-muted)', fontWeight: 700 }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '8px', fontWeight: 700, color: date === todayStr ? 'var(--cerulean)' : 'var(--text-muted)' }}>
                             {DAYS[i]}
                           </span>
                           <button className="check-btn" onClick={() => onToggle(h, date)}
@@ -682,85 +703,11 @@ function Habits({ habits, weekDates, todayStr, onAdd, onUpdate, onDelete, onTogg
   );
 }
 
-// ─── TODO LIST ────────────────────────────────────────────────────────────────
-function Todos({ todos, todayStr, onAdd, onUpdate, onDelete, onToggle }) {
-  const [form, setForm] = useState(null);
-  const doneTodayCount = todos.filter(t => t.doneOn?.[todayStr]).length;
-  const xpToday = doneTodayCount;
-
-  return (
-    <div className="section">
-      <div className="page-hero">
-        <div className="page-hero-eyebrow">Daily Tasks</div>
-        <div className="page-hero-title">{doneTodayCount}/{todos.length}</div>
-        <div className="page-hero-sub">Done today · +1 XP per task · {xpToday} XP earned</div>
-      </div>
-
-      <div className="row-between">
-        <span className="section-title" style={{ fontSize: '16px' }}>Tasks</span>
-        <button className="btn btn-primary" onClick={() => setForm({})}><Plus size={14} /> Add</button>
-      </div>
-
-      {todos.length === 0 ? <Empty text="No tasks yet. Add things you want to knock out daily." /> : (
-        <div className="list">
-          {/* Pending first, done at bottom */}
-          {[...todos.filter(t => !t.doneOn?.[todayStr]), ...todos.filter(t => t.doneOn?.[todayStr])].map(t => (
-            <div key={t.id} className="card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <button className="check-btn" onClick={() => onToggle(t, todayStr)}
-                  style={{ color: t.doneOn?.[todayStr] ? '#a78bfa' : '#1e2f52', flexShrink: 0 }}>
-                  {t.doneOn?.[todayStr] ? <CheckCircle2 size={24} /> : <Circle size={24} />}
-                </button>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontWeight: 600, fontSize: '14.5px',
-                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    color: t.doneOn?.[todayStr] ? 'var(--text-muted)' : 'var(--text-primary)',
-                    textDecoration: t.doneOn?.[todayStr] ? 'line-through' : 'none',
-                  }}>{t.title}</div>
-                  {t.note && <div className="muted small" style={{ marginTop: '1px' }}>{t.note}</div>}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
-                  {t.doneOn?.[todayStr] && (
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: '#a78bfa' }}>+1 XP</span>
-                  )}
-                  <button className="icon-btn" onClick={() => setForm(t)}><Pencil size={12} /></button>
-                  <button className="icon-btn danger" onClick={() => onDelete(t.id)}><Trash2 size={12} /></button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {form !== null && (
-        <Modal title={form.id ? 'Edit Task' : 'New Task'} onClose={() => setForm(null)}>
-          <Field label="Task">
-            <input className="input" defaultValue={form.title || ''} id="ttitle"
-              placeholder="e.g. Send 5 proposals, Review analytics, Cold DM 10 people" />
-          </Field>
-          <Field label="Note (optional)">
-            <input className="input" defaultValue={form.note || ''} id="tnote"
-              placeholder="Any context..." />
-          </Field>
-          <ModalFooter onClose={() => setForm(null)} onSave={() => {
-            const title = document.getElementById('ttitle').value.trim();
-            const note = document.getElementById('tnote').value.trim();
-            if (title) {
-              form.id ? onUpdate(form.id, { title, note }) : onAdd({ title, note });
-              setForm(null);
-            }
-          }} />
-        </Modal>
-      )}
-    </div>
-  );
-}
-
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
 function Schedule({ schedule, onAdd, onUpdate, onDelete }) {
   const [form, setForm] = useState(null);
   const [selectedDay, setSelectedDay] = useState(DAYS[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1]);
+
   const dayBlocks = schedule.filter(s => s.day === selectedDay).sort((a, b) => (a.start || '').localeCompare(b.start || ''));
 
   return (
@@ -773,9 +720,7 @@ function Schedule({ schedule, onAdd, onUpdate, onDelete }) {
 
       <div className="day-strip">
         {DAYS.map(d => (
-          <button key={d}
-            onClick={() => setSelectedDay(d)}
-            className={`day-pill ${selectedDay === d ? 'active' : ''}`}>
+          <button key={d} onClick={() => setSelectedDay(d)} className={`day-pill ${selectedDay === d ? 'active' : ''}`}>
             {d}
           </button>
         ))}
@@ -791,15 +736,16 @@ function Schedule({ schedule, onAdd, onUpdate, onDelete }) {
           {dayBlocks.map(b => (
             <div key={b.id} className="card" style={{
               borderLeft: `3px solid ${BLOCK_COLORS[b.type] || '#4a6080'}`,
+              background: `linear-gradient(135deg, ${BLOCK_COLORS[b.type] || '#4a6080'}10, var(--bg-surface))`
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: '15px' }}>{b.title}</div>
                   <div className="mono small" style={{ color: BLOCK_COLORS[b.type], marginTop: '2px' }}>
                     {b.start} – {b.end} · {b.type}
                   </div>
                 </div>
-                <div className="row-gap" style={{ flexShrink: 0 }}>
+                <div className="row-gap">
                   <button className="icon-btn" onClick={() => setForm(b)}><Pencil size={12} /></button>
                   <button className="icon-btn danger" onClick={() => onDelete(b.id)}><Trash2 size={12} /></button>
                 </div>
@@ -886,7 +832,7 @@ function Finance({ finances, totalIncome, totalExpenses, profit, onAdd, onUpdate
             <BarChart data={monthlyData} margin={{ left: 0, right: 4, top: 4, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#1e2f52" />
               <XAxis dataKey="month" tick={{ fill: '#4a6080', fontSize: 9 }} />
-              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} width={48} />
+              <YAxis tick={{ fill: '#4a6080', fontSize: 9 }} width={46} />
               <Tooltip contentStyle={{ background: '#0d1425', border: '1px solid #1e2f52', borderRadius: '0.75rem', color: '#e8f0ff' }} />
               <Bar dataKey="income"   fill="#00f5c4" radius={[4,4,0,0]} name="Income" />
               <Bar dataKey="expenses" fill="#ff4d6d" radius={[4,4,0,0]} name="Expenses" />
@@ -895,7 +841,7 @@ function Finance({ finances, totalIncome, totalExpenses, profit, onAdd, onUpdate
         </div>
       )}
 
-      <div className="finance-filter-row">
+      <div className="row-between">
         <div className="tab-group" style={{ flex: 1 }}>
           {['all','income','expense'].map(t => (
             <button key={t} className={`tab-btn ${filter === t ? 'active' : ''}`} onClick={() => setFilter(t)}>
@@ -995,13 +941,13 @@ function Goals({ goals, onAdd, onUpdate, onDelete }) {
             return (
               <div key={g.id} className="card">
                 <div className="goal-header">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: '15px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.title}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '15px' }}>{g.title}</div>
                     <div className="muted small" style={{ marginTop: '2px' }}>
                       {g.category}{g.dueDate ? ` · Due ${g.dueDate}` : ''}
                     </div>
                   </div>
-                  <div className="row-gap" style={{ flexShrink: 0 }}>
+                  <div className="row-gap">
                     <button className="icon-btn" onClick={() => setForm(g)}><Pencil size={12} /></button>
                     <button className="icon-btn danger" onClick={() => onDelete(g.id)}><Trash2 size={12} /></button>
                   </div>
