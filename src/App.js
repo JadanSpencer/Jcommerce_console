@@ -156,8 +156,17 @@ function getLast20Weeks() {
 
 function calcXP(habits, leads, todos, todayStr) {
   let xp = 0;
+  const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0, 10);
   habits.forEach(h => {
+    // +10 XP per completed day
     xp += Object.values(h.completions || {}).filter(Boolean).length * 10;
+    // -10 XP for each past day the habit was NOT completed (only days since habit was created, max 30 days back)
+    const createdDate = h.createdAt?.toDate ? h.createdAt.toDate().toISOString().slice(0, 10) : null;
+    for (let i = 1; i <= 30; i++) {
+      const d = new Date(new Date(todayStr) - i * 86400000).toISOString().slice(0, 10);
+      if (createdDate && d < createdDate) break; // don't penalize before habit existed
+      if (!h.completions?.[d]) xp -= 10;
+    }
   });
   leads.filter(l => l.status === 'Paid').forEach(() => { xp += 200; });
   xp += calcTodoXP(todos, todayStr);
