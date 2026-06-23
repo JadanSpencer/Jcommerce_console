@@ -48,46 +48,53 @@ function calcEmotionLevel(finances, leads, xp, level) {
   const profit = totalIncome - totalExpenses;
   const mrr = leads.filter(l => l.status === 'Paid' && l.retainerAmount).reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
   const paidClients = leads.filter(l => l.status === 'Paid').length;
-
-  // Minimum bar: grows with entrepreneur level (every 500 XP = 1 level)
-  // Level 1 = J$5k/mo minimum, each level adds J$5k
+  const hasRetainerSetup = leads.some(l => l.retainerAmount);
+  const hasFinanceData = finances.length > 0;
   const minMonthlyTarget = level * 5000;
 
-  // Score: 0 = worst, 100 = best
-  let score = 50; // start neutral
+  // Start optimistic — penalize only on real negative signals
+  let score = 65;
 
-  // Profit health
-  if (profit > 0) score += 15;
-  else if (profit < 0) score -= 20;
+  // ── Profit: only penalize if there's actual finance data
+  if (hasFinanceData) {
+    if (profit > 0) score += 12;
+    else if (profit < 0) score -= 10; // lighter penalty — early stage is normal
+  }
 
-  // MRR vs target
-  if (minMonthlyTarget > 0) {
+  // ── MRR: only factor in if retainers are actually configured
+  if (hasRetainerSetup && minMonthlyTarget > 0) {
     const mrrRatio = mrr / minMonthlyTarget;
-    if (mrrRatio >= 1.5) score += 20;
+    if (mrrRatio >= 1.5) score += 18;
     else if (mrrRatio >= 1) score += 10;
     else if (mrrRatio >= 0.5) score -= 5;
-    else score -= 15;
+    else score -= 8; // not hitting target yet, but don't tank the score
   }
 
-  // Client count
-  if (paidClients >= 5) score += 15;
-  else if (paidClients >= 2) score += 8;
-  else if (paidClients === 0) score -= 10;
+  // ── Paid clients — biggest positive signal
+  if (paidClients >= 5) score += 18;
+  else if (paidClients >= 3) score += 12;
+  else if (paidClients >= 1) score += 6;
+  // no clients yet → no penalty (just neutral — they may be new)
 
-  // Expense ratio
-  if (totalIncome > 0) {
+  // ── Expense ratio — only penalize if clearly burning cash
+  if (hasFinanceData && totalIncome > 0) {
     const expRatio = totalExpenses / totalIncome;
-    if (expRatio < 0.3) score += 10;
-    else if (expRatio > 0.8) score -= 15;
+    if (expRatio < 0.3) score += 8;
+    else if (expRatio > 0.9) score -= 12; // only flag if near total burn
   }
+
+  // ── XP momentum bonus — actively using the app = doing well
+  if (xp > 1000) score += 5;
+  else if (xp > 300) score += 3;
 
   score = Math.max(0, Math.min(100, score));
 
-  if (score >= 80) return 0; // blue
-  if (score >= 60) return 1; // green
-  if (score >= 40) return 2; // yellow
-  if (score >= 20) return 3; // orange
-  return 4;                  // red
+  // Wider bands so the dial sits more naturally in the middle
+  if (score >= 78) return 0; // blue — thriving
+  if (score >= 62) return 1; // green — good
+  if (score >= 45) return 2; // yellow — watch out
+  if (score >= 28) return 3; // orange — struggling
+  return 4;                  // red — danger
 }
 
 // ─── TODO XP ─────────────────────────────────────────────────────────────────
