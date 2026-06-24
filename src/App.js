@@ -111,7 +111,7 @@ function calcTodoXP(todos, todayStr) {
     xp += completedDays * 5;
   });
 
-  // -10 per task not completed yesterday
+  // -10 per task not completed yesterday (yesterday is always locked — day has passed)
   todos.forEach(t => {
     const addedBefore = t.addedDate && t.addedDate <= yesterday;
     if (addedBefore && !t.doneOn?.[yesterday]) {
@@ -119,8 +119,12 @@ function calcTodoXP(todos, todayStr) {
     }
   });
 
-  // -10 if today's added count < 5 (but only if day has passed — checked client-side)
-  // We track this via todayTaskCount vs 5 minimum
+  // -10 if yesterday had fewer than 5 tasks added
+  const yesterdayTasks = todos.filter(t => t.addedDate === yesterday);
+  if (yesterdayTasks.length > 0 && yesterdayTasks.length < 5) {
+    xp -= 10;
+  }
+
   return xp;
 }
 
@@ -157,16 +161,17 @@ function getLast20Weeks() {
 function calcXP(habits, leads, todos, todayStr) {
   let xp = 0;
   const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0, 10);
+  const now = new Date();
+  const isPastDeadline = now.getHours() === 23 && now.getMinutes() === 59
+    || now.toISOString().slice(0, 10) > todayStr; // only penalize after 11:59pm
+
   habits.forEach(h => {
     // +10 XP per completed day
     xp += Object.values(h.completions || {}).filter(Boolean).length * 10;
-    // -10 XP for each past day the habit was NOT completed (only days since habit was created, max 30 days back)
+    // -10 XP only for yesterday if not completed (checked after midnight)
     const createdDate = h.createdAt?.toDate ? h.createdAt.toDate().toISOString().slice(0, 10) : null;
-    for (let i = 1; i <= 30; i++) {
-      const d = new Date(new Date(todayStr) - i * 86400000).toISOString().slice(0, 10);
-      if (createdDate && d < createdDate) break; // don't penalize before habit existed
-      if (!h.completions?.[d]) xp -= 10;
-    }
+    if (createdDate && yesterday < createdDate) return; // habit didn't exist yet
+    if (!h.completions?.[yesterday]) xp -= 10; // yesterday is always locked
   });
   leads.filter(l => l.status === 'Paid').forEach(() => { xp += 200; });
   xp += calcTodoXP(todos, todayStr);
