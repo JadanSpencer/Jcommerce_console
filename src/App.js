@@ -1500,30 +1500,24 @@ ${schedule.filter(s => s.day === dayName.slice(0,3)).sort((a,b) => (a.start||'')
   // Send message to Claude API
   const sendMessage = async (userMsg) => {
     if (!userMsg.trim() || loading) return;
-
     const userMessage = { role: 'user', content: userMsg.trim() };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInput('');
     setLoading(true);
-
     try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('https://jaxon-rctv.onrender.com/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          system: buildContext(),
-          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+          messages: newMessages.map(m => ({ role: m.role, content: m.content }))
         }),
       });
-
       const data = await response.json();
-      const reply = data.content?.[0]?.text || 'Something went wrong — try again.';
-      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      if (!response.ok) throw new Error(data.error || 'Failed');
+      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Check your internet and try again.' }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Try again.' }]);
     } finally {
       setLoading(false);
     }
