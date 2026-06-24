@@ -1781,7 +1781,7 @@ select.input {
 
 /* XP / mono number values everywhere */
 .section *[style*="fontFamily:'var(--f-mono)'"],
-.section *[style*="fontFamily:"var(--f-mono)""],
+.section *[style*="fontFamily:'var(--f-mono)'"],
 .section *[style*="fontFamily: var(--f-mono)"] {
   color: transparent !important;
   -webkit-text-stroke: 0.5px currentColor;
