@@ -194,11 +194,13 @@ export default function App() {
   const [finances, setFinances] = useState([]);
   const [goals, setGoals] = useState([]);
   const [todos, setTodos] = useState([]);
+  const [queue, setQueue] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [briefings, setBriefings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const weekDates = getWeekDates();
   const todayStr = new Date().toISOString().slice(0, 10);
-  const [briefings, setBriefings] = useState([]);
 
   useEffect(() => {
     const unsubs = [];
@@ -206,6 +208,7 @@ export default function App() {
     const cols = [
       ['leads', setLeads], ['habits', setHabits], ['schedule', setSchedule],
       ['finances', setFinances], ['goals', setGoals], ['todos', setTodos],
+      ['jaxon_queue', setQueue], ['jaxon_logs', setLogs], ['briefings', setBriefings],
     ];
     cols.forEach(([col, setter]) => {
       try {
@@ -292,7 +295,7 @@ export default function App() {
     { id: 'schedule',  label: 'Schedule', icon: Calendar },
     { id: 'finance',   label: 'Finance',  icon: PiggyBank },
     { id: 'goals',     label: 'Goals',    icon: Flag },
-    { id: 'ai',        label: 'JAXON',     icon: Bot },
+    { id: 'jaxon',     label: 'JAXON',    icon: Bot },
   ];
 
   return (
@@ -339,17 +342,10 @@ export default function App() {
               habitsToday={habitsToday} totalIncome={totalIncome}
               totalExpenses={totalExpenses} profit={profit}
               paidLeads={paidLeads} openLeads={openLeads}
-              {...briefings.length > 0 && briefings[0].date === todayStr && (
-                <div className="card" style={{ borderLeft:'3px solid #00aaff', background:'linear-gradient(135deg, #00aaff08, var(--bg-surface))' }}>
-                  <div className="card-title" style={{ color:'#00aaff' }}>🤖 JAXON Morning Briefing</div>
-                  <div style={{ fontSize:'13px', lineHeight:'1.7', color:'var(--text-secondary)', whiteSpace:'pre-line' }}>
-                    {briefings[0].content}
-                  </div>
-                </div>
-              )}
               todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel}
               onToggleHabit={toggleHabit} onToggleTodo={toggleTodo}
               todayTodos={todayTodos} todayDone={todayDone}
+              todayBriefing={briefings.length > 0 && briefings[0].date === todayStr ? briefings[0] : null}
             />
           )}
           {tab === 'pipeline' && (
@@ -395,15 +391,15 @@ export default function App() {
               onUpdate={(id, d) => update('goals', id, d)}
               onDelete={id => remove('goals', id)} />
           )}
-          {tab === 'ai' && (
-            <JaxonAI
-              leads={leads} habits={habits} finances={finances}
-              goals={goals} todos={todos} schedule={schedule}
-              totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit}
-              xp={xp} level={level} todayStr={todayStr}
-              paidLeads={paidLeads} openLeads={openLeads}
+          {tab === 'jaxon' && (
+            <JaxonDashboard
+              queue={queue} logs={logs} briefings={briefings}
+              todayStr={todayStr}
+              onApprove={id => update('jaxon_queue', id, { status: 'approved' })}
+              onReject={id => update('jaxon_queue', id, { status: 'rejected' })}
             />
           )}
+
         </main>
       )}
 
@@ -416,6 +412,14 @@ export default function App() {
           </button>
         ))}
       </nav>
+    {/* JAXON Floating Button + Chat Overlay */}
+    <JaxonFloat
+      leads={leads} habits={habits} finances={finances}
+      goals={goals} todos={todos} schedule={schedule}
+      totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit}
+      xp={xp} level={level} todayStr={todayStr}
+      paidLeads={paidLeads} openLeads={openLeads}
+    />
     </div>
   );
 }
@@ -434,6 +438,14 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
 
   return (
     <div className="section">
+      {todayBriefing && (
+        <div className="card" style={{ borderLeft:'3px solid #00aaff', background:'linear-gradient(135deg, #00aaff08, var(--bg-surface))' }}>
+          <div className="card-title" style={{ color:'#00aaff' }}>🤖 JAXON Morning Briefing — {todayBriefing.date}</div>
+          <div style={{ fontSize:'13px', lineHeight:'1.75', color:'var(--text-secondary)', whiteSpace:'pre-line' }}>
+            {todayBriefing.content}
+          </div>
+        </div>
+      )}
       <div className="xp-banner">
         <div className="xp-avatar">J</div>
         <div className="xp-info">
@@ -563,6 +575,8 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete, onLogPayment, on
   const [form, setForm] = useState(null);
   const [payForm, setPayForm] = useState(null);
   const [filter, setFilter] = useState('All');
+  const [expandedLead, setExpandedLead] = useState(null);
+  const [expandedLead, setExpandedLead] = useState(null);
   const filtered = filter === 'All' ? leads : leads.filter(l => l.status === filter);
   const totalPipelineValue = leads.filter(l => !['Flaked','Lost'].includes(l.status)).reduce((s,l) => s + (Number(l.value)||0), 0);
   const getPayments = (lid) => finances.filter(f => f.pipelineLeadId === lid);
@@ -606,65 +620,100 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete, onLogPayment, on
             const contractTotal = Number(l.value) || 0;
             const remaining = contractTotal - received;
             const alert = getRetainerAlert(l);
+            const isOpen = expandedLead === l.id;
+            const pct = contractTotal > 0 ? Math.min(100, (received / contractTotal) * 100) : 0;
             return (
-              <div key={l.id} className="card">
-                <div className="lead-card-body">
-                  <div className="lead-card-left">
-                    <div className="lead-name">
-                      {l.businessName}
-                      <span className="badge" style={{ background:`${STATUS_COLOR[l.status]}22`, color:STATUS_COLOR[l.status] }}>{l.status}</span>
+              <div key={l.id} className="card" style={{ padding:'0.875rem 1rem' }}>
+                {/* Collapsed header — always visible */}
+                <div className="lead-card-header" onClick={() => setExpandedLead(isOpen ? null : l.id)}>
+                  <div className="lead-card-main">
+                    <div className="lead-card-title-row">
+                      <span className="lead-name">{l.businessName}</span>
+                      <span className="badge" style={{ background:`${STATUS_COLOR[l.status]}18`, color:STATUS_COLOR[l.status], border:`1px solid ${STATUS_COLOR[l.status]}30` }}>{l.status}</span>
                       {l.source === 'JAXON Agent' && (
-                        <span className="badge" style={{ background:'#00aaff22', color:'#00aaff' }}>🤖 JAXON</span>
+                        <span className="badge" style={{ background:'rgba(0,170,255,0.1)', color:'#00aaff', border:'1px solid rgba(0,170,255,0.2)' }}>🤖</span>
+                      )}
+                      {alert?.isOverdue && (
+                        <span className="badge" style={{ background:'rgba(255,77,109,0.1)', color:'var(--rose)', border:'1px solid rgba(255,77,109,0.2)' }}>⚠</span>
                       )}
                     </div>
-                    <div className="muted small">{l.contactName}{l.phone ? ` · ${l.phone}` : ''}</div>
-                    {l.notes && <div className="muted small" style={{ marginTop:'0.25rem' }}>{l.notes}</div>}
-                    {l.nextActionDate && (
-                      <div className="mono small" style={{ color:'var(--gold)', marginTop:'0.25rem' }}>↳ {l.nextAction} — {l.nextActionDate}</div>
+                    <div className="lead-meta">
+                      {l.contactName || 'No contact added'}{l.nextActionDate ? ` · ${l.nextAction || 'Action'} ${l.nextActionDate}` : ''}
+                    </div>
+                    {contractTotal > 0 && (
+                      <div style={{ marginTop:'0.375rem', height:'2px', background:'var(--bg-raised)', borderRadius:'99px', overflow:'hidden' }}>
+                        <div style={{ height:'100%', borderRadius:'99px', background: remaining>0?'var(--gold)':'var(--mint)', width:`${pct}%` }} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="lead-card-right">
+                    <div className="lead-value" style={{ color:STATUS_COLOR[l.status] }}>
+                      {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
+                    </div>
+                    <ChevronDown size={14} style={{ color:'var(--text-muted)', transform: isOpen?'rotate(180deg)':'none', transition:'transform 0.2s', flexShrink:0 }}/>
+                  </div>
+                </div>
+
+                {/* Expanded drawer */}
+                {isOpen && (
+                  <div className="lead-drawer-body">
+                    {(l.contactName || l.phone) && (
+                      <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap' }}>
+                        {l.contactName && <span className="mono small" style={{ color:'var(--text-secondary)' }}>👤 {l.contactName}</span>}
+                        {l.phone && <span className="mono small" style={{ color:'var(--cerulean)' }}>📞 {l.phone}</span>}
+                      </div>
+                    )}
+                    {l.notes && (
+                      <div style={{ fontSize:'12.5px', color:'var(--text-secondary)', lineHeight:'1.6', background:'var(--bg-raised)', borderRadius:'var(--r-sm)', padding:'0.5rem 0.75rem' }}>
+                        {l.notes}
+                      </div>
                     )}
                     {contractTotal > 0 && (
-                      <div style={{ marginTop:'0.5rem' }}>
-                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px' }}>
-                          <span className="mono small" style={{ color:'var(--text-muted)' }}>J${received.toLocaleString()} / J${contractTotal.toLocaleString()}</span>
-                          <span className="mono small" style={{ color: remaining>0 ? 'var(--gold)' : 'var(--mint)' }}>
-                            {remaining > 0 ? `J$${remaining.toLocaleString()} due` : '✓ Paid'}
+                      <div>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'5px' }}>
+                          <span className="mono small" style={{ color:'var(--text-muted)' }}>J${received.toLocaleString()} of J${contractTotal.toLocaleString()}</span>
+                          <span className="mono small" style={{ color: remaining>0?'var(--gold)':'var(--mint)', fontWeight:700 }}>
+                            {remaining>0 ? `J$${remaining.toLocaleString()} due` : '✓ Fully paid'}
                           </span>
                         </div>
-                        <div style={{ height:'3px', background:'var(--bg-raised)', borderRadius:'99px', overflow:'hidden' }}>
-                          <div style={{ height:'100%', borderRadius:'99px', background: remaining>0 ? 'var(--gold)' : 'var(--mint)', width:`${Math.min(100, contractTotal>0?(received/contractTotal)*100:0)}%`, transition:'width 0.6s ease' }} />
+                        <div style={{ height:'4px', background:'var(--bg-raised)', borderRadius:'99px', overflow:'hidden' }}>
+                          <div style={{ height:'100%', background: remaining>0?'var(--gold)':'var(--mint)', borderRadius:'99px', width:`${pct}%` }} />
                         </div>
                       </div>
                     )}
                     {payments.length > 0 && (
-                      <div style={{ marginTop:'0.5rem', display:'flex', flexDirection:'column', gap:'2px' }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
                         {payments.map(p => (
                           <div key={p.id} style={{ display:'flex', gap:'0.5rem', alignItems:'center' }}>
-                            <span style={{ width:7, height:7, borderRadius:'50%', background:'var(--mint)', flexShrink:0, display:'inline-block' }} />
+                            <span style={{ width:6, height:6, borderRadius:'50%', background:'var(--mint)', flexShrink:0, display:'inline-block' }} />
                             <span className="mono small" style={{ color:'var(--text-muted)' }}>{p.paymentStage} · J${Number(p.amount).toLocaleString()} · {p.date}</span>
                           </div>
                         ))}
                       </div>
                     )}
+                    {l.outreachDraft && (
+                      <div style={{ background:'rgba(0,170,255,0.05)', border:'1px solid rgba(0,170,255,0.15)', borderRadius:'var(--r-sm)', padding:'0.625rem 0.75rem' }}>
+                        <div className="mono small" style={{ color:'var(--cerulean)', marginBottom:'4px' }}>🤖 Draft Message</div>
+                        <div style={{ fontSize:'12px', color:'var(--text-secondary)', lineHeight:'1.6' }}>{l.outreachDraft}</div>
+                      </div>
+                    )}
                     {alert && (
-                      <div className={`retainer-alert ${alert.isOverdue?'retainer-alert-overdue':''}`} style={{ marginTop:'0.5rem' }}>
-                        <Bell size={12}/>
-                        {alert.isOverdue ? `Retainer overdue ${Math.abs(alert.daysUntil)}d — J$${Number(l.retainerAmount).toLocaleString()}`
+                      <div className={`retainer-alert ${alert.isOverdue?'retainer-alert-overdue':''}`}>
+                        <Bell size={11}/>
+                        {alert.isOverdue
+                          ? `Retainer overdue ${Math.abs(alert.daysUntil)}d — J$${Number(l.retainerAmount).toLocaleString()}`
                           : alert.daysUntil===0 ? `Retainer due TODAY — J$${Number(l.retainerAmount).toLocaleString()}`
                           : `Retainer in ${alert.daysUntil}d — J$${Number(l.retainerAmount).toLocaleString()}`}
                       </div>
                     )}
-                  </div>
-                  <div className="lead-card-right">
-                    <div className="mono" style={{ fontWeight:700, color:STATUS_COLOR[l.status], fontSize:'13px', whiteSpace:'nowrap' }}>
-                      {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
-                    </div>
-                    <div className="row-gap">
-                      <button className="icon-btn" style={{ color:'var(--mint)', borderColor:'#0a3d2e' }} onClick={() => setPayForm(l)} title="Log payment"><DollarSign size={13}/></button>
+                    <div className="row-gap" style={{ justifyContent:'flex-end', paddingTop:'0.125rem' }}>
+                      <button className="icon-btn" style={{ color:'var(--mint)', borderColor:'rgba(0,245,196,0.2)', background:'rgba(0,245,196,0.05)' }}
+                        onClick={() => setPayForm(l)}><DollarSign size={13}/></button>
                       <button className="icon-btn" onClick={() => setForm(l)}><Pencil size={13}/></button>
                       <button className="icon-btn danger" onClick={() => onDelete(l.id)}><Trash2 size={13}/></button>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}
@@ -1405,26 +1454,160 @@ function GoalModal({ data, onSave, onClose }) {
   );
 }
 
-// ─── JAXON AI BUSINESS PARTNER ───────────────────────────────────────────────
-function JaxonAI({ leads, habits, finances, goals, todos, schedule,
+
+// ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
+function JaxonDashboard({ queue, logs, briefings, todayStr, onApprove, onReject }) {
+  const [activeTab, setActiveTab] = useState('queue');
+
+  const pending  = queue.filter(q => q.status === 'pending')
+    .sort((a, b) => { const p = { high:0, medium:1, low:2 }; return (p[a.priority]||1)-(p[b.priority]||1); });
+  const approved = queue.filter(q => q.status === 'approved');
+  const executed = queue.filter(q => q.status === 'executed');
+  const todayBriefing = briefings.find(b => b.date === todayStr);
+  const latestLog = logs[0];
+
+  const actionLabels = {
+    ADD_LEAD:'➕ Add Lead', UPDATE_LEAD:'✏️ Update Lead',
+    MARK_LEAD_DEAD:'💀 Mark Dead', ADD_FINANCE_ENTRY:'💰 Add Transaction', ADD_TODO:'✅ Add Task',
+  };
+  const priorityColor = { high:'#ff4d6d', medium:'#f5c84c', low:'#4a6080' };
+
+  return (
+    <div className="section">
+      <div className="page-hero" style={{ background:'linear-gradient(135deg, #0a0f2e, #060b17)', borderColor:'#0044cc' }}>
+        <div className="page-hero-eyebrow" style={{ color:'#00aaff' }}>JAXON Intelligence</div>
+        <div className="page-hero-title">Second Brain</div>
+        <div className="page-hero-sub">{pending.length} pending · {approved.length} approved · {executed.length} executed</div>
+      </div>
+
+      {todayBriefing && (
+        <div className="card" style={{ borderLeft:'3px solid #00aaff' }}>
+          <div className="card-title" style={{ color:'#00aaff' }}>🤖 Morning Briefing — {todayStr}</div>
+          <div style={{ fontSize:'13px', lineHeight:'1.75', color:'var(--text-secondary)', whiteSpace:'pre-line' }}>{todayBriefing.content}</div>
+        </div>
+      )}
+
+      <div className="tab-group">
+        {[
+          { id:'queue', label:`Queue (${pending.length})` },
+          { id:'approved', label:`Approved (${approved.length})` },
+          { id:'log', label:'Learning Log' },
+        ].map(t => (
+          <button key={t.id} className={`tab-btn ${activeTab===t.id?'active':''}`} onClick={() => setActiveTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'queue' && (
+        pending.length === 0 ? (
+          <div className="card" style={{ textAlign:'center', padding:'2rem' }}>
+            <div style={{ fontSize:'32px', marginBottom:'0.5rem' }}>✅</div>
+            <div style={{ color:'var(--text-muted)', fontSize:'14px' }}>Queue is clear — JAXON is working</div>
+          </div>
+        ) : (
+          <div className="list">
+            {pending.map(item => (
+              <div key={item.id} className="card" style={{ borderLeft:`3px solid ${priorityColor[item.priority]||'#4a6080'}` }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.5rem' }}>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'11px', fontWeight:700, color:'#00aaff' }}>{actionLabels[item.action]||item.action}</span>
+                  <span className="badge" style={{ background:`${priorityColor[item.priority]}22`, color:priorityColor[item.priority] }}>{item.priority}</span>
+                </div>
+                {item.data?.businessName && (
+                  <div style={{ fontWeight:700, fontSize:'15px', marginBottom:'0.25rem' }}>{item.data.businessName}</div>
+                )}
+                <div style={{ fontSize:'13px', color:'var(--text-secondary)', lineHeight:'1.6', marginBottom:'0.75rem' }}>
+                  <span style={{ fontFamily:'var(--font-mono)', fontSize:'10px', color:'#00aaff' }}>JAXON says: </span>
+                  {item.reasoning}
+                </div>
+                {item.data?.outreachDraft && (
+                  <div style={{ background:'var(--bg-raised)', borderRadius:'var(--radius-sm)', padding:'0.625rem 0.75rem', marginBottom:'0.75rem', borderLeft:'2px solid #00aaff' }}>
+                    <div className="mono small" style={{ color:'#00aaff', marginBottom:'4px' }}>Draft Message</div>
+                    <div style={{ fontSize:'12.5px', color:'var(--text-secondary)', lineHeight:'1.6' }}>{item.data.outreachDraft}</div>
+                  </div>
+                )}
+                {item.data?.value && (
+                  <div style={{ display:'flex', gap:'1rem', marginBottom:'0.75rem' }}>
+                    <span className="mono small" style={{ color:'var(--mint)' }}>J${Number(item.data.value).toLocaleString()} contract</span>
+                    {item.data.retainerAmount && (
+                      <span className="mono small" style={{ color:'var(--lavender)' }}>+J${Number(item.data.retainerAmount).toLocaleString()}/mo</span>
+                    )}
+                  </div>
+                )}
+                <div style={{ display:'flex', gap:'0.5rem' }}>
+                  <button className="btn btn-primary" style={{ flex:1, justifyContent:'center', fontSize:'13px' }} onClick={() => onApprove(item.id)}>✓ Approve</button>
+                  <button className="btn btn-ghost" style={{ flex:1, justifyContent:'center', fontSize:'13px', color:'var(--rose)', borderColor:'#3d1520' }} onClick={() => onReject(item.id)}>✕ Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {activeTab === 'approved' && (
+        <div className="list">
+          {approved.length === 0 ? <Empty text="Nothing approved yet." /> : approved.map(item => (
+            <div key={item.id} className="card" style={{ opacity:0.85 }}>
+              <div className="mono small" style={{ color:'var(--mint)', marginBottom:'2px' }}>✓ APPROVED — executes next JAXON run</div>
+              <div style={{ fontWeight:600, fontSize:'14px' }}>{actionLabels[item.action]} — {item.data?.businessName||item.action}</div>
+            </div>
+          ))}
+          {executed.length > 0 && (
+            <>
+              <div className="card-title" style={{ marginTop:'0.5rem' }}>Already Executed</div>
+              {executed.map(item => (
+                <div key={item.id} className="card" style={{ opacity:0.5 }}>
+                  <div className="mono small" style={{ color:'var(--text-muted)', marginBottom:'2px' }}>⚡ EXECUTED</div>
+                  <div style={{ fontWeight:600, fontSize:'14px' }}>{actionLabels[item.action]} — {item.data?.businessName||item.action}</div>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'log' && (
+        !latestLog ? <Empty text="First learning log generates at midnight." /> : (
+          <div className="card" style={{ borderLeft:'3px solid var(--lavender)' }}>
+            <div className="card-title" style={{ color:'var(--lavender)' }}>📚 JAXON Learning Log — {latestLog.date}</div>
+            {latestLog.stats && (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'0.5rem', marginBottom:'0.875rem' }}>
+                {[
+                  { label:'Queued', value:latestLog.stats.actionsQueued, color:'#00aaff' },
+                  { label:'Approved', value:latestLog.stats.approved, color:'var(--mint)' },
+                  { label:'Rejected', value:latestLog.stats.rejected, color:'var(--rose)' },
+                ].map(s => (
+                  <div key={s.label} style={{ background:'var(--bg-raised)', borderRadius:'var(--radius-sm)', padding:'0.5rem', textAlign:'center' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:'16px', fontWeight:700, color:s.color }}>{s.value}</div>
+                    <div style={{ fontSize:'10px', color:'var(--text-muted)', fontFamily:'var(--font-mono)' }}>{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize:'13px', lineHeight:'1.75', color:'var(--text-secondary)', whiteSpace:'pre-line' }}>{latestLog.content}</div>
+          </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// ─── JAXON FLOATING CHAT ─────────────────────────────────────────────────────
+function JaxonFloat({ leads, habits, finances, goals, todos, schedule,
   totalIncome, totalExpenses, profit, xp, level, todayStr, paidLeads, openLeads }) {
 
+  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const bottomRef = React.useRef(null);
-  const inputRef = React.useRef(null);
 
-  // Build full business context from all Firebase data
   const buildContext = () => {
     const mrr = leads.filter(l => l.status === 'Paid' && l.retainerAmount)
       .reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
     const overdueRetainers = leads.filter(l => {
-      if (!l.retainerDueDay || !l.retainerAmount) return false;
+      if (!l.retainerDueDay) return false;
       const today = new Date();
-      const dueDay = parseInt(l.retainerDueDay);
-      const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), parseInt(l.retainerDueDay));
       return Math.ceil((thisMonth - today) / 86400000) < 0;
     });
     const habitsToday = habits.filter(h => h.completions?.[todayStr]).length;
@@ -1436,68 +1619,31 @@ function JaxonAI({ leads, habits, finances, goals, todos, schedule,
 
     return `You are JAXON — Jadan Spencer's personal AI business partner, coach, and accountability system built into his JCommerce Founder Console.
 
-PERSONALITY: You are sharp, direct, motivating, and strategic. You speak like a brilliant business partner who knows Jadan's business inside and out. You celebrate wins, call out weaknesses, push him to be better, and always think about the next move. You are never generic. Every response is specific to HIS data. You are Jarvis meets a seasoned entrepreneur mentor.
+PERSONALITY: Sharp, direct, motivating, strategic. You speak like a brilliant business partner who knows Jadan's business inside and out. Celebrate wins, call out weaknesses, push him to be better, always think about the next move. Never generic — every response references HIS actual data. You are Jarvis meets a seasoned entrepreneur mentor. Keep responses concise and punchy — this is a mobile chat.
 
 TODAY: ${dayName} ${timeOfDay}, ${todayStr}
 
-━━━ JADAN'S BUSINESS DATA ━━━
+━━━ BUSINESS DATA ━━━
+FINANCES: Income J$${totalIncome.toLocaleString()} | Expenses J$${totalExpenses.toLocaleString()} | Profit J$${profit.toLocaleString()} ${profit < 0 ? '⚠ NEGATIVE' : '✓'} | MRR J$${mrr.toLocaleString()}
+LEVEL: ${level} (${xp} XP) | Monthly target: J$${(level * 5000).toLocaleString()}
 
-FINANCES:
-- Total Income: J$${totalIncome.toLocaleString()}
-- Total Expenses: J$${totalExpenses.toLocaleString()}
-- Net Profit: J$${profit.toLocaleString()} ${profit >= 0 ? '✓' : '⚠ NEGATIVE'}
-- Monthly Recurring Revenue (MRR): J$${mrr.toLocaleString()}
-- Entrepreneur Level: ${level} (${xp} XP total)
-- Monthly Target (Level ${level}): J$${(level * 5000).toLocaleString()}
+PIPELINE (${leads.length} leads):
+${leads.map(l => `• ${l.businessName} | ${l.status} | J$${Number(l.value||0).toLocaleString()}${l.retainerAmount ? ` + J$${Number(l.retainerAmount).toLocaleString()}/mo` : ''}${l.nextAction ? ` | Next: ${l.nextAction} ${l.nextActionDate}` : ''}`).join('\n') || '• No leads yet'}
+${overdueRetainers.length > 0 ? `\n⚠ OVERDUE RETAINERS: ${overdueRetainers.map(l => l.businessName).join(', ')}` : ''}
 
-PIPELINE — ${leads.length} total leads:
-${leads.length === 0 ? '- No leads yet' : leads.map(l =>
-  `- ${l.businessName} | ${l.status} | J$${Number(l.value||0).toLocaleString()} contract${l.retainerAmount ? ` | J$${Number(l.retainerAmount).toLocaleString()}/mo retainer` : ''}${l.nextAction ? ` | Next: ${l.nextAction} (${l.nextActionDate})` : ''}`
-).join('\n')}
+HABITS: ${habitsToday}/${habits.length} done today
+${habits.map(h => `• ${h.name}: ${h.completions?.[todayStr] ? '✓' : '✗'}`).join('\n') || '• None set'}
 
-PAID CLIENTS: ${paidLeads.length} | OPEN PIPELINE: ${openLeads.length}
-${overdueRetainers.length > 0 ? `⚠ OVERDUE RETAINERS: ${overdueRetainers.map(l => l.businessName).join(', ')}` : ''}
+TASKS: ${todayDone}/${todayTasks.length} done today
+${todayTasks.map(t => `• ${t.doneOn?.[todayStr] ? '✓' : '✗'} ${t.title}`).join('\n') || '• None added'}
 
-RECENT TRANSACTIONS (last 10):
-${finances.slice(0, 10).map(f => `- ${f.type === 'income' ? '+' : '-'}J$${Number(f.amount).toLocaleString()} | ${f.description} | ${f.date}`).join('\n') || '- No transactions yet'}
+GOALS: ${goals.map(g => `${g.title} ${Math.round(((Number(g.current)||0)/(Number(g.target)||1))*100)}%`).join(' | ') || 'None set'}
 
-HABITS (${habits.length} total, ${habitsToday}/${habits.length} done today):
-${habits.map(h => {
-  const streak = (() => {
-    let s = 0;
-    const today = new Date();
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(today); d.setDate(today.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      if (h.completions?.[key]) s++; else if (i > 0) break;
-    }
-    return s;
-  })();
-  return `- ${h.name} | Today: ${h.completions?.[todayStr] ? '✓' : '✗'} | Streak: ${streak} days`;
-}).join('\n') || '- No habits set'}
+RECENT MONEY: ${finances.slice(0,5).map(f => `${f.type==='income'?'+':'-'}J$${Number(f.amount).toLocaleString()} ${f.description}`).join(' | ') || 'No transactions'}
 
-TASKS TODAY (${todayDone}/${todayTasks.length} done):
-${todayTasks.map(t => `- ${t.doneOn?.[todayStr] ? '✓' : '✗'} ${t.title}`).join('\n') || '- No tasks added today'}
-
-GOALS (${goals.length} active):
-${goals.map(g => {
-  const pct = Math.round(((Number(g.current)||0)/(Number(g.target)||1))*100);
-  return `- ${g.title} | ${pct}% complete (${g.current||0}/${g.target||0} ${g.unit||''}) | Due: ${g.dueDate||'no date'}`;
-}).join('\n') || '- No goals set'}
-
-SCHEDULE TODAY (${dayName}):
-${schedule.filter(s => s.day === dayName.slice(0,3)).sort((a,b) => (a.start||'').localeCompare(b.start||'')).map(b => `- ${b.start}-${b.end} ${b.title} (${b.type})`).join('\n') || '- Nothing scheduled'}
-
-━━━ YOUR ROLE ━━━
-- Give specific, data-driven advice based on the numbers above
-- Notice patterns, flag risks, celebrate wins
-- Help with outreach scripts, client strategies, pricing decisions
-- Push Jadan to hit his targets and level up
-- When asked about the business, always reference real numbers from above
-- Be concise but impactful. No fluff. Every word should add value.`;
+Be concise. Reference real numbers. Push Jadan to win.`;
   };
 
-  // Send message to Claude API
   const sendMessage = async (userMsg) => {
     if (!userMsg.trim() || loading) return;
     const userMessage = { role: 'user', content: userMsg.trim() };
@@ -1506,164 +1652,134 @@ ${schedule.filter(s => s.day === dayName.slice(0,3)).sort((a,b) => (a.start||'')
     setInput('');
     setLoading(true);
     try {
-      const response = await fetch('https://jaxon-rctv.onrender.com/chat', {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: newMessages.map(m => ({ role: m.role, content: m.content }))
+          model: 'claude-sonnet-4-6',
+          max_tokens: 600,
+          system: buildContext(),
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed');
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }]);
-    } catch (err) {
+      const reply = data.content?.[0]?.text || 'Something went wrong.';
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch {
       setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Try again.' }]);
     } finally {
       setLoading(false);
     }
   };
 
-  // Greeting on first load
+  // Greeting when first opened
   useEffect(() => {
-    if (initialized) return;
+    if (!open || initialized) return;
     setInitialized(true);
     const today = new Date();
     const hour = today.getHours();
-    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    const habitsToday = habits.filter(h => h.completions?.[todayStr]).length;
+    const g = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
+    const habitsLeft = habits.filter(h => !h.completions?.[todayStr]).length;
     const todayTasks = todos.filter(t => t.addedDate === todayStr);
-    const todayDone = todayTasks.filter(t => t.doneOn?.[todayStr]).length;
+    const tasksDone = todayTasks.filter(t => t.doneOn?.[todayStr]).length;
     const overdueRetainers = leads.filter(l => {
       if (!l.retainerDueDay) return false;
-      const dueDay = parseInt(l.retainerDueDay);
-      const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), parseInt(l.retainerDueDay));
       return Math.ceil((thisMonth - today) / 86400000) < 0;
     });
 
-    let greeting_msg = `${greeting}, Jadan. I'm JAXON — your JCommerce business partner.\n\n`;
+    const parts = [`${g}, Jadan. JAXON online.\n`];
+    if (profit < 0) parts.push(`⚠️ Profit is negative at J$${profit.toLocaleString()}. That's priority one.`);
+    else if (profit > 0) parts.push(`📈 J$${profit.toLocaleString()} profit. Keep building.`);
+    if (overdueRetainers.length > 0) parts.push(`🚨 ${overdueRetainers.map(l => l.businessName).join(', ')} — retainer overdue. Chase it.`);
+    if (openLeads.length > 0) parts.push(`${openLeads.length} open lead${openLeads.length !== 1 ? 's' : ''} need closing.`);
+    if (habitsLeft > 0) parts.push(`${habitsLeft} habit${habitsLeft !== 1 ? 's' : ''} still undone today.`);
+    if (todayTasks.length === 0) parts.push(`No tasks added yet. Get your to-do list in.`);
+    else if (tasksDone < todayTasks.length) parts.push(`${tasksDone}/${todayTasks.length} tasks done.`);
+    parts.push(`\nWhat do you need?`);
 
-    if (profit > 0) {
-      greeting_msg += `📈 You're profitable at J$${profit.toLocaleString()} net. `;
-    } else if (profit < 0) {
-      greeting_msg += `⚠️ You're at J$${profit.toLocaleString()} net profit — we need to talk about that. `;
-    }
-
-    if (paidLeads.length > 0) {
-      greeting_msg += `You have ${paidLeads.length} paid client${paidLeads.length !== 1 ? 's' : ''}.`;
-    }
-
-    greeting_msg += `\n\n`;
-
-    if (overdueRetainers.length > 0) {
-      greeting_msg += `🚨 **Action needed:** ${overdueRetainers.map(l => l.businessName).join(', ')} ${overdueRetainers.length === 1 ? 'has' : 'have'} overdue retainer payments. Chase that today.\n\n`;
-    }
-
-    if (habitsToday < habits.length && habits.length > 0) {
-      greeting_msg += `💪 ${habitsToday}/${habits.length} habits done. `;
-    }
-
-    if (todayTasks.length === 0) {
-      greeting_msg += `You haven't added any tasks today yet — get your to-do list in.\n\n`;
-    } else if (todayDone < todayTasks.length) {
-      greeting_msg += `${todayDone}/${todayTasks.length} tasks done today.\n\n`;
-    }
-
-    if (openLeads.length > 0) {
-      greeting_msg += `You have ${openLeads.length} open lead${openLeads.length !== 1 ? 's' : ''} in the pipeline. What are you doing to close them?\n\n`;
-    }
-
-    greeting_msg += `What do you want to work on?`;
-
-    setMessages([{ role: 'assistant', content: greeting_msg }]);
-  }, []);
+    setMessages([{ role: 'assistant', content: parts.join(' ') }]);
+  }, [open]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
   const quickPrompts = [
-    "What should I focus on today?",
+    "What should I focus on right now?",
     "How's my business doing?",
     "Help me close my open leads",
-    "Write a follow-up message for a client",
-    "Where am I losing money?",
-    "Give me a weekly action plan",
+    "Give me a daily action plan",
   ];
 
   return (
-    <div className="ai-container">
-      {/* Header */}
-      <div className="ai-header">
-        <div className="ai-avatar">
-          <Bot size={20} />
-        </div>
-        <div>
-          <div className="ai-name">JAXON</div>
-          <div className="ai-status">
-            <span className="ai-status-dot" />
-            Always on · Knows your business
-          </div>
-        </div>
-      </div>
+    <>
+      {/* Floating button */}
+      <button className={`jaxon-fab ${open ? 'jaxon-fab-open' : ''}`} onClick={() => setOpen(o => !o)}>
+        {open ? <X size={22} /> : <Bot size={22} />}
+        {!open && messages.length === 0 && <span className="jaxon-fab-pulse" />}
+      </button>
 
-      {/* Messages */}
-      <div className="ai-messages">
-        {messages.map((m, i) => (
-          <div key={i} className={`ai-message ${m.role}`}>
-            {m.role === 'assistant' && (
-              <div className="ai-bubble-avatar"><Bot size={14} /></div>
+      {/* Chat panel */}
+      {open && (
+        <div className="jaxon-panel">
+          {/* Panel header */}
+          <div className="jaxon-panel-header">
+            <div className="jaxon-panel-avatar"><Bot size={16} /></div>
+            <div>
+              <div className="jaxon-panel-name">JAXON</div>
+              <div className="jaxon-panel-status"><span className="jaxon-dot" />Always on</div>
+            </div>
+            <button className="icon-btn" style={{ marginLeft:'auto' }} onClick={() => setOpen(false)}><X size={15}/></button>
+          </div>
+
+          {/* Messages */}
+          <div className="jaxon-messages">
+            {messages.map((m, i) => (
+              <div key={i} className={`jaxon-msg ${m.role}`}>
+                {m.role === 'assistant' && <div className="jaxon-msg-avatar"><Bot size={12}/></div>}
+                <div className={`jaxon-bubble ${m.role}`}>
+                  {m.content.split('\n').map((line, j, arr) => (
+                    <React.Fragment key={j}>{line}{j < arr.length-1 && <br/>}</React.Fragment>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div className="jaxon-msg assistant">
+                <div className="jaxon-msg-avatar"><Bot size={12}/></div>
+                <div className="jaxon-bubble assistant jaxon-typing"><span/><span/><span/></div>
+              </div>
             )}
-            <div className={`ai-bubble ${m.role}`}>
-              {m.content.split('\n').map((line, j) => (
-                <span key={j}>
-                  {line.replace(/\*\*(.*?)\*\*/g, '$1')}
-                  {j < m.content.split('\n').length - 1 && <br />}
-                </span>
+            <div ref={bottomRef}/>
+          </div>
+
+          {/* Quick prompts */}
+          {messages.length <= 1 && !loading && (
+            <div className="jaxon-quick">
+              {quickPrompts.map((p, i) => (
+                <button key={i} className="jaxon-quick-btn" onClick={() => sendMessage(p)}>{p}</button>
               ))}
             </div>
+          )}
+
+          {/* Input */}
+          <div className="jaxon-input-row">
+            <input
+              className="jaxon-input"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
+              placeholder="Ask JAXON..."
+              disabled={loading}
+            />
+            <button className="jaxon-send" onClick={() => sendMessage(input)} disabled={loading || !input.trim()}>
+              {loading ? <Loader size={15} style={{ animation:'spin 0.8s linear infinite' }}/> : <Send size={15}/>}
+            </button>
           </div>
-        ))}
-
-        {loading && (
-          <div className="ai-message assistant">
-            <div className="ai-bubble-avatar"><Bot size={14} /></div>
-            <div className="ai-bubble assistant ai-typing">
-              <span /><span /><span />
-            </div>
-          </div>
-        )}
-
-        <div ref={bottomRef} />
-      </div>
-
-      {/* Quick prompts — show when no conversation yet */}
-      {messages.length <= 1 && !loading && (
-        <div className="ai-quick-prompts">
-          {quickPrompts.map((p, i) => (
-            <button key={i} className="ai-quick-btn" onClick={() => sendMessage(p)}>{p}</button>
-          ))}
         </div>
       )}
-
-      {/* Input */}
-      <div className="ai-input-row">
-        <input
-          ref={inputRef}
-          className="ai-input"
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
-          placeholder="Ask JAXON anything..."
-          disabled={loading}
-        />
-        <button
-          className="ai-send-btn"
-          onClick={() => sendMessage(input)}
-          disabled={loading || !input.trim()}>
-          {loading ? <Loader size={16} className="ai-spin" /> : <Send size={16} />}
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 
