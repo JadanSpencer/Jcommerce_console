@@ -559,7 +559,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
     <div className="section">
       <div className="hero">
         <div className="hero-eye">Sales Pipeline</div>
-        <div className="hero-big">J${totalVal.toLocaleString()}</div>
+        <div className="hero-big filled">J${totalVal.toLocaleString()}</div>
         <div className="hero-sub">{leads.filter(l=>l.status==='Paid').length} paid · {leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length} open</div>
       </div>
 
@@ -764,7 +764,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
     <div className="section">
       <div className="hero">
         <div className="hero-eye">Daily Habits</div>
-        <div className="hero-big">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
+        <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
         <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
