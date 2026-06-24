@@ -427,7 +427,7 @@ export default function App() {
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit,
   paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo,
-  todayTodos, todayDone }) {
+  todayTodos, todayDone, todayBriefing }) {
   const weeks = getLast20Weeks();
   const allDates = weeks.flat();
   const habitHeatmap = allDates.map(date => {
