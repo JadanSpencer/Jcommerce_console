@@ -457,7 +457,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
                   {h.completions?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                 </button>
                 <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
-                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-mint)',flexShrink:0}}>+10</span>}
+                {h.completions?.[todayStr] && <span className="h-sm" style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-mint)',flexShrink:0}}>+10</span>}
               </div>
             ))}
           </div>
@@ -474,8 +474,8 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
                 <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'var(--c-lavender)':'var(--c-dim)',flexShrink:0}}>
                   {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                 </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</span>
-                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-lavender)',flexShrink:0}}>+5</span>}
+                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='h-white' style={{color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)'}}>{t.title}</span></span>
+                {t.doneOn?.[todayStr] && <span className="h-sm" style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-lavender)',flexShrink:0}}>+5</span>}
               </div>
             ))}
           </div>
@@ -530,7 +530,7 @@ function StatCard({label,value,icon:Icon,color}) {
         <span className="stat-label">{label}</span>
         <span style={{color,opacity:0.8}}><Icon size={15}/></span>
       </div>
-      <div className="stat-value" style={{color}}>{value}</div>
+      <div className="stat-value h-lg" style={{color}}>{value}</div>
     </div>
   );
 }
@@ -559,7 +559,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
     <div className="section">
       <div className="hero">
         <div className="hero-eye">Sales Pipeline</div>
-        <div className="hero-big filled">J${totalVal.toLocaleString()}</div>
+        <div className="hero-big filled h-lg">J${totalVal.toLocaleString()}</div>
         <div className="hero-sub">{leads.filter(l=>l.status==='Paid').length} paid · {leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length} open</div>
       </div>
 
@@ -588,7 +588,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                 <div className="lead-header" onClick={()=>setExpanded(isOpen?null:l.id)}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:'0.4rem',flexWrap:'wrap',marginBottom:'2px'}}>
-                      <span style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
+                      <span className="h-white" style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
                       <span className="badge" style={{background:`${STATUS_COLOR[l.status]}18`,color:STATUS_COLOR[l.status],border:`1px solid ${STATUS_COLOR[l.status]}28`}}>{l.status}</span>
                       {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
                       {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
@@ -634,7 +634,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                       <div>
                         <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px'}}>
                           <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'var(--c-muted)'}}>J${received.toLocaleString()} received</span>
-                          <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',fontWeight:700,color:remaining>0?'var(--c-gold)':'var(--c-mint)'}}>
+                          <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',fontWeight:700,color:remaining, className:'h-lg'>0?'var(--c-gold)':'var(--c-mint)'}}>
                             {remaining>0?`J$${remaining.toLocaleString()} due`:'✓ Fully paid'}
                           </span>
                         </div>
@@ -764,7 +764,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
     <div className="section">
       <div className="hero">
         <div className="hero-eye">Daily Habits</div>
-        <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
+        <div className="hero-big filled h-lg">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
         <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -786,7 +786,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</div>
                     <div style={{display:'flex',gap:'0.75rem',marginTop:'2px'}}>
-                      <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-gold)'}}>🔥 {streak}</span>
+                      <span className="h-sm" style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-gold)'}}>🔥 {streak}</span>
                       <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-muted)'}}>{total} done</span>
                     </div>
                   </div>
@@ -901,7 +901,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                   {t.doneOn?.[todayStr] ? <Icons.check size={24}/> : <Icons.circle size={24}/>}
                 </button>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</div>
+                  <div style={{fontWeight:600,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='h-white' style={{color:t.doneOn?.[todayStr]?'var(--c-muted)':'var(--c-primary)'}}>{t.title}</span></div>
                   {t.note && <div style={{fontSize:'11.5px',color:'var(--c-muted)',marginTop:'1px'}}>{t.note}</div>}
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
@@ -971,7 +971,7 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
             <div key={b.id} className="card fade-in" style={{borderLeft:`3px solid ${BLOCK_COLORS[b.type]||'#475569'}`}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.title}</div>
+                  <div className="h-white" style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.title}</div>
                   <div style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:BLOCK_COLORS[b.type],marginTop:'2px'}}>{b.start} – {b.end} · {b.type}</div>
                 </div>
                 <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
@@ -1174,11 +1174,11 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
               <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'var(--c-mint)':'var(--c-rose)'}}/>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
+                <div className="h-white" style={{fontWeight:600,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
                 <div style={{fontSize:'11px',color:'var(--c-muted)',fontFamily:'var(--f-mono)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'var(--c-lavender)'}}> · linked</span>:''}</div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                <div style={{fontFamily:'var(--f-mono)',fontWeight:700,fontSize:'13px',color:f.type==='income'?'var(--c-mint)':'var(--c-rose)',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
+                <div style={{fontFamily:'var(--f-mono)',fontWeight:700,fontSize:'13px',color:f.type==='income'?'var(--c-mint)':'var(--c-rose)',whiteSpace:'nowrap'}}><span className="h-lg" style={{color:f.type==='income'?'var(--c-mint)':'var(--c-rose)'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</span></div>
                 <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
                 <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
               </div>
@@ -1236,7 +1236,7 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
               <div key={g.id} className="card fade-in">
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.625rem',gap:'0.75rem'}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
+                    <div className="h-white" style={{fontWeight:700,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
                     <div style={{fontSize:'11px',color:'var(--c-muted)',marginTop:'2px'}}>{g.category}{g.dueDate?` · Due ${g.dueDate}`:''}</div>
                   </div>
                   <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
@@ -1245,7 +1245,7 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
                   </div>
                 </div>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.25rem'}}>
-                  <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-blue)',fontWeight:700}}>Level {lv}/20</span>
+                  <span className="h-sm" style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-blue)',fontWeight:700}}>Level {lv}/20</span>
                   <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-muted)'}}>{g.current||0}/{g.target||0} {g.unit||''}</span>
                 </div>
                 <div style={{display:'flex',gap:'3px',marginBottom:'0.5rem'}}>
@@ -1256,7 +1256,7 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
                 <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
                   <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,rgba(59,130,246,0.6),var(--c-blue))',borderRadius:'99px',boxShadow:'0 0 4px rgba(59,130,246,0.4)',transition:'width 0.6s'}}/>
                 </div>
-                <div style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-muted)',marginTop:'4px'}}>{pct}% complete</div>
+                <div className="h-sm" style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-muted)',marginTop:'4px'}}>{pct}% complete</div>
                 {g.notes && <div style={{fontSize:'12px',color:'var(--c-muted)',marginTop:'0.5rem',fontStyle:'italic'}}>{g.notes}</div>}
               </div>
             );
@@ -1335,7 +1335,7 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
                   <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',fontWeight:700,color:'var(--c-blue)'}}>{AL[item.action]||item.action}</span>
                   <span className="badge" style={{background:`${PC[item.priority]}20`,color:PC[item.priority],border:`1px solid ${PC[item.priority]}30`}}>{item.priority}</span>
                 </div>
-                {item.data?.businessName && <div style={{fontWeight:700,fontSize:'15px',marginBottom:'0.25rem'}}>{item.data.businessName}</div>}
+                {item.data?.businessName && <div className="h-white" style={{fontWeight:700,fontSize:'15px',marginBottom:'0.25rem'}}>{item.data.businessName}</div>}
                 <div style={{fontSize:'13px',color:'var(--c-secondary)',lineHeight:'1.6',marginBottom:'0.75rem'}}>
                   <span style={{fontFamily:'var(--f-mono)',fontSize:'10px',color:'var(--c-blue)'}}>JAXON: </span>
                   {item.reasoning}
