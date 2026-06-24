@@ -72,28 +72,74 @@ const EMOTION_LEVELS = [
 ];
 
 function calcEmotionLevel(finances, leads, xp, level) {
+  // Recalculates live from raw data every render — any money change updates immediately
   const totalIncome   = finances.filter(f => f.type==='income').reduce((s,f) => s+(Number(f.amount)||0), 0);
   const totalExpenses = finances.filter(f => f.type==='expense').reduce((s,f) => s+(Number(f.amount)||0), 0);
-  const profit = totalIncome - totalExpenses;
-  const mrr = leads.filter(l => l.status==='Paid' && l.retainerAmount).reduce((s,l) => s+(Number(l.retainerAmount)||0), 0);
-  const paidClients = leads.filter(l => l.status==='Paid').length;
-  const hasRetainerSetup = leads.some(l => l.retainerAmount);
-  const hasFinanceData = finances.length > 0;
-  const minMonthlyTarget = level * 5000;
-  let score = 65;
-  if (hasFinanceData) { if (profit > 0) score += 12; else if (profit < 0) score -= 10; }
-  if (hasRetainerSetup && minMonthlyTarget > 0) {
-    const r = mrr / minMonthlyTarget;
-    if (r >= 1.5) score += 18; else if (r >= 1) score += 10; else if (r >= 0.5) score -= 5; else score -= 8;
+  const profit        = totalIncome - totalExpenses;
+  const mrr           = leads.filter(l => l.status==='Paid' && l.retainerAmount).reduce((s,l) => s+(Number(l.retainerAmount)||0), 0);
+  const paidClients   = leads.filter(l => l.status==='Paid').length;
+  const openLeads     = leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length;
+  const hasData       = finances.length > 0;
+
+  // No data yet → neutral
+  if (!hasData && paidClients === 0) return 2;
+
+  // Score built purely from real financial signals — no arbitrary base
+  let score = 50; // true neutral
+
+  // ── PROFIT (biggest signal — most direct money indicator)
+  if (profit > 100000)      score += 30;
+  else if (profit > 50000)  score += 22;
+  else if (profit > 20000)  score += 15;
+  else if (profit > 5000)   score += 8;
+  else if (profit > 0)      score += 3;
+  else if (profit < -50000) score -= 30;
+  else if (profit < -20000) score -= 20;
+  else if (profit < -5000)  score -= 12;
+  else if (profit < 0)      score -= 6;
+
+  // ── MRR (recurring revenue = stability)
+  if (mrr > 100000)      score += 20;
+  else if (mrr > 50000)  score += 15;
+  else if (mrr > 20000)  score += 10;
+  else if (mrr > 10000)  score += 6;
+  else if (mrr > 5000)   score += 3;
+  else if (mrr === 0 && paidClients > 0) score -= 3; // clients with no retainer setup
+
+  // ── PAID CLIENTS (proof of market)
+  if (paidClients >= 10)     score += 15;
+  else if (paidClients >= 5) score += 10;
+  else if (paidClients >= 3) score += 6;
+  else if (paidClients >= 1) score += 3;
+  else                       score -= 5; // no clients at all
+
+  // ── PIPELINE (future revenue signal)
+  if (openLeads >= 10)     score += 8;
+  else if (openLeads >= 5) score += 5;
+  else if (openLeads >= 2) score += 2;
+  else if (openLeads === 0) score -= 5; // dry pipeline = danger
+
+  // ── EXPENSE RATIO (burn rate warning)
+  if (hasData && totalIncome > 0) {
+    const er = totalExpenses / totalIncome;
+    if (er < 0.2)      score += 8;
+    else if (er < 0.4) score += 4;
+    else if (er > 0.8) score -= 10;
+    else if (er > 0.6) score -= 5;
   }
-  if (paidClients >= 5) score += 18; else if (paidClients >= 3) score += 12; else if (paidClients >= 1) score += 6;
-  if (hasFinanceData && totalIncome > 0) {
-    const er = totalExpenses/totalIncome;
-    if (er < 0.3) score += 8; else if (er > 0.9) score -= 12;
-  }
-  if (xp > 1000) score += 5; else if (xp > 300) score += 3;
+
+  // ── XP MOMENTUM (active = healthy)
+  if (xp > 2000)      score += 5;
+  else if (xp > 500)  score += 2;
+
   score = Math.max(0, Math.min(100, score));
-  if (score >= 78) return 0; if (score >= 62) return 1; if (score >= 45) return 2; if (score >= 28) return 3; return 4;
+
+  // Proportional bands — each 20 points = one emoji step
+  if (score >= 80) return 0; // 😎 Thriving
+  if (score >= 60) return 1; // 😊 Good
+  if (score >= 40) return 2; // 😐 Watch Out
+  if (score >= 20) return 3; // 😟 Struggling
+  return 4;                  // 🚨 Danger
 }
 
 function calcTodoXP(todos, todayStr) {
