@@ -198,6 +198,7 @@ export default function App() {
   const [error, setError] = useState('');
   const weekDates = getWeekDates();
   const todayStr = new Date().toISOString().slice(0, 10);
+  const [briefings, setBriefings] = useState([]);
 
   useEffect(() => {
     const unsubs = [];
@@ -338,6 +339,14 @@ export default function App() {
               habitsToday={habitsToday} totalIncome={totalIncome}
               totalExpenses={totalExpenses} profit={profit}
               paidLeads={paidLeads} openLeads={openLeads}
+              {...briefings.length > 0 && briefings[0].date === todayStr && (
+                <div className="card" style={{ borderLeft:'3px solid #00aaff', background:'linear-gradient(135deg, #00aaff08, var(--bg-surface))' }}>
+                  <div className="card-title" style={{ color:'#00aaff' }}>🤖 JAXON Morning Briefing</div>
+                  <div style={{ fontSize:'13px', lineHeight:'1.7', color:'var(--text-secondary)', whiteSpace:'pre-line' }}>
+                    {briefings[0].content}
+                  </div>
+                </div>
+              )}
               todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel}
               onToggleHabit={toggleHabit} onToggleTodo={toggleTodo}
               todayTodos={todayTodos} todayDone={todayDone}
@@ -604,6 +613,9 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete, onLogPayment, on
                     <div className="lead-name">
                       {l.businessName}
                       <span className="badge" style={{ background:`${STATUS_COLOR[l.status]}22`, color:STATUS_COLOR[l.status] }}>{l.status}</span>
+                      {l.source === 'JAXON Agent' && (
+                        <span className="badge" style={{ background:'#00aaff22', color:'#00aaff' }}>🤖 JAXON</span>
+                      )}
                     </div>
                     <div className="muted small">{l.contactName}{l.phone ? ` · ${l.phone}` : ''}</div>
                     {l.notes && <div className="muted small" style={{ marginTop:'0.25rem' }}>{l.notes}</div>}
