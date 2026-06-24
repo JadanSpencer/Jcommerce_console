@@ -576,7 +576,6 @@ function Pipeline({ leads, finances, onAdd, onUpdate, onDelete, onLogPayment, on
   const [payForm, setPayForm] = useState(null);
   const [filter, setFilter] = useState('All');
   const [expandedLead, setExpandedLead] = useState(null);
-  const [expandedLead, setExpandedLead] = useState(null);
   const filtered = filter === 'All' ? leads : leads.filter(l => l.status === filter);
   const totalPipelineValue = leads.filter(l => !['Flaked','Lost'].includes(l.status)).reduce((s,l) => s + (Number(l.value)||0), 0);
   const getPayments = (lid) => finances.filter(f => f.pipelineLeadId === lid);
