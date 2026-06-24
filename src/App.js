@@ -150,6 +150,97 @@ function useEntrance(delay = 0) {
   return visible;
 }
 
+
+// ─── BLUE FLAME PARTICLES ─────────────────────────────────────────────────────
+function Particles() {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let animId;
+    let particles = [];
+
+    const resize = () => {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    };
+    resize();
+    window.addEventListener('resize', resize);
+
+    class Particle {
+      constructor() { this.reset(true); }
+      reset(initial = false) {
+        this.x     = Math.random() * canvas.width;
+        this.y     = initial ? Math.random() * canvas.height : canvas.height + 10;
+        this.size  = Math.random() * 3 + 0.5;
+        this.speedY = Math.random() * 0.8 + 0.3;
+        this.speedX = (Math.random() - 0.5) * 0.4;
+        this.life   = 0;
+        this.maxLife = Math.random() * 180 + 80;
+        this.wobble  = Math.random() * Math.PI * 2;
+        this.wobbleSpeed = Math.random() * 0.03 + 0.01;
+        // Colour: deep blue → cyan → white core
+        const r = Math.floor(Math.random() * 3); // 0=blue,1=cyan,2=indigo
+        if (r === 0)      this.hue = `59,130,246`;  // blue
+        else if (r === 1) this.hue = `6,182,212`;   // cyan
+        else              this.hue = `99,102,241`;   // indigo
+      }
+      update() {
+        this.life++;
+        this.wobble += this.wobbleSpeed;
+        this.x += this.speedX + Math.sin(this.wobble) * 0.3;
+        this.y -= this.speedY;
+        if (this.y < -10 || this.life > this.maxLife) this.reset();
+      }
+      draw() {
+        const t     = this.life / this.maxLife;
+        const alpha = t < 0.2 ? t / 0.2 : t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
+        const size  = this.size * (1 - t * 0.5);
+        const grad  = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 3);
+        grad.addColorStop(0,   `rgba(255,255,255,${alpha * 0.9})`);
+        grad.addColorStop(0.3, `rgba(${this.hue},${alpha * 0.7})`);
+        grad.addColorStop(1,   `rgba(${this.hue},0)`);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, size * 3, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+      }
+    }
+
+    // Spawn 120 particles
+    for (let i = 0; i < 120; i++) particles.push(new Particle());
+
+    const loop = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      particles.forEach(p => { p.update(); p.draw(); });
+      animId = requestAnimationFrame(loop);
+    };
+    loop();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        width: '100%',
+        height: '100%',
+        pointerEvents: 'none',
+        zIndex: 0,
+        opacity: 0.35,
+      }}
+    />
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [tab, setTab] = useState('dashboard');
@@ -245,6 +336,7 @@ export default function App() {
       {/* Ambient orbs */}
       <div className="orb orb-1" />
       <div className="orb orb-2" />
+      <Particles />
 
       <header className="header">
         <div className="brand">
