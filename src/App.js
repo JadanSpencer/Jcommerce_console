@@ -13,7 +13,7 @@ import {
   TrendingUp, Users, Target, DollarSign, Flame,
   LayoutDashboard, Briefcase, Heart, Calendar,
   PiggyBank, Flag, AlertCircle, ChevronDown, ChevronUp,
-  Zap, BookOpen, Dumbbell, Bell, ListTodo, BarChart2
+  Zap, BookOpen, Dumbbell, Bell, ListTodo, BarChart2, Bot, Send, Loader
 } from 'lucide-react';
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -291,6 +291,7 @@ export default function App() {
     { id: 'schedule',  label: 'Schedule', icon: Calendar },
     { id: 'finance',   label: 'Finance',  icon: PiggyBank },
     { id: 'goals',     label: 'Goals',    icon: Flag },
+    { id: 'ai',        label: 'JAXON',     icon: Bot },
   ];
 
   return (
@@ -384,6 +385,15 @@ export default function App() {
               onAdd={d => add('goals', d)}
               onUpdate={(id, d) => update('goals', id, d)}
               onDelete={id => remove('goals', id)} />
+          )}
+          {tab === 'ai' && (
+            <JaxonAI
+              leads={leads} habits={habits} finances={finances}
+              goals={goals} todos={todos} schedule={schedule}
+              totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit}
+              xp={xp} level={level} todayStr={todayStr}
+              paidLeads={paidLeads} openLeads={openLeads}
+            />
           )}
         </main>
       )}
@@ -1380,6 +1390,274 @@ function GoalModal({ data, onSave, onClose }) {
       <Field label="Notes / Why this matters"><textarea className="input textarea" rows={2} value={f.notes} onChange={e => set('notes',e.target.value)} /></Field>
       <ModalFooter onClose={onClose} onSave={() => f.title.trim() && onSave(f)} />
     </Modal>
+  );
+}
+
+// ─── JAXON AI BUSINESS PARTNER ───────────────────────────────────────────────
+function JaxonAI({ leads, habits, finances, goals, todos, schedule,
+  totalIncome, totalExpenses, profit, xp, level, todayStr, paidLeads, openLeads }) {
+
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+  const bottomRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+
+  // Build full business context from all Firebase data
+  const buildContext = () => {
+    const mrr = leads.filter(l => l.status === 'Paid' && l.retainerAmount)
+      .reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
+    const overdueRetainers = leads.filter(l => {
+      if (!l.retainerDueDay || !l.retainerAmount) return false;
+      const today = new Date();
+      const dueDay = parseInt(l.retainerDueDay);
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      return Math.ceil((thisMonth - today) / 86400000) < 0;
+    });
+    const habitsToday = habits.filter(h => h.completions?.[todayStr]).length;
+    const todayTasks = todos.filter(t => t.addedDate === todayStr);
+    const todayDone = todayTasks.filter(t => t.doneOn?.[todayStr]).length;
+    const today = new Date();
+    const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][today.getDay()];
+    const timeOfDay = today.getHours() < 12 ? 'morning' : today.getHours() < 17 ? 'afternoon' : 'evening';
+
+    return `You are JAXON — Jadan Spencer's personal AI business partner, coach, and accountability system built into his JCommerce Founder Console.
+
+PERSONALITY: You are sharp, direct, motivating, and strategic. You speak like a brilliant business partner who knows Jadan's business inside and out. You celebrate wins, call out weaknesses, push him to be better, and always think about the next move. You are never generic. Every response is specific to HIS data. You are Jarvis meets a seasoned entrepreneur mentor.
+
+TODAY: ${dayName} ${timeOfDay}, ${todayStr}
+
+━━━ JADAN'S BUSINESS DATA ━━━
+
+FINANCES:
+- Total Income: J$${totalIncome.toLocaleString()}
+- Total Expenses: J$${totalExpenses.toLocaleString()}
+- Net Profit: J$${profit.toLocaleString()} ${profit >= 0 ? '✓' : '⚠ NEGATIVE'}
+- Monthly Recurring Revenue (MRR): J$${mrr.toLocaleString()}
+- Entrepreneur Level: ${level} (${xp} XP total)
+- Monthly Target (Level ${level}): J$${(level * 5000).toLocaleString()}
+
+PIPELINE — ${leads.length} total leads:
+${leads.length === 0 ? '- No leads yet' : leads.map(l =>
+  `- ${l.businessName} | ${l.status} | J$${Number(l.value||0).toLocaleString()} contract${l.retainerAmount ? ` | J$${Number(l.retainerAmount).toLocaleString()}/mo retainer` : ''}${l.nextAction ? ` | Next: ${l.nextAction} (${l.nextActionDate})` : ''}`
+).join('\n')}
+
+PAID CLIENTS: ${paidLeads.length} | OPEN PIPELINE: ${openLeads.length}
+${overdueRetainers.length > 0 ? `⚠ OVERDUE RETAINERS: ${overdueRetainers.map(l => l.businessName).join(', ')}` : ''}
+
+RECENT TRANSACTIONS (last 10):
+${finances.slice(0, 10).map(f => `- ${f.type === 'income' ? '+' : '-'}J$${Number(f.amount).toLocaleString()} | ${f.description} | ${f.date}`).join('\n') || '- No transactions yet'}
+
+HABITS (${habits.length} total, ${habitsToday}/${habits.length} done today):
+${habits.map(h => {
+  const streak = (() => {
+    let s = 0;
+    const today = new Date();
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      if (h.completions?.[key]) s++; else if (i > 0) break;
+    }
+    return s;
+  })();
+  return `- ${h.name} | Today: ${h.completions?.[todayStr] ? '✓' : '✗'} | Streak: ${streak} days`;
+}).join('\n') || '- No habits set'}
+
+TASKS TODAY (${todayDone}/${todayTasks.length} done):
+${todayTasks.map(t => `- ${t.doneOn?.[todayStr] ? '✓' : '✗'} ${t.title}`).join('\n') || '- No tasks added today'}
+
+GOALS (${goals.length} active):
+${goals.map(g => {
+  const pct = Math.round(((Number(g.current)||0)/(Number(g.target)||1))*100);
+  return `- ${g.title} | ${pct}% complete (${g.current||0}/${g.target||0} ${g.unit||''}) | Due: ${g.dueDate||'no date'}`;
+}).join('\n') || '- No goals set'}
+
+SCHEDULE TODAY (${dayName}):
+${schedule.filter(s => s.day === dayName.slice(0,3)).sort((a,b) => (a.start||'').localeCompare(b.start||'')).map(b => `- ${b.start}-${b.end} ${b.title} (${b.type})`).join('\n') || '- Nothing scheduled'}
+
+━━━ YOUR ROLE ━━━
+- Give specific, data-driven advice based on the numbers above
+- Notice patterns, flag risks, celebrate wins
+- Help with outreach scripts, client strategies, pricing decisions
+- Push Jadan to hit his targets and level up
+- When asked about the business, always reference real numbers from above
+- Be concise but impactful. No fluff. Every word should add value.`;
+  };
+
+  // Send message to Claude API
+  const sendMessage = async (userMsg) => {
+    if (!userMsg.trim() || loading) return;
+
+    const userMessage = { role: 'user', content: userMsg.trim() };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          system: buildContext(),
+          messages: newMessages.map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+
+      const data = await response.json();
+      const reply = data.content?.[0]?.text || 'Something went wrong — try again.';
+      setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Connection error. Check your internet and try again.' }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Greeting on first load
+  useEffect(() => {
+    if (initialized) return;
+    setInitialized(true);
+    const today = new Date();
+    const hour = today.getHours();
+    const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    const habitsToday = habits.filter(h => h.completions?.[todayStr]).length;
+    const todayTasks = todos.filter(t => t.addedDate === todayStr);
+    const todayDone = todayTasks.filter(t => t.doneOn?.[todayStr]).length;
+    const overdueRetainers = leads.filter(l => {
+      if (!l.retainerDueDay) return false;
+      const dueDay = parseInt(l.retainerDueDay);
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), dueDay);
+      return Math.ceil((thisMonth - today) / 86400000) < 0;
+    });
+
+    let greeting_msg = `${greeting}, Jadan. I'm JAXON — your JCommerce business partner.\n\n`;
+
+    if (profit > 0) {
+      greeting_msg += `📈 You're profitable at J$${profit.toLocaleString()} net. `;
+    } else if (profit < 0) {
+      greeting_msg += `⚠️ You're at J$${profit.toLocaleString()} net profit — we need to talk about that. `;
+    }
+
+    if (paidLeads.length > 0) {
+      greeting_msg += `You have ${paidLeads.length} paid client${paidLeads.length !== 1 ? 's' : ''}.`;
+    }
+
+    greeting_msg += `\n\n`;
+
+    if (overdueRetainers.length > 0) {
+      greeting_msg += `🚨 **Action needed:** ${overdueRetainers.map(l => l.businessName).join(', ')} ${overdueRetainers.length === 1 ? 'has' : 'have'} overdue retainer payments. Chase that today.\n\n`;
+    }
+
+    if (habitsToday < habits.length && habits.length > 0) {
+      greeting_msg += `💪 ${habitsToday}/${habits.length} habits done. `;
+    }
+
+    if (todayTasks.length === 0) {
+      greeting_msg += `You haven't added any tasks today yet — get your to-do list in.\n\n`;
+    } else if (todayDone < todayTasks.length) {
+      greeting_msg += `${todayDone}/${todayTasks.length} tasks done today.\n\n`;
+    }
+
+    if (openLeads.length > 0) {
+      greeting_msg += `You have ${openLeads.length} open lead${openLeads.length !== 1 ? 's' : ''} in the pipeline. What are you doing to close them?\n\n`;
+    }
+
+    greeting_msg += `What do you want to work on?`;
+
+    setMessages([{ role: 'assistant', content: greeting_msg }]);
+  }, []);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const quickPrompts = [
+    "What should I focus on today?",
+    "How's my business doing?",
+    "Help me close my open leads",
+    "Write a follow-up message for a client",
+    "Where am I losing money?",
+    "Give me a weekly action plan",
+  ];
+
+  return (
+    <div className="ai-container">
+      {/* Header */}
+      <div className="ai-header">
+        <div className="ai-avatar">
+          <Bot size={20} />
+        </div>
+        <div>
+          <div className="ai-name">JAXON</div>
+          <div className="ai-status">
+            <span className="ai-status-dot" />
+            Always on · Knows your business
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="ai-messages">
+        {messages.map((m, i) => (
+          <div key={i} className={`ai-message ${m.role}`}>
+            {m.role === 'assistant' && (
+              <div className="ai-bubble-avatar"><Bot size={14} /></div>
+            )}
+            <div className={`ai-bubble ${m.role}`}>
+              {m.content.split('\n').map((line, j) => (
+                <span key={j}>
+                  {line.replace(/\*\*(.*?)\*\*/g, '$1')}
+                  {j < m.content.split('\n').length - 1 && <br />}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+
+        {loading && (
+          <div className="ai-message assistant">
+            <div className="ai-bubble-avatar"><Bot size={14} /></div>
+            <div className="ai-bubble assistant ai-typing">
+              <span /><span /><span />
+            </div>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Quick prompts — show when no conversation yet */}
+      {messages.length <= 1 && !loading && (
+        <div className="ai-quick-prompts">
+          {quickPrompts.map((p, i) => (
+            <button key={i} className="ai-quick-btn" onClick={() => sendMessage(p)}>{p}</button>
+          ))}
+        </div>
+      )}
+
+      {/* Input */}
+      <div className="ai-input-row">
+        <input
+          ref={inputRef}
+          className="ai-input"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage(input)}
+          placeholder="Ask JAXON anything..."
+          disabled={loading}
+        />
+        <button
+          className="ai-send-btn"
+          onClick={() => sendMessage(input)}
+          disabled={loading || !input.trim()}>
+          {loading ? <Loader size={16} className="ai-spin" /> : <Send size={16} />}
+        </button>
+      </div>
+    </div>
   );
 }
 
