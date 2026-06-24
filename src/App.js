@@ -593,8 +593,9 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                       {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
                       {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
                     </div>
-                    <div style={{fontSize:'11px',color:'var(--c-muted)',fontFamily:'var(--f-mono)'}}>
-                      {l.contactName||'No contact'}{l.nextActionDate ? ` · ${l.nextActionDate}` : ''}
+                    <div style={{fontSize:'11px',color:'var(--c-muted)',fontFamily:'var(--f-mono)',display:'flex',gap:'0.5rem',flexWrap:'wrap'}}>
+                      <span>{l.contactName||'No contact'}</span>
+                      <span style={{color:l.phone?'#25d366':'var(--c-dim)'}}>{l.phone||'No number found'}</span>
                     </div>
                     {total > 0 && (
                       <div style={{marginTop:'5px',height:'2px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
@@ -615,19 +616,19 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                 {/* Drawer */}
                 {isOpen && (
                   <div className="lead-drawer">
-                    {(l.contactName||l.phone) && (
-                      <div style={{display:'flex',gap:'0.75rem',flexWrap:'wrap'}}>
-                        {l.contactName && <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'var(--c-secondary)'}}>👤 {l.contactName}</span>}
-                        {l.phone && (
-                          <div style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
-                            <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'var(--c-secondary)'}}>📞 {l.phone}</span>
-                            <a href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="wa-btn" onClick={e=>e.stopPropagation()}>
-                              <Icons.whatsapp size={13}/> WhatsApp
-                            </a>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div style={{display:'flex',alignItems:'center',gap:'0.75rem',flexWrap:'wrap'}}>
+                      <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'var(--c-secondary)'}}>👤 {l.contactName||'No contact'}</span>
+                      {l.phone ? (
+                        <div style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
+                          <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'#25d366'}}>📞 {l.phone}</span>
+                          <a href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="wa-btn" onClick={e=>e.stopPropagation()}>
+                            <Icons.whatsapp size={13}/> WhatsApp
+                          </a>
+                        </div>
+                      ) : (
+                        <span style={{fontFamily:'var(--f-mono)',fontSize:'11px',color:'var(--c-dim)'}}>📞 No number found</span>
+                      )}
+                    </div>
                     {l.notes && <div className="notes-box">{l.notes}</div>}
                     {total > 0 && (
                       <div>
