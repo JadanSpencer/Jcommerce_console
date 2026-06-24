@@ -1721,3 +1721,207 @@ select.input {
   0%,100% { box-shadow: 0 0 12px rgba(59,130,246,0.4), 0 0 24px rgba(59,130,246,0.15), inset 0 1px 0 rgba(255,255,255,0.25); }
   50%      { box-shadow: 0 0 18px rgba(59,130,246,0.7), 0 0 36px rgba(59,130,246,0.3), inset 0 1px 0 rgba(255,255,255,0.3); }
 }
+
+
+/* ═══════════════════════════════════════════════
+   UNIVERSAL HOLLOW — EVERY NUMBER, EVERY LABEL
+═══════════════════════════════════════════════ */
+
+/* Finance row amounts */
+.finance-amount {
+  color: transparent !important;
+  -webkit-text-stroke: 1px currentColor;
+  text-shadow: 0 0 8px currentColor, 0 0 20px currentColor, 0 0 36px currentColor;
+}
+
+/* Hero sub text */
+.hero-sub {
+  font-size: 12.5px;
+  color: transparent;
+  -webkit-text-stroke: 0.4px rgba(148,163,184,0.7);
+  text-shadow: 0 0 6px rgba(59,130,246,0.3), 0 0 14px rgba(59,130,246,0.12);
+  line-height: 1.5;
+}
+
+/* Mono small spans — all hollow */
+.mono-val {
+  color: transparent;
+  -webkit-text-stroke: 0.5px currentColor;
+  text-shadow: 0 0 6px currentColor, 0 0 14px currentColor;
+}
+
+/* Any inline style color text — override with hollow via global selectors */
+/* Target all font-mono elements inside section */
+.section span[style*="color"],
+.section div[style*="fontFamily"][style*="mono"],
+.section div[style*="font-family"][style*="mono"] {
+  -webkit-text-stroke: 0.4px currentColor;
+  color: transparent !important;
+  text-shadow: 0 0 6px currentColor, 0 0 16px currentColor, 0 0 28px currentColor;
+}
+
+/* Finance row values — the +/- amounts */
+.section .card div[style*="fontWeight"][style*="700"],
+.section .card div[style*="font-weight"][style*="700"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.75px currentColor;
+  text-shadow: 0 0 8px currentColor, 0 0 20px currentColor, 0 0 35px currentColor;
+}
+
+/* All heading-weight text in cards */
+.card [style*="fontWeight:700"],
+.card [style*="fontWeight:800"],
+.card [style*="fontWeight:600"],
+.card [style*="font-weight: 700"],
+.card [style*="font-weight: 600"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.6px currentColor;
+  text-shadow: 0 0 6px currentColor, 0 0 16px currentColor;
+}
+
+/* XP / mono number values everywhere */
+.section *[style*="fontFamily:'var(--f-mono)'"],
+.section *[style*="fontFamily:"var(--f-mono)""],
+.section *[style*="fontFamily: var(--f-mono)"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.5px currentColor;
+  text-shadow: 0 0 7px currentColor, 0 0 18px currentColor, 0 0 32px currentColor;
+}
+
+/* Stat card value — already has class, boost it */
+.stat-value {
+  filter: drop-shadow(0 0 6px currentColor);
+}
+
+/* Lead card business name */
+.lead-header span[style*="fontWeight:700"],
+.lead-header span[style*="font-weight"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.75px rgba(241,245,249,0.9);
+  text-shadow: 0 0 8px rgba(59,130,246,0.7), 0 0 20px rgba(59,130,246,0.3);
+}
+
+/* Finance hero numbers */
+.hero-big.filled {
+  color: transparent !important;
+  -webkit-text-stroke: 1.5px currentColor;
+  text-shadow:
+    0 0 12px currentColor,
+    0 0 28px currentColor,
+    0 0 50px currentColor,
+    0 0 80px currentColor;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+/* Wallet / finance number rows */
+[style*="color:'#00f5c4'"],
+[style*="color: #00f5c4"],
+[style*="color:'#10b981'"],
+[style*="color: #10b981"],
+[style*="color:'var(--c-mint)'"],
+[style*="color: var(--c-mint)"],
+[style*="color:'#ef4444'"],
+[style*="color: #ef4444"],
+[style*="color:'var(--c-rose)'"],
+[style*="color: var(--c-rose)"],
+[style*="color:'var(--c-gold)'"],
+[style*="color:'#f59e0b'"],
+[style*="color:'var(--c-lavender)'"],
+[style*="color:'#8b5cf6'"],
+[style*="color:'var(--c-blue)'"],
+[style*="color:'#3b82f6'"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.6px currentColor;
+  text-shadow: 0 0 8px currentColor, 0 0 20px currentColor, 0 0 38px currentColor;
+}
+
+/* Section body text that's secondary — lighter aura */
+.section p,
+.section [style*="color:'var(--c-secondary)'"],
+.section [style*="color: var(--c-secondary)"],
+.section [style*="color:'var(--c-muted)'"],
+.section [style*="color: var(--c-muted)"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.35px rgba(148,163,184,0.6);
+  text-shadow: 0 0 4px rgba(148,163,184,0.3), 0 0 10px rgba(59,130,246,0.1);
+}
+
+/* Modal text */
+.modal [style*="fontSize:'15px'"],
+.modal [style*="fontSize:'16px'"],
+.modal [style*="fontWeight:800"],
+.modal [style*="fontWeight:700"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.6px rgba(241,245,249,0.9);
+  text-shadow: 0 0 6px rgba(59,130,246,0.6), 0 0 16px rgba(59,130,246,0.25);
+}
+
+/* Badge text */
+.badge {
+  color: transparent !important;
+  -webkit-text-stroke: 0.4px currentColor;
+  text-shadow: 0 0 4px currentColor, 0 0 10px currentColor;
+}
+
+/* JAXON dashboard numbers */
+.grid-3 [style*="fontSize:'18px'"] {
+  color: transparent !important;
+  -webkit-text-stroke: 1px currentColor;
+  text-shadow: 0 0 8px currentColor, 0 0 20px currentColor, 0 0 36px currentColor;
+}
+
+/* Pill filter buttons text */
+.pill {
+  color: transparent !important;
+  -webkit-text-stroke: 0.4px rgba(148,163,184,0.7);
+  text-shadow: 0 0 4px rgba(100,116,139,0.4);
+}
+.pill.active {
+  -webkit-text-stroke: 0.5px rgba(59,130,246,0.95);
+  text-shadow: 0 0 6px rgba(59,130,246,0.9), 0 0 14px rgba(59,130,246,0.4);
+}
+
+/* Button text */
+.btn-primary {
+  color: transparent !important;
+  -webkit-text-stroke: 0.5px rgba(255,255,255,0.95);
+  text-shadow: 0 0 6px rgba(255,255,255,0.5), 0 0 14px rgba(59,130,246,0.3);
+}
+
+.btn-ghost {
+  color: transparent !important;
+  -webkit-text-stroke: 0.4px rgba(148,163,184,0.8);
+  text-shadow: 0 0 5px rgba(148,163,184,0.3);
+}
+
+/* Tab button text */
+.tab-btn {
+  color: transparent !important;
+  -webkit-text-stroke: 0.4px rgba(100,116,139,0.7);
+  text-shadow: 0 0 4px rgba(100,116,139,0.2);
+}
+.tab-btn.active {
+  -webkit-text-stroke: 0.5px rgba(241,245,249,0.9);
+  text-shadow: 0 0 6px rgba(241,245,249,0.3), 0 0 14px rgba(59,130,246,0.2);
+}
+
+/* Empty state text */
+.empty-text, [class="empty"] {
+  color: transparent !important;
+  -webkit-text-stroke: 0.4px rgba(71,85,105,0.7);
+  text-shadow: 0 0 4px rgba(59,130,246,0.1);
+}
+
+/* Input placeholder stays normal for usability */
+input::placeholder, textarea::placeholder {
+  color: rgba(71,85,105,0.6) !important;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: none !important;
+}
+
+/* Input typed text stays readable */
+input, textarea, select {
+  color: rgba(241,245,249,0.95) !important;
+  -webkit-text-stroke: 0 !important;
+  text-shadow: 0 0 8px rgba(59,130,246,0.2) !important;
+}
