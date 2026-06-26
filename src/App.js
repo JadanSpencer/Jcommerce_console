@@ -51,16 +51,16 @@ const Icons = {
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const LEAD_STATUSES = ['New','Contacted','Demo Sent','Negotiating','Paid','Flaked','Lost'];
 const STATUS_COLOR = {
-  New:'#8a8298', Contacted:'#5ba4e0', 'Demo Sent':'#c9a84c',
-  Negotiating:'#e8c96a', Paid:'#1db87e', Flaked:'#e84855', Lost:'#dc3545'
+  New:'#3a4860', Contacted:'#00d4ff', 'Demo Sent':'#f0c060',
+  Negotiating:'#e8a030', Paid:'#1adb8a', Flaked:'#ff6040', Lost:'#ff6040'
 };
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const EXPENSE_CATS = ['Hosting','AI API','Tools','Transport','Food','Education','Other'];
 const INCOME_CATS = ['Setup Fee','First Deposit','Second Deposit','Monthly Retainer','Completion Fee','Freelance','Other'];
 const GOAL_CATS = ['Revenue','Clients','Skills','Health','Personal'];
 const BLOCK_COLORS = {
-  Work:'#5ba4e0', Coding:'#c9a84c', Outreach:'#1db87e',
-  University:'#a78bfa', Rest:'#3d3652', Personal:'#e8572a', Other:'#dc3545'
+  Work:'#00d4ff', Coding:'#f0c060', Outreach:'#1adb8a',
+  University:'#7b6cf5', Rest:'#1e2a3f', Personal:'#ff8040', Other:'#ff6040'
 };
 const PAYMENT_STAGES = ['First Deposit','Second Deposit','Completion Fee','Monthly Retainer'];
 
@@ -73,10 +73,10 @@ const LOGO_B64 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1B
 
 const EMOTION_LEVELS = [
   { emoji:'😎', label:'Thriving',   color:'#3b82f6', bg:'rgba(201,168,76,0.08)',  desc:'Ahead of target' },
-  { emoji:'😊', label:'Good',       color:'#10c97a', bg:'rgba(16,185,129,0.08)',  desc:'On track' },
-  { emoji:'😐', label:'Watch Out',  color:'#f5a623', bg:'rgba(245,166,35,0.08)',  desc:'Needs attention' },
+  { emoji:'😊', label:'Good',       color:'#1adb8a', bg:'rgba(16,185,129,0.08)',  desc:'On track' },
+  { emoji:'😐', label:'Watch Out',  color:'#f0c060', bg:'rgba(240,192,96,0.08)',  desc:'Needs attention' },
   { emoji:'😟', label:'Struggling', color:'#f97316', bg:'rgba(249,115,22,0.08)',  desc:'Pull up your socks' },
-  { emoji:'🚨', label:'Danger',     color:'#e84855', bg:'rgba(232,72,85,0.08)',   desc:'Critical — act now' },
+  { emoji:'🚨', label:'Danger',     color:'#ff6040', bg:'rgba(255,96,64,0.08)',   desc:'Critical — act now' },
 ];
 
 function calcEmotionLevel(finances, leads, xp, level) {
@@ -405,7 +405,7 @@ export default function App() {
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(201,168,76,0.2)',color:'#1db87e'}}>📄</button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(201,168,76,0.2)',color:'#1adb8a'}}>📄</button>
           {todayBriefing && (
             <button className="briefing-pill" onClick={() => setBriefingOpen(true)}>
               <span className="briefing-dot"/>
@@ -457,11 +457,11 @@ export default function App() {
             <div className="modal-head">
               <div>
                 <div style={{fontFamily:'var(--fe)',fontWeight:800,fontSize:'16px'}}>Morning Briefing</div>
-                <div style={{fontSize:'11px',color:'var(--t2)',fontFamily:'var(--fm)'}}>{todayBriefing.date}</div>
+                <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{todayBriefing.date}</div>
               </div>
               <button className="icon-btn" onClick={() => setBriefingOpen(false)}><Icons.close size={16}/></button>
             </div>
-            <div style={{fontSize:'13.5px',lineHeight:'1.8',color:'var(--t1)',whiteSpace:'pre-line',overflowY:'auto',flex:1}}>
+            <div style={{fontSize:'13.5px',lineHeight:'1.8',color:'var(--mist-1)',whiteSpace:'pre-line',overflowY:'auto',flex:1}}>
               {todayBriefing.content}
             </div>
           </div>
@@ -504,10 +504,10 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
 
       {/* Stats */}
       <div className="grid-2">
-        <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}    icon={Icons.trend}   color={profit>=0?'#1db87e':'#dc3545'} />
-        <StatCard label="Paid Clients"  value={paidLeads.length}                    icon={Icons.users}   color="var(--gold)" />
-        <StatCard label="Open Pipeline" value={openLeads.length}                    icon={Icons.target}  color="var(--gold)" />
-        <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--gold)" />
+        <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}    icon={Icons.trend}   color={profit>=0?'#1adb8a':'#ff6040'} />
+        <StatCard label="Paid Clients"  value={paidLeads.length}                    icon={Icons.users}   color="var(--horizon)" />
+        <StatCard label="Open Pipeline" value={openLeads.length}                    icon={Icons.target}  color="var(--horizon)" />
+        <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--horizon)" />
       </div>
 
       {/* Today habits quick */}
@@ -517,11 +517,11 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
           <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
             {habits.map(h => (
               <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleHabit(h,todayStr)} style={{color:h.completions?.[todayStr]?'#1db87e':'var(--t3)',flexShrink:0}}>
+                <button className="check-btn" onClick={()=>onToggleHabit(h,todayStr)} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
                   {h.completions?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                 </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--t2)':'var(--t0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
-                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1db87e',flexShrink:0}}>+10</span>}
+                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
+                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',flexShrink:0}}>+10</span>}
               </div>
             ))}
           </div>
@@ -535,11 +535,11 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
           <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
             {todayTodos.map(t => (
               <div key={t.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'#a78bfa':'var(--t3)',flexShrink:0}}>
+                <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
                   {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                 </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--t2)':'var(--t0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--t2)':'var(--t0)'}}>{t.title}</span></span>
-                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#a78bfa',flexShrink:0}}>+5</span>}
+                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></span>
+                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5',flexShrink:0}}>+5</span>}
               </div>
             ))}
           </div>
@@ -696,7 +696,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
           onClick={()=>setShowFilters(v=>!v)}>
           <Icons.target size={14}/>
           {activeFilters>0 && (
-            <span style={{position:'absolute',top:-4,right:-4,background:'#1db87e',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{activeFilters}</span>
+            <span style={{position:'absolute',top:-4,right:-4,background:'#1adb8a',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{activeFilters}</span>
           )}
         </button>
         <button className="btn-primary icon-only" onClick={()=>setForm({})}><Icons.plus size={16}/></button>
@@ -717,7 +717,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
           {/* Status */}
           <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--t2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Status</div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Status</div>
             <div className="pill-row">
               {['All',...LEAD_STATUSES].map(s=>(
                 <button key={s} className={`pill ${fStatus===s?'active':''}`} onClick={()=>{setFStatus(s);setPage(0);}}>{s}</button>
@@ -727,7 +727,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
           {/* Location */}
           <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--t2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Location / Parish</div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Location / Parish</div>
             <div className="pill-row">
               {['All',...leadLocations,...JAMAICAN_PARISHES.filter(p=>!leadLocations.includes(p))].slice(0,12).map(loc=>(
                 <button key={loc} className={`pill ${fLocation===loc?'active':''}`} onClick={()=>{setFLocation(loc);setPage(0);}}>{loc}</button>
@@ -737,7 +737,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
           {/* WhatsApp */}
           <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--t2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>WhatsApp Number</div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>WhatsApp Number</div>
             <div className="pill-row">
               {['All','Yes','No'].map(w=>(
                 <button key={w} className={`pill ${fWhatsApp===w?'active':''}`} onClick={()=>{setFWhatsApp(w);setPage(0);}}>{w==='Yes'?'✓ Has number':w==='No'?'✗ No number':'All'}</button>
@@ -747,7 +747,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
           {/* Source */}
           <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--t2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Source</div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Source</div>
             <div className="pill-row">
               {['All','JAXON','Manual'].map(s=>(
                 <button key={s} className={`pill ${fSource===s?'active':''}`} onClick={()=>{setFSource(s);setPage(0);}}>{s}</button>
@@ -757,7 +757,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
           {/* Priority */}
           <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--t2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Priority</div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Priority</div>
             <div className="pill-row">
               {['All','high','medium','low'].map(p=>(
                 <button key={p} className={`pill ${fPriority===p?'active':''}`} onClick={()=>{setFPriority(p);setPage(0);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>
@@ -782,21 +782,21 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             <div className="modal-head">
               <div>
                 <div style={{fontWeight:800,fontSize:'15px'}}>📞 Dial Queue</div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)'}}>{dialIdx+1} of {dialQueue.length}</div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{dialIdx+1} of {dialQueue.length}</div>
               </div>
               <button className="icon-btn" onClick={()=>setShowDial(false)}><Icons.close size={15}/></button>
             </div>
 
             {/* Progress bar */}
             <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-              <div style={{height:'100%',width:`${((dialIdx+1)/dialQueue.length)*100}%`,background:'#1db87e',borderRadius:'99px',transition:'width 0.4s'}}/>
+              <div style={{height:'100%',width:`${((dialIdx+1)/dialQueue.length)*100}%`,background:'#1adb8a',borderRadius:'99px',transition:'width 0.4s'}}/>
             </div>
 
             {/* Current contact */}
             <div className="card" style={{textAlign:'center',padding:'1.5rem 1rem'}}>
               <div style={{fontSize:'28px',marginBottom:'0.5rem'}}>📞</div>
               <div style={{fontWeight:800,fontSize:'17px',marginBottom:'0.25rem'}}>{dialQueue[dialIdx].name}</div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'14px',color:'#1db87e',marginBottom:'1rem'}}>{dialQueue[dialIdx].phone}</div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'14px',color:'#1adb8a',marginBottom:'1rem'}}>{dialQueue[dialIdx].phone}</div>
               <div style={{display:'flex',gap:'0.5rem',justifyContent:'center',flexWrap:'wrap'}}>
                 <a href={`tel:${dialQueue[dialIdx].phone}`}
                   className="btn-primary" style={{textDecoration:'none',gap:'0.5rem'}}>
@@ -813,8 +813,8 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             {/* Draft message */}
             {dialQueue[dialIdx].draft && (
               <div className="draft-box">
-                <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1db87e',marginBottom:'4px'}}>SCRIPT / DRAFT</div>
-                <div style={{fontSize:'12px',color:'var(--t1)',lineHeight:'1.6'}}>{dialQueue[dialIdx].draft}</div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px'}}>SCRIPT / DRAFT</div>
+                <div style={{fontSize:'12px',color:'var(--mist-1)',lineHeight:'1.6'}}>{dialQueue[dialIdx].draft}</div>
               </div>
             )}
 
@@ -824,7 +824,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                 onClick={()=>setDialIdx(i=>Math.max(0,i-1))} disabled={dialIdx===0}>
                 ← Prev
               </button>
-              <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#dc3545'}}
+              <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff6040'}}
                 onClick={()=>setDialIdx(i=>Math.min(dialQueue.length-1,i+1))}>
                 Skip →
               </button>
@@ -860,17 +860,17 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         <span style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
                         <span className="badge" style={{background:`${STATUS_COLOR[l.status]}18`,color:STATUS_COLOR[l.status],border:`1px solid ${STATUS_COLOR[l.status]}28`}}>{l.status}</span>
                         {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
-                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#dc3545',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
+                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff6040',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
                         {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
                       </div>
-                      <div style={{fontSize:'11px',color:'var(--t2)',fontFamily:'var(--fm)',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
+                      <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
                         {l.location && <span>📍 {l.location}</span>}
                         <span>{l.contactName||'No contact'}</span>
-                        <span style={{color:l.phone?'#25d366':'var(--t3)'}}>{l.phone||'No number'}</span>
+                        <span style={{color:l.phone?'#25d366':'var(--mist-3)'}}>{l.phone||'No number'}</span>
                       </div>
                       {total>0 && (
                         <div style={{marginTop:'5px',height:'2px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#c9a84c':'#1db87e',borderRadius:'99px',transition:'width 0.5s'}}/>
+                          <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#f0c060':'#1adb8a',borderRadius:'99px',transition:'width 0.5s'}}/>
                         </div>
                       )}
                     </div>
@@ -878,7 +878,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                       <span style={{fontFamily:'var(--fm)',fontWeight:700,fontSize:'12px',color:STATUS_COLOR[l.status]}}>
                         {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
                       </span>
-                      <span style={{color:'var(--t2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>
+                      <span style={{color:'var(--mist-2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>
                         <Icons.chevDown size={14}/>
                       </span>
                     </div>
@@ -887,34 +887,34 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                   {isOpen && (
                     <div className="lead-drawer">
                       <div style={{display:'flex',alignItems:'center',gap:'0.75rem',flexWrap:'wrap'}}>
-                        <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--t1)'}}>👤 {l.contactName||'No contact'}</span>
+                        <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)'}}>👤 {l.contactName||'No contact'}</span>
                         {l.phone ? (
                           <div style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
                             <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#25d366'}}>📞 {l.phone}</span>
                             <a href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="wa-btn" onClick={e=>e.stopPropagation()}>
                               <Icons.whatsapp size={13}/> WhatsApp
                             </a>
-                            <a href={`tel:${l.phone}`} className="wa-btn" style={{background:'rgba(201,168,76,0.1)',borderColor:'rgba(201,168,76,0.25)',color:'#1db87e'}} onClick={e=>e.stopPropagation()}>
+                            <a href={`tel:${l.phone}`} className="wa-btn" style={{background:'rgba(201,168,76,0.1)',borderColor:'rgba(201,168,76,0.25)',color:'#1adb8a'}} onClick={e=>e.stopPropagation()}>
                               <Icons.phone size={13}/> Call
                             </a>
                           </div>
                         ) : (
-                          <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--t3)'}}>📞 No number found</span>
+                          <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-3)'}}>📞 No number found</span>
                         )}
                       </div>
-                      {l.location && <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--t2)'}}>📍 {l.location} {l.country ? `· ${l.country}` : ''}</div>}
-                      {l.websiteUrl && <div style={{fontFamily:'var(--fm)',fontSize:'11px'}}><a href={l.websiteUrl} target="_blank" rel="noopener noreferrer" style={{color:'#1db87e'}}>{l.websiteUrl}</a></div>}
+                      {l.location && <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>📍 {l.location} {l.country ? `· ${l.country}` : ''}</div>}
+                      {l.websiteUrl && <div style={{fontFamily:'var(--fm)',fontSize:'11px'}}><a href={l.websiteUrl} target="_blank" rel="noopener noreferrer" style={{color:'#1adb8a'}}>{l.websiteUrl}</a></div>}
                       {l.notes && <div className="notes-box">{l.notes}</div>}
                       {total>0 && (
                         <div>
                           <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px'}}>
-                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--t2)'}}>J${received.toLocaleString()} received</span>
-                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:remaining>0?'#c9a84c':'#1db87e'}}>
+                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>J${received.toLocaleString()} received</span>
+                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:remaining>0?'#f0c060':'#1adb8a'}}>
                               {remaining>0?`J$${remaining.toLocaleString()} due`:'✓ Fully paid'}
                             </span>
                           </div>
                           <div style={{height:'4px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                            <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#c9a84c':'#1db87e',borderRadius:'99px'}}/>
+                            <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#f0c060':'#1adb8a',borderRadius:'99px'}}/>
                           </div>
                         </div>
                       )}
@@ -922,16 +922,16 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
                           {payments.map(p=>(
                             <div key={p.id} style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
-                              <span style={{width:5,height:5,borderRadius:'50%',background:'#1db87e',flexShrink:0,display:'inline-block'}}/>
-                              <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--t2)'}}>{p.paymentStage} · J${Number(p.amount).toLocaleString()} · {p.date}</span>
+                              <span style={{width:5,height:5,borderRadius:'50%',background:'#1adb8a',flexShrink:0,display:'inline-block'}}/>
+                              <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>{p.paymentStage} · J${Number(p.amount).toLocaleString()} · {p.date}</span>
                             </div>
                           ))}
                         </div>
                       )}
                       {l.outreachDraft && (
                         <div className="draft-box">
-                          <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1db87e',marginBottom:'4px',letterSpacing:'0.08em'}}>🤖 JAXON DRAFT</div>
-                          <div style={{fontSize:'12px',color:'var(--t1)',lineHeight:'1.6'}}>{l.outreachDraft}</div>
+                          <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px',letterSpacing:'0.08em'}}>🤖 JAXON DRAFT</div>
+                          <div style={{fontSize:'12px',color:'var(--mist-1)',lineHeight:'1.6'}}>{l.outreachDraft}</div>
                         </div>
                       )}
                       {alert && (
@@ -1030,20 +1030,20 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
             return (
               <div key={h.id} className="card habit-card fade-in">
                 <div className="habit-head" onClick={()=>setExpanded(isOpen?null:h.id)}>
-                  <button className="check-btn" onClick={e=>{e.stopPropagation();onToggle(h,todayStr);}} style={{color:h.completions?.[todayStr]?'#1db87e':'var(--t3)',flexShrink:0}}>
+                  <button className="check-btn" onClick={e=>{e.stopPropagation();onToggle(h,todayStr);}} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
                     {h.completions?.[todayStr] ? <Icons.check size={24}/> : <Icons.circle size={24}/>}
                   </button>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--t2)':'var(--t0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</div>
+                    <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</div>
                     <div style={{display:'flex',gap:'0.75rem',marginTop:'2px'}}>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#c9a84c'}}>🔥 {streak}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)'}}>{total} done</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#f0c060'}}>🔥 {streak}</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{total} done</span>
                     </div>
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
                     <button className="icon-btn" onClick={e=>{e.stopPropagation();setForm(h);}}><Icons.edit size={12}/></button>
                     <button className="icon-btn danger-btn" onClick={e=>{e.stopPropagation();onDelete(h.id);}}><Icons.trash size={12}/></button>
-                    <span style={{color:'var(--t2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}><Icons.chevDown size={14}/></span>
+                    <span style={{color:'var(--mist-2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}><Icons.chevDown size={14}/></span>
                   </div>
                 </div>
                 {isOpen && (
@@ -1067,8 +1067,8 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                     <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'0.25rem'}}>
                       {weekDates.map((date,i) => (
                         <div key={date} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                          <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:700,color:date===todayStr?'#1db87e':'var(--t2)'}}>{DAYS[i]}</span>
-                          <button className="check-btn" onClick={()=>onToggle(h,date)} style={{color:h.completions?.[date]?'#1db87e':'var(--t3)'}}>
+                          <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:700,color:date===todayStr?'#1adb8a':'var(--mist-2)'}}>{DAYS[i]}</span>
+                          <button className="check-btn" onClick={()=>onToggle(h,date)} style={{color:h.completions?.[date]?'#1adb8a':'var(--mist-3)'}}>
                             {h.completions?.[date] ? <Icons.check size={19}/> : <Icons.circle size={19}/>}
                           </button>
                         </div>
@@ -1110,19 +1110,19 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
       <div className="hero">
         <div className="hero-eye">Daily Tasks</div>
         <div className="hero-big">{doneCount}/{taskCount}</div>
-        <div className="hero-sub" style={{color:underMin?'#dc3545':'var(--t1)'}}>
+        <div className="hero-sub" style={{color:underMin?'#ff6040':'var(--mist-1)'}}>
           {underMin ? `Add ${5-taskCount} more — minimum 5 daily` : `${doneCount*5} XP earned · ${taskCount}/10 tasks`}
         </div>
       </div>
 
       <div className="xp-rules">
-        {[{l:'+5 XP',d:'Per task done',c:'#1db87e'},{l:'-10 XP',d:'Per missed task',c:'#dc3545'},{l:'Goal 10',d:'Tasks/day',c:'#a78bfa'},{l:'Min 5',d:'Or -10 XP',c:'#c9a84c'}].map(r => (
+        {[{l:'+5 XP',d:'Per task done',c:'#1adb8a'},{l:'-10 XP',d:'Per missed task',c:'#ff6040'},{l:'Goal 10',d:'Tasks/day',c:'#7b6cf5'},{l:'Min 5',d:'Or -10 XP',c:'#f0c060'}].map(r => (
           <div key={r.l} style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
             <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:r.c,flexShrink:0}}>{r.l}</span>
-            <span style={{fontSize:'11px',color:'var(--t2)'}}>{r.d}</span>
+            <span style={{fontSize:'11px',color:'var(--mist-2)'}}>{r.d}</span>
           </div>
         ))}
-        {missedYest > 0 && <div style={{gridColumn:'1/-1',color:'#dc3545',fontFamily:'var(--fm)',fontSize:'11px'}}>⚠ {missedYest} missed yesterday = -{missedYest*10} XP</div>}
+        {missedYest > 0 && <div style={{gridColumn:'1/-1',color:'#ff6040',fontFamily:'var(--fm)',fontSize:'11px'}}>⚠ {missedYest} missed yesterday = -{missedYest*10} XP</div>}
       </div>
 
       <div style={{display:'flex',gap:'0.5rem'}}>
@@ -1133,11 +1133,11 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
       {taskCount > 0 && (
         <div>
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)'}}>Today's progress</span>
-            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#a78bfa'}}>{taskCount}/10 · {doneCount} done</span>
+            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>Today's progress</span>
+            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5'}}>{taskCount}/10 · {doneCount} done</span>
           </div>
           <div style={{height:'4px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.min(100,(taskCount/10)*100)}%`,background:'linear-gradient(90deg,var(--gold),var(--plat-dim))',borderRadius:'99px',transition:'width 0.4s'}}/>
+            <div style={{height:'100%',width:`${Math.min(100,(taskCount/10)*100)}%`,background:'linear-gradient(90deg,var(--horizon),var(--mist-2))',borderRadius:'99px',transition:'width 0.4s'}}/>
           </div>
         </div>
       )}
@@ -1147,15 +1147,15 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           {sorted.map(t => (
             <div key={t.id} className="card fade-in" style={{padding:'0.8rem 1rem'}}>
               <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#a78bfa':'var(--t3)',flexShrink:0}}>
+                <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
                   {t.doneOn?.[todayStr] ? <Icons.check size={24}/> : <Icons.circle size={24}/>}
                 </button>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--t2)':'var(--t0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--t2)':'var(--t0)'}}>{t.title}</span></div>
-                  {t.note && <div style={{fontSize:'11.5px',color:'var(--t2)',marginTop:'1px'}}>{t.note}</div>}
+                  <div style={{fontWeight:600,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></div>
+                  {t.note && <div style={{fontSize:'11.5px',color:'var(--mist-2)',marginTop:'1px'}}>{t.note}</div>}
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                  {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#a78bfa'}}>+5</span>}
+                  {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5'}}>+5</span>}
                   <button className="icon-btn" onClick={()=>setForm(t)}><Icons.edit size={12}/></button>
                   <button className="icon-btn danger-btn" onClick={()=>onDelete(t.id)}><Icons.trash size={12}/></button>
                 </div>
@@ -1172,10 +1172,10 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
             {olderTasks.map(t => (
               <div key={t.id} className="card fade-in" style={{padding:'0.75rem 1rem',opacity:0.7}}>
                 <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                  <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#a78bfa':'var(--t3)',flexShrink:0}}>
+                  <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
                     {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                   </button>
-                  <span style={{flex:1,minWidth:0,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--t2)':'var(--t1)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</span>
+                  <span style={{flex:1,minWidth:0,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-1)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</span>
                   <button className="icon-btn danger-btn" onClick={()=>onDelete(t.id)}><Icons.trash size={12}/></button>
                 </div>
               </div>
@@ -1298,13 +1298,13 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
           <span style={{fontSize:'30px',animation:'float 3s ease-in-out infinite'}}>{emotion.emoji}</span>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontWeight:700,fontSize:'15px',color:emotion.color}}>{emotion.label}</div>
-            <div style={{fontSize:'12px',color:'var(--t1)'}}>{emotion.desc}</div>
+            <div style={{fontSize:'12px',color:'var(--mist-1)'}}>{emotion.desc}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
             {EMOTION_LEVELS.map((e,i)=>(
               <div key={i} style={{width:7,height:7,borderRadius:'50%',background:i<=emotionIdx?e.color:'rgba(255,255,255,0.1)',opacity:i===emotionIdx?1:0.4,transition:'all 0.3s'}}/>
             ))}
-            <span style={{color:'var(--t2)',marginLeft:'0.25rem'}}>{meterOpen?<Icons.chevUp size={13}/>:<Icons.chevDown size={13}/>}</span>
+            <span style={{color:'var(--mist-2)',marginLeft:'0.25rem'}}>{meterOpen?<Icons.chevUp size={13}/>:<Icons.chevDown size={13}/>}</span>
           </div>
         </div>
         {meterOpen && (
@@ -1314,17 +1314,17 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             </div>
             <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.75rem'}}>
               <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#3b82f6'}}>Thriving</span>
-              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#e84855'}}>Danger</span>
+              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#ff6040'}}>Danger</span>
             </div>
             <div>
               <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-                <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)'}}>Level {level} target</span>
+                <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>Level {level} target</span>
                 <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:emotion.color}}>J${minTarget.toLocaleString()}/mo</span>
               </div>
               <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
                 <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,background:emotion.color,borderRadius:'99px',transition:'width 0.6s'}}/>
               </div>
-              <div style={{fontSize:'11px',color:'var(--t2)',marginTop:'4px'}}>MRR J${mrr.toLocaleString()} vs J${minTarget.toLocaleString()}/mo target</div>
+              <div style={{fontSize:'11px',color:'var(--mist-2)',marginTop:'4px'}}>MRR J${mrr.toLocaleString()} vs J${minTarget.toLocaleString()}/mo target</div>
             </div>
           </div>
         )}
@@ -1332,15 +1332,15 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
       <div className="hero">
         <div className="hero-eye">Finance</div>
-        <div className="hero-big" style={{color:profit>=0?'#1db87e':'#dc3545'}}>J${profit.toLocaleString()}</div>
+        <div className="hero-big" style={{color:profit>=0?'#1adb8a':'#ff6040'}}>J${profit.toLocaleString()}</div>
         <div className="hero-sub">Net profit · J${totalIncome.toLocaleString()} in · J${totalExpenses.toLocaleString()} out{mrr>0?` · MRR J${mrr.toLocaleString()}`:''}</div>
       </div>
 
       <div className="grid-2">
-        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar}   color="var(--gold)"/>
-        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar}   color="var(--crimson)"/>
-        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}`}           icon={Icons.trend}    color="var(--plat-dim)"/>
-        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--gold)"/>
+        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar}   color="var(--horizon)"/>
+        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar}   color="var(--fire)"/>
+        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}`}           icon={Icons.trend}    color="var(--mist-2)"/>
+        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--horizon)"/>
       </div>
 
       <div className="tab-row">
@@ -1369,7 +1369,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
       {report==='projection' && (
         <div className="card fade-in">
           <div className="card-label">6-Month Projection</div>
-          <div style={{fontSize:'11px',color:'var(--t2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR. Dashed = min target.</div>
+          <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR. Dashed = min target.</div>
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
               <defs>
@@ -1398,10 +1398,10 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
               <div key={c.name} style={{marginBottom:'0.75rem'}}>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
                   <span style={{fontWeight:600,fontSize:'13px'}}>{c.name}</span>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1db87e'}}>J${c.value.toLocaleString()} ({Math.round(pct)}%)</span>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${c.value.toLocaleString()} ({Math.round(pct)}%)</span>
                 </div>
                 <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${pct}%`,background:'#1db87e',borderRadius:'99px'}}/>
+                  <div style={{height:'100%',width:`${pct}%`,background:'#1adb8a',borderRadius:'99px'}}/>
                 </div>
               </div>
             );
@@ -1422,13 +1422,13 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         <div className="list">
           {filtered.map(f=>(
             <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
-              <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'#1db87e':'#dc3545'}}/>
+              <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'#1adb8a':'#ff6040'}}/>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontWeight:600,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
-                <div style={{fontSize:'11px',color:'var(--t2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#a78bfa'}}> · linked</span>:''}</div>
+                <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#7b6cf5'}}> · linked</span>:''}</div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                <div style={{fontFamily:'var(--fm)',fontWeight:700,fontSize:'13px',color:f.type==='income'?'#1db87e':'#dc3545',whiteSpace:'nowrap'}}><span style={{color:f.type==='income'?'#1db87e':'#dc3545'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</span></div>
+                <div style={{fontFamily:'var(--fm)',fontWeight:700,fontSize:'13px',color:f.type==='income'?'#1adb8a':'#ff6040',whiteSpace:'nowrap'}}><span style={{color:f.type==='income'?'#1adb8a':'#ff6040'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</span></div>
                 <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
                 <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
               </div>
@@ -1487,7 +1487,7 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.625rem',gap:'0.75rem'}}>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:700,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
-                    <div style={{fontSize:'11px',color:'var(--t2)',marginTop:'2px'}}>{g.category}{g.dueDate?` · Due ${g.dueDate}`:''}</div>
+                    <div style={{fontSize:'11px',color:'var(--mist-2)',marginTop:'2px'}}>{g.category}{g.dueDate?` · Due ${g.dueDate}`:''}</div>
                   </div>
                   <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
                     <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
@@ -1495,19 +1495,19 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
                   </div>
                 </div>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.25rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1db87e',fontWeight:700}}>Level {lv}/20</span>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)'}}>{g.current||0}/{g.target||0} {g.unit||''}</span>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',fontWeight:700}}>Level {lv}/20</span>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{g.current||0}/{g.target||0} {g.unit||''}</span>
                 </div>
                 <div style={{display:'flex',gap:'3px',marginBottom:'0.5rem'}}>
                   {Array.from({length:20},(_,i)=>(
-                    <div key={i} style={{flex:1,height:'5px',borderRadius:'2px',background:i<lv?(i===lv-1?'#1db87e':'rgba(201,168,76,0.3)'):'rgba(255,255,255,0.06)',boxShadow:i===lv-1?'0 0 4px var(--gold)':'none',transition:'all 0.3s'}}/>
+                    <div key={i} style={{flex:1,height:'5px',borderRadius:'2px',background:i<lv?(i===lv-1?'#1adb8a':'rgba(201,168,76,0.3)'):'rgba(255,255,255,0.06)',boxShadow:i===lv-1?'0 0 4px var(--horizon)':'none',transition:'all 0.3s'}}/>
                   ))}
                 </div>
                 <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,rgba(201,168,76,0.6),var(--gold))',borderRadius:'99px',boxShadow:'0 0 4px rgba(201,168,76,0.4)',transition:'width 0.6s'}}/>
+                  <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,rgba(201,168,76,0.6),var(--horizon))',borderRadius:'99px',boxShadow:'0 0 4px rgba(201,168,76,0.4)',transition:'width 0.6s'}}/>
                 </div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)',marginTop:'4px'}}>{pct}% complete</div>
-                {g.notes && <div style={{fontSize:'12px',color:'var(--t2)',marginTop:'0.5rem',fontStyle:'italic'}}>{g.notes}</div>}
+                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)',marginTop:'4px'}}>{pct}% complete</div>
+                {g.notes && <div style={{fontSize:'12px',color:'var(--mist-2)',marginTop:'0.5rem',fontStyle:'italic'}}>{g.notes}</div>}
               </div>
             );
           })}
@@ -1548,20 +1548,20 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
   const todayBriefing = briefings.find(b=>b.date===todayStr);
   const latestLog = logs[0];
   const AL={ADD_LEAD:'➕ Add Lead',UPDATE_LEAD:'✏️ Update Lead',MARK_LEAD_DEAD:'💀 Mark Dead',ADD_FINANCE_ENTRY:'💰 Add Transaction',ADD_TODO:'✅ Add Task'};
-  const PC={high:'#dc3545',medium:'#c9a84c',low:'var(--t2)'};
+  const PC={high:'#ff6040',medium:'#f0c060',low:'var(--mist-2)'};
 
   return (
     <div className="section">
       <div className="hero" style={{background:'linear-gradient(135deg,#0a0f2e,#060b1a)',borderColor:'rgba(201,168,76,0.2)'}}>
-        <div className="hero-eye" style={{color:'#1db87e'}}>JAXON Intelligence</div>
+        <div className="hero-eye" style={{color:'#1adb8a'}}>JAXON Intelligence</div>
         <div className="hero-big">Second Brain</div>
         <div className="hero-sub">{pending.length} pending · {approved.length} approved · {executed.length} executed</div>
       </div>
 
       {todayBriefing && (
-        <div className="card fade-in" style={{borderLeft:'3px solid var(--gold)'}}>
-          <div className="card-label" style={{color:'#1db87e'}}>🤖 Morning Briefing — {todayStr}</div>
-          <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--t1)',whiteSpace:'pre-line'}}>{todayBriefing.content}</div>
+        <div className="card fade-in" style={{borderLeft:'3px solid var(--horizon)'}}>
+          <div className="card-label" style={{color:'#1adb8a'}}>🤖 Morning Briefing — {todayStr}</div>
+          <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line'}}>{todayBriefing.content}</div>
         </div>
       )}
 
@@ -1575,36 +1575,36 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
         pending.length===0 ? (
           <div className="card fade-in" style={{textAlign:'center',padding:'2rem'}}>
             <div style={{fontSize:'32px',marginBottom:'0.5rem'}}>✅</div>
-            <div style={{color:'var(--t2)',fontSize:'14px'}}>Queue clear — JAXON is working</div>
+            <div style={{color:'var(--mist-2)',fontSize:'14px'}}>Queue clear — JAXON is working</div>
           </div>
         ) : (
           <div className="list">
             {pending.map(item=>(
-              <div key={item.id} className="card fade-in" style={{borderLeft:`3px solid ${PC[item.priority]||'var(--t2)'}`}}>
+              <div key={item.id} className="card fade-in" style={{borderLeft:`3px solid ${PC[item.priority]||'var(--mist-2)'}`}}>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:'#1db87e'}}>{AL[item.action]||item.action}</span>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:'#1adb8a'}}>{AL[item.action]||item.action}</span>
                   <span className="badge" style={{background:`${PC[item.priority]}20`,color:PC[item.priority],border:`1px solid ${PC[item.priority]}30`}}>{item.priority}</span>
                 </div>
                 {item.data?.businessName && <div style={{fontWeight:700,fontSize:'15px',marginBottom:'0.25rem'}}>{item.data.businessName}</div>}
-                <div style={{fontSize:'13px',color:'var(--t1)',lineHeight:'1.6',marginBottom:'0.75rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1db87e'}}>JAXON: </span>
+                <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:'1.6',marginBottom:'0.75rem'}}>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a'}}>JAXON: </span>
                   {item.reasoning}
                 </div>
                 {item.data?.outreachDraft && (
                   <div className="draft-box" style={{marginBottom:'0.75rem'}}>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1db87e',marginBottom:'4px',letterSpacing:'0.08em'}}>DRAFT MESSAGE</div>
-                    <div style={{fontSize:'12.5px',color:'var(--t1)',lineHeight:'1.6'}}>{item.data.outreachDraft}</div>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px',letterSpacing:'0.08em'}}>DRAFT MESSAGE</div>
+                    <div style={{fontSize:'12.5px',color:'var(--mist-1)',lineHeight:'1.6'}}>{item.data.outreachDraft}</div>
                   </div>
                 )}
                 {item.data?.value && (
                   <div style={{display:'flex',gap:'1rem',marginBottom:'0.75rem'}}>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1db87e'}}>J${Number(item.data.value).toLocaleString()} contract</span>
-                    {item.data.retainerAmount && <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#a78bfa'}}>+J${Number(item.data.retainerAmount).toLocaleString()}/mo</span>}
+                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${Number(item.data.value).toLocaleString()} contract</span>
+                    {item.data.retainerAmount && <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#7b6cf5'}}>+J${Number(item.data.retainerAmount).toLocaleString()}/mo</span>}
                   </div>
                 )}
                 <div style={{display:'flex',gap:'0.5rem'}}>
                   <button className="btn-primary" style={{flex:1,justifyContent:'center'}} onClick={()=>onApprove(item.id)}>✓ Approve</button>
-                  <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#dc3545',borderColor:'rgba(239,68,68,0.2)'}} onClick={()=>onReject(item.id)}>✕ Reject</button>
+                  <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff6040',borderColor:'rgba(239,68,68,0.2)'}} onClick={()=>onReject(item.id)}>✕ Reject</button>
                 </div>
               </div>
             ))}
@@ -1616,7 +1616,7 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
         <div className="list">
           {approved.length===0 ? <Empty text="Nothing approved yet."/> : approved.map(item=>(
             <div key={item.id} className="card fade-in" style={{opacity:0.8}}>
-              <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1db87e',marginBottom:'2px'}}>✓ Approved — executes next run</div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',marginBottom:'2px'}}>✓ Approved — executes next run</div>
               <div style={{fontWeight:600,fontSize:'14px'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div>
             </div>
           ))}
@@ -1624,7 +1624,7 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
             <div className="card-label" style={{marginTop:'0.25rem'}}>Executed</div>
             {executed.map(item=>(
               <div key={item.id} className="card fade-in" style={{opacity:0.45}}>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--t2)',marginBottom:'2px'}}>⚡ Executed</div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)',marginBottom:'2px'}}>⚡ Executed</div>
                 <div style={{fontWeight:600,fontSize:'14px'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div>
               </div>
             ))}
@@ -1634,19 +1634,19 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
 
       {tab==='log' && (
         !latestLog ? <Empty text="First log generates at midnight."/> : (
-          <div className="card fade-in" style={{borderLeft:'3px solid var(--plat-dim)'}}>
-            <div className="card-label" style={{color:'#a78bfa'}}>📚 Learning Log — {latestLog.date}</div>
+          <div className="card fade-in" style={{borderLeft:'3px solid var(--mist-2)'}}>
+            <div className="card-label" style={{color:'#7b6cf5'}}>📚 Learning Log — {latestLog.date}</div>
             {latestLog.stats && (
               <div className="grid-3" style={{marginBottom:'0.875rem'}}>
-                {[{l:'Queued',v:latestLog.stats.actionsQueued,c:'#1db87e'},{l:'Approved',v:latestLog.stats.approved,c:'#1db87e'},{l:'Rejected',v:latestLog.stats.rejected,c:'#dc3545'}].map(s=>(
+                {[{l:'Queued',v:latestLog.stats.actionsQueued,c:'#1adb8a'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff6040'}].map(s=>(
                   <div key={s.l} style={{background:'rgba(255,255,255,0.04)',borderRadius:'8px',padding:'0.5rem',textAlign:'center'}}>
                     <div style={{fontFamily:'var(--fm)',fontSize:'18px',fontWeight:700,color:s.c}}>{s.v}</div>
-                    <div style={{fontSize:'9.5px',color:'var(--t2)',fontFamily:'var(--fm)'}}>{s.l}</div>
+                    <div style={{fontSize:'9.5px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{s.l}</div>
                   </div>
                 ))}
               </div>
             )}
-            <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--t1)',whiteSpace:'pre-line'}}>{latestLog.content}</div>
+            <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div>
           </div>
         )
       )}
@@ -1920,7 +1920,7 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
 
       <div style={{background:'rgba(201,168,76,0.06)',border:'1px solid rgba(201,168,76,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}>
         <span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span>
-        <span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'#1db87e'}}>J${total.toLocaleString()}</span>
+        <span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'#1adb8a'}}>J${total.toLocaleString()}</span>
       </div>
 
       <Field label="Notes (optional)"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)} placeholder="e.g. Balance due on delivery"/></Field>
@@ -1928,7 +1928,7 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
       <button className="btn-primary" style={{width:'100%',justifyContent:'center',gap:'0.5rem'}} onClick={generatePDF}>
         📄 Download Invoice (HTML → print to PDF)
       </button>
-      <div style={{fontSize:'11px',color:'var(--t2)',textAlign:'center'}}>
+      <div style={{fontSize:'11px',color:'var(--mist-2)',textAlign:'center'}}>
         Opens as HTML file — open in browser and Print → Save as PDF
       </div>
     </Modal>
@@ -1954,7 +1954,7 @@ function Modal({title,onClose,children}) {
 function Field({label,children}) {
   return (
     <div style={{display:'flex',flexDirection:'column',gap:'0.3rem'}}>
-      <label style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--t2)'}}>{label}</label>
+      <label style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--mist-2)'}}>{label}</label>
       {children}
     </div>
   );
@@ -1970,5 +1970,5 @@ function ModalFoot({onClose,onSave}) {
 }
 
 function Empty({text}) {
-  return <div style={{textAlign:'center',padding:'2.5rem 1rem',color:'var(--t2)',fontSize:'13px',fontStyle:'italic'}}>{text}</div>;
+  return <div style={{textAlign:'center',padding:'2.5rem 1rem',color:'var(--mist-2)',fontSize:'13px',fontStyle:'italic'}}>{text}</div>;
 }
