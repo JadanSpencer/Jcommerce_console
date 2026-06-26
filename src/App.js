@@ -205,7 +205,7 @@ function useEntrance(delay = 0) {
 }
 
 
-// ─── BLUE FLAME PARTICLES ─────────────────────────────────────────────────────
+// ─── VIVID LIGHTNING PARTICLES ────────────────────────────────────────────────
 function Particles() {
   const canvasRef = useRef(null);
 
@@ -214,57 +214,94 @@ function Particles() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     let animId;
-    let particles = [];
 
-    const resize = () => {
-      canvas.width  = canvas.offsetWidth;
-      canvas.height = canvas.offsetHeight;
-    };
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
     resize();
     window.addEventListener('resize', resize);
 
+    // Full lightning blue spectrum
+    const SHADES = [
+      { r:0,   g:61,  b:92  },  // bolt-1 deep
+      { r:0,   g:95,  b:138 },  // bolt-2
+      { r:0,   g:136, b:200 },  // bolt-3
+      { r:0,   g:170, b:238 },  // bolt-4
+      { r:0,   g:212, b:255 },  // bolt — pure lightning
+      { r:64,  g:232, b:255 },  // bolt-lt
+      { r:158, g:244, b:255 },  // bolt-pale
+      { r:224, g:250, b:255 },  // bolt-white
+      { r:68,  g:136, b:204 },  // steel
+      { r:136, g:221, b:255 },  // ice
+      { r:68,  g:85,  b:255 },  // indigo
+      { r:136, g:85,  b:255 },  // violet-blue
+      { r:240, g:192, b:96  },  // horizon gold — rare
+    ];
+
     class Particle {
-      constructor() { this.reset(true); }
-      reset(initial = false) {
-        this.x     = Math.random() * canvas.width;
-        this.y     = initial ? Math.random() * canvas.height : canvas.height + 10;
-        this.size  = Math.random() * 3 + 0.5;
-        this.speedY = Math.random() * 0.8 + 0.3;
-        this.speedX = (Math.random() - 0.5) * 0.4;
-        this.life   = 0;
-        this.maxLife = Math.random() * 180 + 80;
+      constructor(initial=false) { this.spawn(initial); }
+      spawn(initial=false) {
+        this.x = Math.random() * canvas.width;
+        this.y = initial ? Math.random() * canvas.height : canvas.height + 12;
+        this.size = Math.random() * 2.5 + 0.4;
+        this.vy   = Math.random() * 1.1 + 0.4;
+        this.vx   = (Math.random() - 0.5) * 0.5;
+        this.life = 0;
+        this.maxLife = Math.random() * 200 + 80;
         this.wobble  = Math.random() * Math.PI * 2;
-        this.wobbleSpeed = Math.random() * 0.03 + 0.01;
-        // Colour: deep blue → cyan → white core
-        const r = Math.floor(Math.random() * 3); // 0=blue,1=cyan,2=indigo
-        if (r === 0)      this.hue = `59,130,246`;  // blue
-        else if (r === 1) this.hue = `6,182,212`;   // cyan
-        else              this.hue = `99,102,241`;   // indigo
+        this.ws      = Math.random() * 0.035 + 0.008;
+        // Weighted random — more bright bolts, fewer gold
+        const roll = Math.random();
+        if (roll < 0.12)       this.shade = SHADES[12]; // gold — rare
+        else if (roll < 0.22)  this.shade = SHADES[10]; // indigo
+        else if (roll < 0.32)  this.shade = SHADES[11]; // violet
+        else {
+          // Pick from blue spectrum, weighted toward bright
+          const i = Math.floor(Math.pow(Math.random(), 0.6) * 10);
+          this.shade = SHADES[Math.min(i, 9)];
+        }
+        this.bright = roll > 0.75; // 25% are extra bright
       }
       update() {
         this.life++;
-        this.wobble += this.wobbleSpeed;
-        this.x += this.speedX + Math.sin(this.wobble) * 0.3;
-        this.y -= this.speedY;
-        if (this.y < -10 || this.life > this.maxLife) this.reset();
+        this.wobble += this.ws;
+        this.x += this.vx + Math.sin(this.wobble) * 0.5;
+        this.y -= this.vy;
+        if (this.y < -12 || this.life > this.maxLife) this.spawn();
       }
       draw() {
-        const t     = this.life / this.maxLife;
-        const alpha = t < 0.2 ? t / 0.2 : t > 0.7 ? 1 - (t - 0.7) / 0.3 : 1;
-        const size  = this.size * (1 - t * 0.5);
-        const grad  = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, size * 3);
-        grad.addColorStop(0,   `rgba(255,255,255,${alpha * 0.9})`);
-        grad.addColorStop(0.3, `rgba(${this.hue},${alpha * 0.7})`);
-        grad.addColorStop(1,   `rgba(${this.hue},0)`);
+        const t = this.life / this.maxLife;
+        const alpha = t < 0.15 ? t/0.15 : t > 0.72 ? 1-(t-0.72)/0.28 : 1;
+        const sz = this.size * (1 - t * 0.45);
+        const { r, g, b } = this.shade;
+        const radius = sz * (this.bright ? 5 : 3.5);
+
+        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius);
+        grad.addColorStop(0,   `rgba(255,255,255,${alpha * (this.bright ? 1 : 0.85)})`);
+        grad.addColorStop(0.15,`rgba(${r},${g},${b},${alpha * 0.95})`);
+        grad.addColorStop(0.45,`rgba(${r},${g},${b},${alpha * 0.5})`);
+        grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+
         ctx.beginPath();
-        ctx.arc(this.x, this.y, size * 3, 0, Math.PI * 2);
+        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
         ctx.fillStyle = grad;
         ctx.fill();
+
+        // Bright particles get a streak upward
+        if (this.bright && alpha > 0.4) {
+          const streak = ctx.createLinearGradient(this.x, this.y, this.x, this.y + sz * 8);
+          streak.addColorStop(0, `rgba(${r},${g},${b},${alpha * 0.6})`);
+          streak.addColorStop(1, `rgba(${r},${g},${b},0)`);
+          ctx.beginPath();
+          ctx.moveTo(this.x - sz * 0.4, this.y);
+          ctx.lineTo(this.x + sz * 0.4, this.y);
+          ctx.lineTo(this.x + sz * 0.2, this.y + sz * 8);
+          ctx.lineTo(this.x - sz * 0.2, this.y + sz * 8);
+          ctx.fillStyle = streak;
+          ctx.fill();
+        }
       }
     }
 
-    // Spawn 120 particles
-    for (let i = 0; i < 120; i++) particles.push(new Particle());
+    const particles = Array.from({ length: 160 }, (_, i) => new Particle(i < 80));
 
     const loop = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -273,25 +310,14 @@ function Particles() {
     };
     loop();
 
-    return () => {
-      cancelAnimationFrame(animId);
-      window.removeEventListener('resize', resize);
-    };
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        width: '100%',
-        height: '100%',
-        pointerEvents: 'none',
-        zIndex: 0,
-        opacity: 0.35,
-      }}
-    />
+    <canvas ref={canvasRef} style={{
+      position:'fixed', inset:0, width:'100%', height:'100%',
+      pointerEvents:'none', zIndex:0, opacity:0.6,
+    }}/>
   );
 }
 
@@ -1541,112 +1567,379 @@ function GoalModal({data,onSave,onClose}) {
 
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
 function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
-  const [tab,setTab]=useState('queue');
+  const [tab,setTab] = useState('queue');
   const pending  = queue.filter(q=>q.status==='pending').sort((a,b)=>({high:0,medium:1,low:2}[a.priority]||1)-({high:0,medium:1,low:2}[b.priority]||1));
   const approved = queue.filter(q=>q.status==='approved');
   const executed = queue.filter(q=>q.status==='executed');
   const todayBriefing = briefings.find(b=>b.date===todayStr);
   const latestLog = logs[0];
-  const AL={ADD_LEAD:'➕ Add Lead',UPDATE_LEAD:'✏️ Update Lead',MARK_LEAD_DEAD:'💀 Mark Dead',ADD_FINANCE_ENTRY:'💰 Add Transaction',ADD_TODO:'✅ Add Task'};
-  const PC={high:'#ff6040',medium:'#f0c060',low:'var(--mist-2)'};
+
+  const AL = {
+    ADD_LEAD:'Add Lead', UPDATE_LEAD:'Update Lead',
+    MARK_LEAD_DEAD:'Mark Dead', ADD_FINANCE_ENTRY:'Log Transaction', ADD_TODO:'Add Task'
+  };
+
+  const PRIORITY_STYLE = {
+    high:   { color:'#ff6040', border:'rgba(255,96,64,0.3)',  bg:'rgba(255,96,64,0.07)'  },
+    medium: { color:'#f0c060', border:'rgba(240,192,96,0.3)', bg:'rgba(240,192,96,0.07)' },
+    low:    { color:'#3a4860', border:'rgba(58,72,96,0.3)',   bg:'rgba(58,72,96,0.07)'   },
+  };
 
   return (
     <div className="section">
-      <div className="hero" style={{background:'linear-gradient(135deg,#0a0f2e,#060b1a)',borderColor:'rgba(201,168,76,0.2)'}}>
-        <div className="hero-eye" style={{color:'#1adb8a'}}>JAXON Intelligence</div>
-        <div className="hero-big">Second Brain</div>
-        <div className="hero-sub">{pending.length} pending · {approved.length} approved · {executed.length} executed</div>
+
+      {/* COMMAND HEADER */}
+      <div style={{
+        position:'relative', overflow:'hidden',
+        background:'linear-gradient(160deg, rgba(0,24,36,0.95) 0%, rgba(0,61,92,0.3) 50%, rgba(26,16,53,0.4) 100%)',
+        border:'1px solid rgba(0,212,255,0.15)',
+        borderRadius:14, padding:'1.5rem 1.25rem',
+      }}>
+        {/* Corner lightning */}
+        <div style={{position:'absolute',top:0,right:0,width:120,height:120,
+          background:'radial-gradient(circle at 100% 0%, rgba(0,212,255,0.12) 0%, transparent 70%)',
+          pointerEvents:'none'}}/>
+        <div style={{position:'absolute',bottom:0,left:0,width:80,height:80,
+          background:'radial-gradient(circle at 0% 100%, rgba(68,85,255,0.1) 0%, transparent 70%)',
+          pointerEvents:'none'}}/>
+        {/* Top line */}
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,
+          background:'linear-gradient(90deg, transparent, rgba(0,136,200,0.5), rgba(0,212,255,0.8), rgba(64,232,255,0.4), transparent)'}}/>
+
+        <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,letterSpacing:'0.3em',
+          textTransform:'uppercase',color:'var(--bolt)',opacity:0.6,marginBottom:'0.5rem',
+          textShadow:'0 0 8px rgba(0,212,255,0.5)'}}>
+          JAXON Intelligence
+        </div>
+        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,
+          letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',
+          color:'var(--bolt-white)',
+          textShadow:'0 0 30px rgba(0,212,255,0.3), 0 0 60px rgba(0,212,255,0.1)'}}>
+          Second Brain
+        </div>
+        <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
+          {[
+            {label:'Pending',  value:pending.length,  color:'var(--bolt)',    glow:'rgba(0,212,255,0.5)'},
+            {label:'Approved', value:approved.length, color:'var(--valley)',  glow:'rgba(26,219,138,0.4)'},
+            {label:'Executed', value:executed.length, color:'var(--steel)',   glow:'rgba(68,136,204,0.4)'},
+          ].map(s => (
+            <div key={s.label}>
+              <div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,
+                color:s.color,lineHeight:1,
+                textShadow:`0 0 16px ${s.glow}, 0 0 32px ${s.glow}`}}>
+                {s.value}
+              </div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
+                letterSpacing:'0.15em',textTransform:'uppercase',
+                color:'var(--mist-3)',marginTop:2}}>
+                {s.label}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
+      {/* BRIEFING — if today */}
       {todayBriefing && (
-        <div className="card fade-in" style={{borderLeft:'3px solid var(--horizon)'}}>
-          <div className="card-label" style={{color:'#1adb8a'}}>🤖 Morning Briefing — {todayStr}</div>
-          <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line'}}>{todayBriefing.content}</div>
+        <div className="fade-in" style={{
+          position:'relative',overflow:'hidden',
+          background:'linear-gradient(135deg, rgba(0,95,138,0.12), rgba(0,24,36,0.8))',
+          border:'1px solid rgba(0,170,238,0.2)',
+          borderLeft:'3px solid var(--bolt)',
+          borderRadius:10, padding:'1.125rem',
+        }}>
+          <div style={{position:'absolute',top:0,right:0,width:100,height:100,
+            background:'radial-gradient(circle at 100% 0%, rgba(0,212,255,0.07) 0%, transparent 70%)',
+            pointerEvents:'none'}}/>
+          <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',
+              boxShadow:'0 0 8px rgba(0,212,255,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/>
+            <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
+              letterSpacing:'0.25em',textTransform:'uppercase',
+              color:'var(--bolt-lt)',opacity:0.8}}>
+              Morning Briefing — {todayStr}
+            </span>
+          </div>
+          <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',
+            whiteSpace:'pre-line',fontWeight:300}}>
+            {todayBriefing.content}
+          </div>
         </div>
       )}
 
-      <div className="tab-row">
-        {[{id:'queue',label:`Queue (${pending.length})`},{id:'approved',label:`Approved (${approved.length})`},{id:'log',label:'Learning Log'}].map(t=>(
-          <button key={t.id} className={`tab-btn ${tab===t.id?'active':''}`} onClick={()=>setTab(t.id)}>{t.label}</button>
+      {/* TABS */}
+      <div style={{display:'flex',gap:'2px',background:'rgba(0,24,36,0.6)',
+        border:'1px solid rgba(0,212,255,0.08)',borderRadius:8,padding:3}}>
+        {[
+          {id:'queue',    label:`Queue`,    count:pending.length},
+          {id:'approved', label:`Approved`, count:approved.length},
+          {id:'log',      label:'Log',      count:null},
+        ].map(t => (
+          <button key={t.id}
+            onClick={()=>setTab(t.id)}
+            style={{
+              flex:1, padding:'0.4rem 0.5rem', border:'none',
+              background: tab===t.id ? 'rgba(0,136,200,0.15)' : 'none',
+              borderRadius:5, cursor:'pointer',
+              fontFamily:'var(--fs)', fontSize:'11.5px', fontWeight:400,
+              color: tab===t.id ? 'var(--bolt-lt)' : 'var(--mist-3)',
+              transition:'all 0.2s',
+              boxShadow: tab===t.id ? '0 0 10px rgba(0,212,255,0.1)' : 'none',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:'0.375rem',
+            }}>
+            {t.label}
+            {t.count !== null && (
+              <span style={{
+                fontFamily:'var(--fm)',fontSize:'9px',
+                background: t.count > 0 && tab===t.id ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.06)',
+                color: t.count > 0 && tab===t.id ? 'var(--bolt)' : 'var(--mist-3)',
+                borderRadius:99, padding:'0.1rem 0.45rem',
+                border: t.count > 0 && tab===t.id ? '1px solid rgba(0,212,255,0.3)' : '1px solid transparent',
+                boxShadow: t.count > 0 && tab===t.id ? '0 0 6px rgba(0,212,255,0.2)' : 'none',
+              }}>
+                {t.count}
+              </span>
+            )}
+          </button>
         ))}
       </div>
 
+      {/* QUEUE TAB */}
       {tab==='queue' && (
         pending.length===0 ? (
-          <div className="card fade-in" style={{textAlign:'center',padding:'2rem'}}>
-            <div style={{fontSize:'32px',marginBottom:'0.5rem'}}>✅</div>
-            <div style={{color:'var(--mist-2)',fontSize:'14px'}}>Queue clear — JAXON is working</div>
+          <div style={{
+            textAlign:'center', padding:'3rem 1.5rem',
+            background:'rgba(0,24,36,0.5)', border:'1px solid rgba(0,212,255,0.06)',
+            borderRadius:14,
+          }}>
+            <div style={{fontSize:'32px',marginBottom:'0.75rem',
+              filter:'drop-shadow(0 0 12px rgba(0,212,255,0.4))'}}>⚡</div>
+            <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,
+              color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div>
+            <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,
+              color:'var(--mist-3)',letterSpacing:'0.06em'}}>
+              JAXON is scanning for opportunities
+            </div>
           </div>
         ) : (
           <div className="list">
-            {pending.map(item=>(
-              <div key={item.id} className="card fade-in" style={{borderLeft:`3px solid ${PC[item.priority]||'var(--mist-2)'}`}}>
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:'#1adb8a'}}>{AL[item.action]||item.action}</span>
-                  <span className="badge" style={{background:`${PC[item.priority]}20`,color:PC[item.priority],border:`1px solid ${PC[item.priority]}30`}}>{item.priority}</span>
-                </div>
-                {item.data?.businessName && <div style={{fontWeight:700,fontSize:'15px',marginBottom:'0.25rem'}}>{item.data.businessName}</div>}
-                <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:'1.6',marginBottom:'0.75rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a'}}>JAXON: </span>
-                  {item.reasoning}
-                </div>
-                {item.data?.outreachDraft && (
-                  <div className="draft-box" style={{marginBottom:'0.75rem'}}>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px',letterSpacing:'0.08em'}}>DRAFT MESSAGE</div>
-                    <div style={{fontSize:'12.5px',color:'var(--mist-1)',lineHeight:'1.6'}}>{item.data.outreachDraft}</div>
+            {pending.map(item => {
+              const ps = PRIORITY_STYLE[item.priority] || PRIORITY_STYLE.low;
+              return (
+                <div key={item.id} className="fade-in" style={{
+                  background:'rgba(7,13,24,0.85)',
+                  border:`1px solid rgba(0,212,255,0.08)`,
+                  borderLeft:`3px solid ${ps.color}`,
+                  borderRadius:12, padding:'1rem',
+                  backdropFilter:'blur(8px)',
+                  boxShadow:`0 0 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(0,212,255,0.06)`,
+                }}>
+                  {/* Header row */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
+                      <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,
+                        color:'var(--bolt-lt)',letterSpacing:'0.08em',
+                        textShadow:'0 0 8px rgba(64,232,255,0.4)'}}>
+                        {AL[item.action]||item.action}
+                      </div>
+                    </div>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
+                      color:ps.color, background:ps.bg,
+                      border:`1px solid ${ps.border}`,
+                      borderRadius:99, padding:'0.15rem 0.5rem',
+                      textTransform:'uppercase',letterSpacing:'0.08em',
+                      boxShadow:`0 0 6px ${ps.bg}`}}>
+                      {item.priority}
+                    </div>
                   </div>
-                )}
-                {item.data?.value && (
-                  <div style={{display:'flex',gap:'1rem',marginBottom:'0.75rem'}}>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${Number(item.data.value).toLocaleString()} contract</span>
-                    {item.data.retainerAmount && <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#7b6cf5'}}>+J${Number(item.data.retainerAmount).toLocaleString()}/mo</span>}
+
+                  {/* Business name */}
+                  {item.data?.businessName && (
+                    <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,
+                      letterSpacing:'0.01em',marginBottom:'0.375rem',
+                      color:'var(--mist-0)'}}>
+                      {item.data.businessName}
+                    </div>
+                  )}
+
+                  {/* JAXON reasoning */}
+                  <div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',
+                    lineHeight:1.65,marginBottom:'0.75rem'}}>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'8.5px',
+                      color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',
+                      marginRight:'0.5rem'}}>JAXON</span>
+                    {item.reasoning}
                   </div>
-                )}
-                <div style={{display:'flex',gap:'0.5rem'}}>
-                  <button className="btn-primary" style={{flex:1,justifyContent:'center'}} onClick={()=>onApprove(item.id)}>✓ Approve</button>
-                  <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff6040',borderColor:'rgba(239,68,68,0.2)'}} onClick={()=>onReject(item.id)}>✕ Reject</button>
+
+                  {/* Draft message */}
+                  {item.data?.outreachDraft && (
+                    <div style={{
+                      background:'rgba(0,95,138,0.1)',
+                      borderLeft:'2px solid rgba(0,136,200,0.4)',
+                      borderRadius:'0 6px 6px 0',
+                      padding:'0.625rem 0.75rem', marginBottom:'0.75rem',
+                    }}>
+                      <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
+                        color:'var(--bolt-4)',letterSpacing:'0.2em',
+                        textTransform:'uppercase',marginBottom:'6px',opacity:0.8}}>
+                        Draft Message
+                      </div>
+                      <div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>
+                        {item.data.outreachDraft}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Value */}
+                  {item.data?.value && (
+                    <div style={{display:'flex',gap:'1rem',marginBottom:'0.75rem',
+                      flexWrap:'wrap'}}>
+                      <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:500,
+                        color:'var(--valley)',
+                        textShadow:'0 0 8px rgba(26,219,138,0.4)'}}>
+                        J${Number(item.data.value).toLocaleString()}
+                      </div>
+                      {item.data.retainerAmount && (
+                        <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:400,
+                          color:'var(--horizon)',opacity:0.8}}>
+                          +J${Number(item.data.retainerAmount).toLocaleString()}/mo
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action buttons */}
+                  <div style={{display:'flex',gap:'0.5rem'}}>
+                    <button style={{
+                      flex:1, padding:'0.55rem', border:'1.5px solid var(--bolt-3)',
+                      background:'rgba(0,95,138,0.15)', borderRadius:6, cursor:'pointer',
+                      fontFamily:'var(--fs)', fontSize:'12.5px', fontWeight:600,
+                      color:'var(--bolt-lt)',
+                      boxShadow:'0 0 12px rgba(0,136,200,0.15)',
+                      transition:'all 0.2s',
+                    }} onClick={()=>onApprove(item.id)}>
+                      ✓ Approve
+                    </button>
+                    <button style={{
+                      flex:1, padding:'0.55rem', border:'1px solid rgba(255,96,64,0.2)',
+                      background:'rgba(255,96,64,0.05)', borderRadius:6, cursor:'pointer',
+                      fontFamily:'var(--fs)', fontSize:'12.5px', fontWeight:400,
+                      color:'var(--fire)', transition:'all 0.2s',
+                    }} onClick={()=>onReject(item.id)}>
+                      ✕ Reject
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
       )}
 
+      {/* APPROVED TAB */}
       {tab==='approved' && (
         <div className="list">
-          {approved.length===0 ? <Empty text="Nothing approved yet."/> : approved.map(item=>(
-            <div key={item.id} className="card fade-in" style={{opacity:0.8}}>
-              <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',marginBottom:'2px'}}>✓ Approved — executes next run</div>
-              <div style={{fontWeight:600,fontSize:'14px'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div>
+          {approved.length===0 ? (
+            <div style={{textAlign:'center',padding:'2.5rem 1rem'}}>
+              <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,
+                color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div>
+            </div>
+          ) : approved.map(item => (
+            <div key={item.id} className="fade-in" style={{
+              background:'rgba(0,95,138,0.07)',
+              border:'1px solid rgba(0,136,200,0.15)',
+              borderRadius:10, padding:'0.875rem 1rem',
+              display:'flex',alignItems:'center',gap:'0.75rem',
+            }}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:'var(--valley)',
+                boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/>
+              <div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,
+                  color:'var(--valley)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>
+                  Approved — executes next run
+                </div>
+                <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>
+                  {AL[item.action]} — {item.data?.businessName||item.action}
+                </div>
+              </div>
             </div>
           ))}
-          {executed.length>0 && <>
-            <div className="card-label" style={{marginTop:'0.25rem'}}>Executed</div>
-            {executed.map(item=>(
-              <div key={item.id} className="card fade-in" style={{opacity:0.45}}>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)',marginBottom:'2px'}}>⚡ Executed</div>
-                <div style={{fontWeight:600,fontSize:'14px'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div>
+          {executed.length > 0 && (
+            <>
+              <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
+                letterSpacing:'0.2em',textTransform:'uppercase',color:'var(--mist-4)',
+                padding:'0.25rem 0'}}>
+                Executed
               </div>
-            ))}
-          </>}
+              {executed.map(item => (
+                <div key={item.id} className="fade-in" style={{
+                  background:'rgba(0,24,36,0.5)',
+                  border:'1px solid rgba(255,255,255,0.04)',
+                  borderRadius:10, padding:'0.875rem 1rem',
+                  display:'flex',alignItems:'center',gap:'0.75rem', opacity:0.5,
+                }}>
+                  <div style={{width:6,height:6,borderRadius:'50%',background:'var(--mist-3)',flexShrink:0}}/>
+                  <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-2)'}}>
+                    {AL[item.action]} — {item.data?.businessName||item.action}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       )}
 
+      {/* LOG TAB */}
       {tab==='log' && (
-        !latestLog ? <Empty text="First log generates at midnight."/> : (
-          <div className="card fade-in" style={{borderLeft:'3px solid var(--mist-2)'}}>
-            <div className="card-label" style={{color:'#7b6cf5'}}>📚 Learning Log — {latestLog.date}</div>
+        !latestLog ? (
+          <div style={{textAlign:'center',padding:'3rem 1rem'}}>
+            <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,
+              fontStyle:'italic',color:'var(--mist-3)'}}>
+              First log at midnight
+            </div>
+          </div>
+        ) : (
+          <div className="fade-in" style={{
+            background:'rgba(0,24,36,0.7)',
+            border:'1px solid rgba(0,136,200,0.15)',
+            borderTop:'2px solid var(--bolt-3)',
+            borderRadius:12, padding:'1.125rem',
+          }}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
+              <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,
+                color:'var(--bolt-lt)'}}>
+                Daily Log — {latestLog.date}
+              </div>
+            </div>
             {latestLog.stats && (
-              <div className="grid-3" style={{marginBottom:'0.875rem'}}>
-                {[{l:'Queued',v:latestLog.stats.actionsQueued,c:'#1adb8a'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff6040'}].map(s=>(
-                  <div key={s.l} style={{background:'rgba(255,255,255,0.04)',borderRadius:'8px',padding:'0.5rem',textAlign:'center'}}>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'18px',fontWeight:700,color:s.c}}>{s.v}</div>
-                    <div style={{fontSize:'9.5px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{s.l}</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',
+                gap:'0.5rem',marginBottom:'1rem'}}>
+                {[
+                  {l:'Queued',   v:latestLog.stats.actionsQueued, c:'var(--bolt)',   g:'rgba(0,212,255,0.5)'},
+                  {l:'Approved', v:latestLog.stats.approved,      c:'var(--valley)', g:'rgba(26,219,138,0.5)'},
+                  {l:'Rejected', v:latestLog.stats.rejected,      c:'var(--fire)',   g:'rgba(255,96,64,0.5)'},
+                ].map(s => (
+                  <div key={s.l} style={{
+                    background:'rgba(0,0,0,0.3)', borderRadius:8, padding:'0.625rem',
+                    textAlign:'center', border:'1px solid rgba(0,212,255,0.06)',
+                  }}>
+                    <div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,
+                      color:s.c, lineHeight:1, textShadow:`0 0 14px ${s.g}`}}>
+                      {s.v}
+                    </div>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
+                      color:'var(--mist-3)',letterSpacing:'0.15em',
+                      textTransform:'uppercase',marginTop:3}}>
+                      {s.l}
+                    </div>
                   </div>
                 ))}
               </div>
             )}
-            <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div>
+            <div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,
+              color:'var(--mist-1)',whiteSpace:'pre-line'}}>
+              {latestLog.content}
+            </div>
           </div>
         )
       )}

@@ -35,13 +35,25 @@
   --dawn-v2: #261550;
   --dawn-v3: #3d1f80;
 
-  /* Lightning — the electricity */
-  --bolt:       #00d4ff;
-  --bolt-dim:   #0099cc;
-  --bolt-pale:  #7be8ff;
-  --bolt-glow:  rgba(0,212,255,0.2);
+  /* Lightning — the electricity (full spectrum) */
+  --bolt-0:     #001824;   /* deepest lake shadow */
+  --bolt-1:     #003d5c;   /* deep water */
+  --bolt-2:     #005f8a;   /* mid depth */
+  --bolt-3:     #0088c8;   /* approaching surface */
+  --bolt-4:     #00aaee;   /* surface shimmer */
+  --bolt:       #00d4ff;   /* pure lightning */
+  --bolt-lt:    #40e8ff;   /* bright arc */
+  --bolt-pale:  #9ef4ff;   /* corona */
+  --bolt-white: #e0faff;   /* lightning centre */
+  --bolt-dim:   #0088c8;
+  --bolt-glow:  rgba(0,212,255,0.22);
   --bolt-deep:  rgba(0,212,255,0.08);
-  --bolt-trace: rgba(0,212,255,0.04);
+  --bolt-trace: rgba(0,212,255,0.03);
+  /* Accent blues — cooler/warmer variants */
+  --steel:      #4488cc;   /* steel blue — info */
+  --ice:        #88ddff;   /* ice — highlights */
+  --indigo:     #4455ff;   /* deep indigo — JAXON */
+  --violet-b:   #8855ff;   /* violet blue — XP */
 
   /* Horizon gold */
   --horizon:    #f0c060;
@@ -123,16 +135,22 @@ body {
   top: 0; left: 0; right: 0;
   height: 55vh;
   background:
-    radial-gradient(ellipse 120% 80% at 50% -20%,
-      rgba(0,212,255,0.09) 0%,
-      rgba(26,16,53,0.12) 40%,
-      transparent 70%),
-    radial-gradient(ellipse 80% 60% at 20% 10%,
-      rgba(240,192,96,0.06) 0%,
+    radial-gradient(ellipse 140% 90% at 50% -30%,
+      rgba(0,212,255,0.13) 0%,
+      rgba(68,136,204,0.08) 35%,
+      rgba(26,16,53,0.1) 60%,
+      transparent 80%),
+    radial-gradient(ellipse 70% 50% at 15% 8%,
+      rgba(136,221,255,0.07) 0%,
+      rgba(0,170,238,0.04) 40%,
+      transparent 65%),
+    radial-gradient(ellipse 50% 35% at 85% 4%,
+      rgba(68,85,255,0.06) 0%,
+      rgba(0,212,255,0.04) 40%,
       transparent 60%),
-    radial-gradient(ellipse 60% 40% at 80% 5%,
-      rgba(0,212,255,0.05) 0%,
-      transparent 50%);
+    radial-gradient(ellipse 90% 40% at 50% 0%,
+      rgba(0,136,200,0.05) 0%,
+      transparent 70%);
   pointer-events: none;
   z-index: 0;
   animation: auroraShift 18s ease-in-out infinite;
@@ -385,8 +403,8 @@ body {
   content: '';
   position: absolute; top: 0; left: 0; right: 0; height: 1px;
   background: linear-gradient(90deg,
-    transparent 0%, rgba(0,212,255,0.12) 40%, rgba(240,192,96,0.08) 80%, transparent 100%);
-  pointer-events: none;
+    transparent 0%, var(--bolt-2) 20%, var(--bolt) 50%, var(--bolt-4) 80%, transparent 100%);
+  opacity: 0.25; pointer-events: none;
 }
 
 .card:hover { border-color: rgba(0,212,255,0.1); }
@@ -964,3 +982,145 @@ select.input {
 @keyframes blink  { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 @keyframes float  { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
 @keyframes spin   { to{transform:rotate(360deg);} }
+
+/* ─── BLUE SHADE UTILITIES ──────────────────────────────────────── */
+.b-steel { color: var(--steel) !important; }
+.b-ice   { color: var(--ice) !important; }
+.b-bolt  { color: var(--bolt) !important; }
+.b-4     { color: var(--bolt-4) !important; }
+.b-3     { color: var(--bolt-3) !important; }
+.b-indigo{ color: var(--indigo) !important; }
+.b-violet{ color: var(--violet-b) !important; }
+
+/* Stat card bottom accent — different shade per card */
+.stat-card:nth-child(1)::after { background: linear-gradient(90deg, var(--bolt), transparent); }
+.stat-card:nth-child(2)::after { background: linear-gradient(90deg, var(--steel), transparent); }
+.stat-card:nth-child(3)::after { background: linear-gradient(90deg, var(--horizon), transparent); }
+.stat-card:nth-child(4)::after { background: linear-gradient(90deg, var(--violet-b), transparent); }
+
+/* Heatmap cells — richer cyan spectrum */
+.hcell.lv1 { background: var(--bolt-1); }
+.hcell.lv2 { background: var(--bolt-2); opacity: 1; }
+.hcell.lv3 { background: var(--bolt-3); }
+.hcell.lv4 { 
+  background: var(--bolt);
+  box-shadow: 0 0 8px rgba(0,212,255,0.9), 0 0 16px rgba(0,212,255,0.5), 0 0 24px rgba(0,212,255,0.2);
+}
+
+/* Nav — active uses bright arc, inactive uses deep */
+.nav-btn { color: var(--bolt-1); }
+.nav-btn.active { color: var(--bolt); }
+.nav-btn.active::before { background: linear-gradient(90deg, var(--bolt-3), var(--bolt-lt), var(--bolt-3)); }
+
+/* XP fill — full spectrum lightning */
+.xp-fill {
+  background: linear-gradient(90deg,
+    var(--bolt-2) 0%,
+    var(--bolt-3) 20%,
+    var(--bolt) 50%,
+    var(--bolt-lt) 75%,
+    var(--horizon) 100%);
+  box-shadow: 0 0 12px rgba(0,212,255,0.7), 0 0 24px rgba(0,212,255,0.4), 0 0 40px rgba(0,212,255,0.15);
+}
+
+/* Pills — active gets ice highlight */
+.pill.active {
+  border-color: var(--bolt-3);
+  background: rgba(0,136,200,0.1);
+  color: var(--bolt-lt);
+  box-shadow: 0 0 10px rgba(0,212,255,0.15);
+}
+
+/* Tab active — steel blue */
+.tab-btn.active {
+  background: rgba(0,136,200,0.1);
+  color: var(--ice);
+  box-shadow: 0 0 10px rgba(0,212,255,0.1);
+}
+
+/* Bolt pulse — different shades cycle */
+@keyframes boltPulse {
+  0%   { box-shadow: 0 0 10px rgba(0,136,200,0.4), inset 0 0 6px rgba(0,136,200,0.06); border-color: var(--bolt-3); }
+  33%  { box-shadow: 0 0 16px rgba(0,170,238,0.5), inset 0 0 10px rgba(0,170,238,0.08); border-color: var(--bolt-4); }
+  66%  { box-shadow: 0 0 24px rgba(0,212,255,0.6), 0 0 48px rgba(0,212,255,0.2), inset 0 0 16px rgba(0,212,255,0.1); border-color: var(--bolt); }
+  100% { box-shadow: 0 0 10px rgba(0,136,200,0.4), inset 0 0 6px rgba(0,136,200,0.06); border-color: var(--bolt-3); }
+}
+
+/* J splash — cycles through lightning shades */
+@keyframes jGlow {
+  0%   { text-shadow: 0 0 30px rgba(0,136,200,0.6), 0 0 60px rgba(0,136,200,0.3); color: var(--bolt-4); }
+  25%  { text-shadow: 0 0 50px rgba(0,170,238,0.8), 0 0 100px rgba(0,170,238,0.4); color: var(--bolt); }
+  50%  { text-shadow: 0 0 70px rgba(0,212,255,1), 0 0 140px rgba(0,212,255,0.6), 0 0 200px rgba(0,212,255,0.2); color: var(--bolt-lt); }
+  75%  { text-shadow: 0 0 50px rgba(64,232,255,0.8), 0 0 100px rgba(64,232,255,0.4); color: var(--bolt-pale); }
+  100% { text-shadow: 0 0 30px rgba(0,136,200,0.6), 0 0 60px rgba(0,136,200,0.3); color: var(--bolt-4); }
+}
+
+/* Header lightning line — shades sweep left to right */
+.header::after {
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--bolt-2) 15%,
+    var(--bolt-3) 30%,
+    var(--bolt) 50%,
+    var(--bolt-lt) 60%,
+    var(--bolt-3) 75%,
+    transparent 100%);
+  box-shadow: 0 0 16px rgba(0,212,255,0.5), 0 0 32px rgba(0,212,255,0.2);
+}
+
+/* Card label — ice blue */
+.card-label { color: var(--ice); opacity: 0.55; }
+
+/* Hero eye — bright arc */  
+.hero-eye { color: var(--bolt-lt); text-shadow: 0 0 10px rgba(64,232,255,0.6), 0 0 20px rgba(0,212,255,0.4); }
+
+/* Bolt fab — shades glow */
+@keyframes boltFab {
+  0%   { box-shadow: 0 0 14px rgba(0,136,200,0.3), 0 0 28px rgba(0,136,200,0.1); border-color: var(--bolt-3); }
+  50%  { box-shadow: 0 0 28px rgba(0,212,255,0.6), 0 0 56px rgba(0,212,255,0.25), 0 0 0 10px rgba(0,212,255,0.05); border-color: var(--bolt-lt); }
+  100% { box-shadow: 0 0 14px rgba(0,136,200,0.3), 0 0 28px rgba(0,136,200,0.1); border-color: var(--bolt-3); }
+}
+
+/* Level blocks — deep to bright */
+.level-block.filled  { background: var(--bolt-2); }
+.level-block.current { background: var(--bolt); box-shadow: 0 0 10px rgba(0,212,255,0.8), 0 0 20px rgba(0,212,255,0.4); }
+
+/* Progress bar — deep to bright */
+.progress-bar {
+  background: linear-gradient(90deg, var(--bolt-2), var(--bolt-3), var(--bolt));
+  box-shadow: 0 0 10px rgba(0,212,255,0.6), 0 0 20px rgba(0,212,255,0.3);
+}
+
+/* Btn primary — indigo to bolt */
+.btn-primary {
+  border-color: var(--bolt-3);
+  background: linear-gradient(135deg, rgba(0,61,92,0.4), rgba(0,212,255,0.1));
+  color: var(--bolt-lt);
+  text-shadow: 0 0 10px rgba(64,232,255,0.6);
+  box-shadow: 0 0 16px rgba(0,212,255,0.18), inset 0 0 10px rgba(0,212,255,0.05);
+}
+
+.btn-primary:hover,
+.btn-primary:active {
+  border-color: var(--bolt);
+  background: rgba(0,212,255,0.15);
+  box-shadow: 0 0 24px rgba(0,212,255,0.35), inset 0 0 16px rgba(0,212,255,0.08);
+}
+
+/* Chat avatar — indigo glow */
+.chat-avatar { border-color: var(--steel); box-shadow: 0 0 10px rgba(68,136,204,0.4); color: var(--ice); }
+.chat-name   { color: var(--bolt-pale); }
+.chat-bubble.user { 
+  background: rgba(0,95,138,0.25);
+  border-color: var(--bolt-3);
+  color: var(--bolt-white);
+  box-shadow: 0 0 14px rgba(0,136,200,0.2);
+}
+
+/* JAXON FAB — indigo core, bolt ring */
+.fab {
+  background: linear-gradient(135deg, rgba(0,24,36,0.9), rgba(0,136,200,0.15));
+  border-color: var(--bolt-4);
+  color: var(--bolt-lt);
+  box-shadow: 0 0 20px rgba(0,212,255,0.3), 0 0 40px rgba(0,212,255,0.1);
+}
