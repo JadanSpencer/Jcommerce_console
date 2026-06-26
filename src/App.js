@@ -205,118 +205,181 @@ function useEntrance(delay = 0) {
 }
 
 
-// ─── VIVID LIGHTNING PARTICLES ────────────────────────────────────────────────
+// ─── CIRCUIT BOARD BACKGROUND ────────────────────────────────────────────────
 function Particles() {
   const canvasRef = useRef(null);
-
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    let animId;
+    let raf;
 
-    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
-    resize();
-    window.addEventListener('resize', resize);
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; init(); };
 
-    // Full lightning blue spectrum
-    const SHADES = [
-      { r:0,   g:61,  b:92  },  // bolt-1 deep
-      { r:0,   g:95,  b:138 },  // bolt-2
-      { r:0,   g:136, b:200 },  // bolt-3
-      { r:0,   g:170, b:238 },  // bolt-4
-      { r:0,   g:212, b:255 },  // bolt — pure lightning
-      { r:64,  g:232, b:255 },  // bolt-lt
-      { r:158, g:244, b:255 },  // bolt-pale
-      { r:224, g:250, b:255 },  // bolt-white
-      { r:68,  g:136, b:204 },  // steel
-      { r:136, g:221, b:255 },  // ice
-      { r:68,  g:85,  b:255 },  // indigo
-      { r:136, g:85,  b:255 },  // violet-blue
-      { r:240, g:192, b:96  },  // horizon gold — rare
-    ];
+    // Blue shade palette
+    const BLUES = ['#001824','#003d5c','#005f8a','#0088c8','#00aaee','#00d4ff','#40e8ff'];
 
-    class Particle {
-      constructor(initial=false) { this.spawn(initial); }
-      spawn(initial=false) {
-        this.x = Math.random() * canvas.width;
-        this.y = initial ? Math.random() * canvas.height : canvas.height + 12;
-        this.size = Math.random() * 2.5 + 0.4;
-        this.vy   = Math.random() * 1.1 + 0.4;
-        this.vx   = (Math.random() - 0.5) * 0.5;
-        this.life = 0;
-        this.maxLife = Math.random() * 200 + 80;
-        this.wobble  = Math.random() * Math.PI * 2;
-        this.ws      = Math.random() * 0.035 + 0.008;
-        // Weighted random — more bright bolts, fewer gold
-        const roll = Math.random();
-        if (roll < 0.12)       this.shade = SHADES[12]; // gold — rare
-        else if (roll < 0.22)  this.shade = SHADES[10]; // indigo
-        else if (roll < 0.32)  this.shade = SHADES[11]; // violet
-        else {
-          // Pick from blue spectrum, weighted toward bright
-          const i = Math.floor(Math.pow(Math.random(), 0.6) * 10);
-          this.shade = SHADES[Math.min(i, 9)];
-        }
-        this.bright = roll > 0.75; // 25% are extra bright
-      }
-      update() {
-        this.life++;
-        this.wobble += this.ws;
-        this.x += this.vx + Math.sin(this.wobble) * 0.5;
-        this.y -= this.vy;
-        if (this.y < -12 || this.life > this.maxLife) this.spawn();
-      }
-      draw() {
-        const t = this.life / this.maxLife;
-        const alpha = t < 0.15 ? t/0.15 : t > 0.72 ? 1-(t-0.72)/0.28 : 1;
-        const sz = this.size * (1 - t * 0.45);
-        const { r, g, b } = this.shade;
-        const radius = sz * (this.bright ? 5 : 3.5);
+    // Circuit nodes
+    let nodes = [];
+    // Active pulses travelling along edges
+    let pulses = [];
 
-        const grad = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, radius);
-        grad.addColorStop(0,   `rgba(255,255,255,${alpha * (this.bright ? 1 : 0.85)})`);
-        grad.addColorStop(0.15,`rgba(${r},${g},${b},${alpha * 0.95})`);
-        grad.addColorStop(0.45,`rgba(${r},${g},${b},${alpha * 0.5})`);
-        grad.addColorStop(1,   `rgba(${r},${g},${b},0)`);
-
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
-        ctx.fillStyle = grad;
-        ctx.fill();
-
-        // Bright particles get a streak upward
-        if (this.bright && alpha > 0.4) {
-          const streak = ctx.createLinearGradient(this.x, this.y, this.x, this.y + sz * 8);
-          streak.addColorStop(0, `rgba(${r},${g},${b},${alpha * 0.6})`);
-          streak.addColorStop(1, `rgba(${r},${g},${b},0)`);
-          ctx.beginPath();
-          ctx.moveTo(this.x - sz * 0.4, this.y);
-          ctx.lineTo(this.x + sz * 0.4, this.y);
-          ctx.lineTo(this.x + sz * 0.2, this.y + sz * 8);
-          ctx.lineTo(this.x - sz * 0.2, this.y + sz * 8);
-          ctx.fillStyle = streak;
-          ctx.fill();
+    function init() {
+      nodes = [];
+      pulses = [];
+      const cols = Math.floor(canvas.width / 80);
+      const rows = Math.floor(canvas.height / 80);
+      // Create grid nodes with slight jitter
+      for (let r = 0; r <= rows; r++) {
+        for (let c = 0; c <= cols; c++) {
+          nodes.push({
+            x: c * 80 + (Math.random() - 0.5) * 28,
+            y: r * 80 + (Math.random() - 0.5) * 28,
+            active: Math.random() < 0.18,
+            size: Math.random() * 1.5 + 0.5,
+            blink: Math.random() * Math.PI * 2,
+            blinkSpeed: Math.random() * 0.025 + 0.008,
+            shade: BLUES[Math.floor(Math.random() * BLUES.length)],
+          });
         }
       }
+      // Spawn initial pulses
+      for (let i = 0; i < 12; i++) spawnPulse();
     }
 
-    const particles = Array.from({ length: 160 }, (_, i) => new Particle(i < 80));
+    function spawnPulse() {
+      if (nodes.length < 2) return;
+      const from = nodes[Math.floor(Math.random() * nodes.length)];
+      // Pick nearby node as target
+      const nearby = nodes.filter(n => {
+        const dx = n.x - from.x; const dy = n.y - from.y;
+        const d = Math.sqrt(dx*dx+dy*dy);
+        return d > 20 && d < 180;
+      });
+      if (nearby.length === 0) return;
+      const to = nearby[Math.floor(Math.random() * nearby.length)];
+      const shadeIdx = Math.floor(Math.random() * BLUES.length);
+      pulses.push({
+        from, to,
+        t: 0,
+        speed: Math.random() * 0.008 + 0.003,
+        shade: BLUES[shadeIdx],
+        bright: Math.random() < 0.25,
+        width: Math.random() * 0.8 + 0.3,
+        trail: [], // stores last positions for trail
+      });
+    }
 
-    const loop = () => {
+    function drawEdge(a, b, alpha, shade, w) {
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      // L-shaped routing — horizontal then vertical (circuit style)
+      const mx = b.x;
+      const my = a.y;
+      ctx.lineTo(mx, my);
+      ctx.lineTo(b.x, b.y);
+      ctx.strokeStyle = shade.replace(')', `,${alpha})`).replace('rgb', 'rgba').replace('#', 'rgba(').replace(/^rgba\(([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2}),/, (m,r,g,b) => `rgba(${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)},`);
+      ctx.lineWidth = w;
+      ctx.stroke();
+    }
+
+    function hexToRgba(hex, alpha) {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function drawCircuitLine(x1,y1,x2,y2, alpha, shade, w=0.5) {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y1);  // horizontal
+      ctx.lineTo(x2, y2);  // vertical
+      ctx.strokeStyle = hexToRgba(shade, alpha);
+      ctx.lineWidth = w;
+      ctx.stroke();
+    }
+
+    function lerp(a, b, t) { return a + (b-a)*t; }
+
+    function loop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      particles.forEach(p => { p.update(); p.draw(); });
-      animId = requestAnimationFrame(loop);
-    };
-    loop();
 
-    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
+      // Draw static grid edges between nearby nodes
+      for (let i = 0; i < nodes.length; i++) {
+        const a = nodes[i];
+        for (let j = i+1; j < nodes.length; j++) {
+          const b = nodes[j];
+          const dx = b.x-a.x; const dy = b.y-a.y;
+          const d = Math.sqrt(dx*dx+dy*dy);
+          if (d < 130) {
+            const alpha = (1 - d/130) * 0.07;
+            drawCircuitLine(a.x, a.y, b.x, b.y, alpha, '#003d5c', 0.5);
+          }
+        }
+      }
+
+      // Draw pulses
+      pulses.forEach((p, idx) => {
+        p.t += p.speed;
+        const cx = lerp(p.from.x, p.to.x, p.t);
+        const cy = lerp(p.from.y, p.to.y, p.t);
+
+        // Trail
+        p.trail.push({x: cx, y: cy});
+        if (p.trail.length > 18) p.trail.shift();
+
+        // Draw trail
+        p.trail.forEach((pt, ti) => {
+          const ta = (ti / p.trail.length) * 0.6 * (p.bright ? 1.4 : 1);
+          const r2 = p.width * (0.5 + (ti / p.trail.length) * 1.5);
+          const grd = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, r2 * 3);
+          grd.addColorStop(0, hexToRgba('#e0faff', ta * 0.9));
+          grd.addColorStop(0.4, hexToRgba(p.shade, ta * 0.7));
+          grd.addColorStop(1, hexToRgba(p.shade, 0));
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, r2 * 3, 0, Math.PI * 2);
+          ctx.fillStyle = grd;
+          ctx.fill();
+        });
+
+        // Draw path the pulse travels along
+        drawCircuitLine(p.from.x, p.from.y, p.to.x, p.to.y, 0.25 * (p.bright ? 1.8 : 1), p.shade, p.width * 0.8);
+
+        if (p.t >= 1) {
+          pulses.splice(idx, 1);
+          spawnPulse();
+        }
+      });
+
+      // Draw nodes
+      nodes.forEach(n => {
+        n.blink += n.blinkSpeed;
+        const alpha = n.active ? 0.55 + Math.sin(n.blink) * 0.35 : 0.08 + Math.sin(n.blink) * 0.04;
+        const glow = n.active ? n.size * 5 : n.size * 1.5;
+        const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glow);
+        grd.addColorStop(0, hexToRgba('#e0faff', alpha));
+        grd.addColorStop(0.4, hexToRgba(n.shade, alpha * 0.6));
+        grd.addColorStop(1, hexToRgba(n.shade, 0));
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, glow, 0, Math.PI * 2);
+        ctx.fillStyle = grd;
+        ctx.fill();
+      });
+
+      raf = requestAnimationFrame(loop);
+    }
+
+    resize();
+    loop();
+    window.addEventListener('resize', resize);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
   }, []);
 
   return (
     <canvas ref={canvasRef} style={{
       position:'fixed', inset:0, width:'100%', height:'100%',
-      pointerEvents:'none', zIndex:0, opacity:0.6,
+      pointerEvents:'none', zIndex:0, opacity:0.45,
     }}/>
   );
 }
@@ -461,7 +524,7 @@ export default function App() {
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
-        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
+        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXp(x=>x+100)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
       </main>
 
@@ -981,6 +1044,13 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                           }}>
                           📄 Invoice
                         </button>
+                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(0,212,255,0.25)',color:'var(--bolt)',background:'rgba(0,212,255,0.05)'}}
+                          onClick={async ()=>{
+                            const prompt = `LEAD ANALYSIS REQUEST\n\nBusiness: ${l.businessName}\nStatus: ${l.status}\nLocation: ${l.location||'Jamaica'}\nValue: J$${Number(l.value||0).toLocaleString()}\nPhone: ${l.phone||'Not found'}\nNotes: ${l.notes||'None'}\nLast action: ${l.nextAction||'None'} on ${l.nextActionDate||'N/A'}\nOutreach draft: ${l.outreachDraft||'None'}\n\nAs my business AI, analyse this lead and tell me:\n1. What is the best next move right now?\n2. What should I say to them?\n3. What is the probability of closing?\n4. Any red flags?`;
+                            window._openJaxonChat && window._openJaxonChat(prompt);
+                          }}>
+                          ⚡ Ask JAXON
+                        </button>
                         <button className="icon-btn mint-btn" onClick={()=>setPayForm(l)}><Icons.dollar size={13}/></button>
                         <button className="icon-btn" onClick={()=>setForm(l)}><Icons.edit size={13}/></button>
                         <button className="icon-btn danger-btn" onClick={()=>onDelete(l.id)}><Icons.trash size={13}/></button>
@@ -1223,10 +1293,44 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
 function Schedule({schedule,onAdd,onUpdate,onDelete}) {
-  const [form,setForm] = useState(null);
+  const [form,setForm]       = useState(null);
+  const [viewMode,setViewMode] = useState('pills'); // 'pills' | 'grid'
+  const [weekOffset,setWeekOffset] = useState(0);   // 0=this week, -1=last, +1=next
   const today = new Date();
   const [sel,setSel] = useState(DAYS[today.getDay()===0?6:today.getDay()-1]);
+
+  // Week label
+  const weekLabel = weekOffset===0 ? 'This Week'
+    : weekOffset===-1 ? 'Last Week'
+    : weekOffset===1  ? 'Next Week'
+    : weekOffset < 0  ? `${Math.abs(weekOffset)} Weeks Ago`
+    : `${weekOffset} Weeks Ahead`;
+
+  const todayDayName = DAYS[today.getDay()===0?6:today.getDay()-1];
+
   const blocks = schedule.filter(s=>s.day===sel).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+
+  // For grid — hours 6am–10pm
+  const HOURS = Array.from({length:17},(_,i)=>i+6); // 6..22
+
+  const timeToMin = t => { if(!t)return 0; const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+
+  const dayBlocks = day => schedule.filter(s=>s.day===day).sort((a,b)=>timeToMin(a.start)-timeToMin(b.start));
+
+  // Clash detection
+  const findClashes = (day) => {
+    const db = dayBlocks(day);
+    const clashes = new Set();
+    for(let i=0;i<db.length;i++) {
+      for(let j=i+1;j<db.length;j++) {
+        const aS=timeToMin(db[i].start),aE=timeToMin(db[i].end);
+        const bS=timeToMin(db[j].start),bE=timeToMin(db[j].end);
+        if(aS<bE&&bS<aE){ clashes.add(db[i].id); clashes.add(db[j].id); }
+      }
+    }
+    return clashes;
+  };
+
   return (
     <div className="section">
       <div className="hero">
@@ -1234,31 +1338,181 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
         <div className="hero-big">Plan Your Time</div>
         <div className="hero-sub">Structure creates freedom</div>
       </div>
-      <div className="pill-row">
-        {DAYS.map(d => <button key={d} className={`pill ${sel===d?'active':''}`} onClick={()=>setSel(d)}>{d}</button>)}
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontWeight:700,fontSize:'15px'}}>{sel}</span>
-        <button className="btn-primary" onClick={()=>setForm({day:sel})}><Icons.plus size={14}/> Block</button>
-      </div>
-      {blocks.length===0 ? <Empty text={`Nothing on ${sel}.`}/> : (
-        <div className="list">
-          {blocks.map(b => (
-            <div key={b.id} className="card fade-in" style={{borderLeft:`3px solid ${BLOCK_COLORS[b.type]||'#475569'}`}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.title}</div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:BLOCK_COLORS[b.type],marginTop:'2px'}}>{b.start} – {b.end} · {b.type}</div>
-                </div>
-                <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
-                  <button className="icon-btn" onClick={()=>setForm(b)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={()=>onDelete(b.id)}><Icons.trash size={12}/></button>
-                </div>
-              </div>
-            </div>
+
+      {/* Week nav + view toggle */}
+      <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
+        <button className="icon-btn" onClick={()=>setWeekOffset(w=>w-1)}>←</button>
+        <div style={{flex:1,textAlign:'center',fontFamily:'var(--fm)',fontSize:'10px',
+          fontWeight:400,color:weekOffset===0?'var(--bolt)':'var(--mist-2)',
+          letterSpacing:'0.1em',textTransform:'uppercase'}}>
+          {weekLabel}
+        </div>
+        <button className="icon-btn" onClick={()=>setWeekOffset(w=>w+1)}>→</button>
+        <button className="icon-btn" onClick={()=>setWeekOffset(0)}
+          style={{fontSize:'9px',fontFamily:'var(--fm)',width:36}}>NOW</button>
+        <div style={{display:'flex',background:'rgba(0,24,36,0.6)',
+          border:'1px solid rgba(0,212,255,0.08)',borderRadius:6,padding:2,gap:2}}>
+          {['pills','grid'].map(v=>(
+            <button key={v} onClick={()=>setViewMode(v)}
+              style={{
+                padding:'0.3rem 0.5rem',border:'none',borderRadius:4,cursor:'pointer',
+                fontFamily:'var(--fm)',fontSize:'9px',letterSpacing:'0.06em',
+                background:viewMode===v?'rgba(0,136,200,0.15)':'none',
+                color:viewMode===v?'var(--bolt-lt)':'var(--mist-3)',
+              }}>
+              {v==='pills'?'LIST':'GRID'}
+            </button>
           ))}
         </div>
+        <button className="btn-primary icon-only" onClick={()=>setForm({day:sel})}><Icons.plus size={14}/></button>
+      </div>
+
+      {/* DAY PILLS — shown in both views */}
+      <div className="pill-row">
+        {DAYS.map(d => (
+          <button key={d}
+            className={`pill ${sel===d?'active':''}`}
+            onClick={()=>setSel(d)}
+            style={d===todayDayName&&weekOffset===0?{borderColor:'rgba(240,192,96,0.4)',color:'var(--horizon)'}:{}}>
+            {d}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── PILLS VIEW ───────────────────────────────────── */}
+      {viewMode==='pills' && (
+        <>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--mist-0)'}}>{sel}</span>
+            {weekOffset!==0 && (
+              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
+                letterSpacing:'0.08em',textTransform:'uppercase'}}>
+                {weekLabel}
+              </span>
+            )}
+          </div>
+          {blocks.length===0 ? <Empty text={`Nothing on ${sel}${weekOffset!==0?` — ${weekLabel}`:''}.`}/> : (
+            <div className="list">
+              {blocks.map(b => {
+                const clashes = findClashes(b.day);
+                return (
+                  <div key={b.id} className="card fade-in"
+                    style={{borderLeft:`3px solid ${clashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860'}`}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'0.375rem',marginBottom:2}}>
+                          <div style={{fontWeight:500,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.title}</div>
+                          {clashes.has(b.id) && (
+                            <span style={{fontFamily:'var(--fm)',fontSize:'8px',color:'#ff6040',
+                              border:'1px solid rgba(255,96,64,0.3)',borderRadius:3,padding:'0 4px',flexShrink:0}}>
+                              CLASH
+                            </span>
+                          )}
+                        </div>
+                        <div style={{fontFamily:'var(--fm)',fontSize:'11px',
+                          color:BLOCK_COLORS[b.type]||'var(--mist-2)',marginTop:2,fontWeight:300}}>
+                          {b.start} – {b.end} · {b.type}
+                        </div>
+                      </div>
+                      <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
+                        <button className="icon-btn" onClick={()=>setForm(b)}><Icons.edit size={12}/></button>
+                        <button className="icon-btn danger-btn" onClick={()=>onDelete(b.id)}><Icons.trash size={12}/></button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
+
+      {/* ─── GRID / TIMETABLE VIEW ─────────────────────────── */}
+      {viewMode==='grid' && (
+        <div className="card" style={{padding:'0.75rem',overflowX:'auto'}}>
+          <div style={{minWidth:480}}>
+            {/* Header row */}
+            <div style={{display:'grid',
+              gridTemplateColumns:`48px repeat(${DAYS.length},1fr)`,
+              gap:1,marginBottom:2}}>
+              <div/>
+              {DAYS.map(d => (
+                <div key={d} style={{
+                  fontFamily:'var(--fm)',fontSize:'9px',fontWeight:400,
+                  letterSpacing:'0.1em',textTransform:'uppercase',textAlign:'center',
+                  color:d===todayDayName&&weekOffset===0?'var(--bolt-lt)':'var(--mist-3)',
+                  padding:'0.375rem 0',
+                  borderBottom:`1px solid ${d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.3)':'rgba(255,255,255,0.05)'}`,
+                }}>
+                  {d}
+                </div>
+              ))}
+            </div>
+            {/* Time rows */}
+            {HOURS.map(h => (
+              <div key={h} style={{display:'grid',
+                gridTemplateColumns:`48px repeat(${DAYS.length},1fr)`,
+                gap:1,minHeight:40,alignItems:'stretch'}}>
+                {/* Hour label */}
+                <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
+                  paddingTop:4,paddingRight:6,textAlign:'right',flexShrink:0}}>
+                  {h.toString().padStart(2,'0')}:00
+                </div>
+                {DAYS.map(d => {
+                  const hBlocks = schedule.filter(b => b.day===d && (() => {
+                    const bs=timeToMin(b.start), be=timeToMin(b.end);
+                    return bs < (h+1)*60 && be > h*60;
+                  })());
+                  const clashes = findClashes(d);
+                  return (
+                    <div key={d} style={{
+                      minHeight:40,padding:'2px',position:'relative',
+                      borderTop:'1px solid rgba(255,255,255,0.03)',
+                      background:d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.02)':'transparent',
+                    }}
+                    onClick={()=>{setSel(d);setForm({day:d,start:`${h.toString().padStart(2,'0')}:00`,end:`${(h+1).toString().padStart(2,'0')}:00`});}}>
+                      {hBlocks.map(b => {
+                        const bs=timeToMin(b.start), be=timeToMin(b.end);
+                        const slotStart=h*60, slotEnd=(h+1)*60;
+                        const top=((bs-slotStart)/60)*100;
+                        const height=((Math.min(be,slotEnd)-Math.max(bs,slotStart))/60)*100;
+                        const color=clashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860';
+                        return (
+                          <div key={b.id} style={{
+                            position:'absolute',
+                            top:`${Math.max(0,top)}%`,
+                            left:2,right:2,
+                            height:`${Math.min(100,height)}%`,
+                            minHeight:8,
+                            background:`${color}18`,
+                            border:`1px solid ${color}40`,
+                            borderLeft:`2px solid ${color}`,
+                            borderRadius:3,
+                            overflow:'hidden',
+                            cursor:'pointer',
+                            zIndex:1,
+                          }} onClick={e=>{e.stopPropagation();setForm(b);}}>
+                            <div style={{fontFamily:'var(--fm)',fontSize:'8px',
+                              color:color,padding:'2px 4px',
+                              whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',lineHeight:1.3}}>
+                              {b.title}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
+            marginTop:'0.5rem',textAlign:'center'}}>
+            Tap any slot to add a block. Clashes shown in red.
+          </div>
+        </div>
+      )}
+
       {form!==null && <SchedModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
     </div>
   );
@@ -1289,7 +1543,12 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
   const [report,setReport]     = useState('overview');
   const [form,setForm]         = useState(null);
   const [meterOpen,setMeterOpen] = useState(false);
+  const [projMonths,setProjMonths] = useState(6);
+  const [finPage,setFinPage] = useState(0);
+  const FIN_PER_PAGE = 8;
   const filtered = filter==='all' ? finances : finances.filter(f=>f.type===filter);
+  const finPageCount = Math.ceil(filtered.length / FIN_PER_PAGE);
+  const finPaged = filtered.slice(finPage*FIN_PER_PAGE,(finPage+1)*FIN_PER_PAGE);
   const mrr = leads.filter(l=>l.status==='Paid'&&l.retainerAmount).reduce((s,l)=>s+(Number(l.retainerAmount)||0),0);
   const emotionIdx = calcEmotionLevel(finances,leads,xp,level);
   const emotion = EMOTION_LEVELS[emotionIdx];
@@ -1306,8 +1565,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
     const today=new Date(); const recent=monthly.slice(-3);
     const ai=recent.length>0?recent.reduce((s,m)=>s+m.income,0)/recent.length:0;
     const ae=recent.length>0?recent.reduce((s,m)=>s+m.expenses,0)/recent.length:0;
-    return Array.from({length:6},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()+i+1,1);const p=ai+mrr;return{month:d.toISOString().slice(0,7),projected:Math.round(p),expenses:Math.round(ae),profit:Math.round(p-ae),minimum:minTarget};});
-  },[monthly,mrr,minTarget]);
+    return Array.from({length:projMonths},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()+i+1,1);const p=ai+mrr;return{month:d.toISOString().slice(0,7),projected:Math.round(p),expenses:Math.round(ae),profit:Math.round(p-ae),minimum:minTarget};});
+  },[monthly,mrr,minTarget,projMonths]);
 
   const cats = useMemo(()=>{
     const map={};finances.filter(f=>f.type==='income').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});
@@ -1318,39 +1577,128 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
   return (
     <div className="section">
-      {/* Emotion Meter */}
-      <div className="emotion-card" style={{background:emotion.bg,border:`1px solid ${emotion.color}30`}}>
-        <div style={{display:'flex',alignItems:'center',gap:'0.875rem',padding:'1rem',cursor:'pointer'}} onClick={()=>setMeterOpen(!meterOpen)}>
-          <span style={{fontSize:'30px',animation:'float 3s ease-in-out infinite'}}>{emotion.emoji}</span>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:'15px',color:emotion.color}}>{emotion.label}</div>
-            <div style={{fontSize:'12px',color:'var(--mist-1)'}}>{emotion.desc}</div>
+      {/* AI HEALTH SYSTEM — replaces emoji meter */}
+      <div style={{
+        position:'relative', overflow:'hidden',
+        background:'rgba(4,8,15,0.85)',
+        border:`1px solid ${emotion.color}22`,
+        borderRadius:14, cursor:'pointer',
+        backdropFilter:'blur(12px)',
+      }} onClick={()=>setMeterOpen(!meterOpen)}>
+        {/* Scan line */}
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,
+          background:`linear-gradient(90deg,transparent,${emotion.color},transparent)`,
+          opacity:0.6,animation:'lightningLine 3s ease-in-out infinite'}}/>
+        {/* Ambient glow behind */}
+        <div style={{position:'absolute',inset:0,
+          background:`radial-gradient(ellipse 80% 60% at 50% 0%,${emotion.color}10,transparent 70%)`,
+          pointerEvents:'none'}}/>
+
+        <div style={{padding:'1rem 1.125rem',position:'relative'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.875rem'}}>
+            <div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',fontWeight:300,
+                letterSpacing:'0.3em',textTransform:'uppercase',
+                color:emotion.color,opacity:0.7,marginBottom:4}}>
+                Business Health Index
+              </div>
+              <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,
+                color:emotion.color,lineHeight:1,
+                textShadow:`0 0 20px ${emotion.color}80`}}>
+                {emotion.label}
+              </div>
+              <div style={{fontFamily:'var(--fm)',fontSize:'10px',fontWeight:300,
+                color:'var(--mist-2)',marginTop:3,letterSpacing:'0.04em'}}>
+                {emotion.desc}
+              </div>
+            </div>
+            {/* Circular gauge */}
+            <div style={{position:'relative',width:64,height:64,flexShrink:0}}>
+              <svg width="64" height="64" viewBox="0 0 64 64">
+                <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4"/>
+                <circle cx="32" cy="32" r="26" fill="none"
+                  stroke={emotion.color}
+                  strokeWidth="4"
+                  strokeDasharray={`${(1 - emotionIdx/4) * 163.4} 163.4`}
+                  strokeLinecap="round"
+                  strokeDashoffset="40.85"
+                  style={{filter:`drop-shadow(0 0 6px ${emotion.color})`,transition:'stroke-dasharray 0.8s ease'}}/>
+                <text x="32" y="37" textAnchor="middle"
+                  fill={emotion.color}
+                  fontSize="14" fontFamily="var(--fe)" fontWeight="600">
+                  {Math.round((1-emotionIdx/4)*100)}
+                </text>
+              </svg>
+            </div>
           </div>
-          <div style={{display:'flex',alignItems:'center',gap:'4px',flexShrink:0}}>
-            {EMOTION_LEVELS.map((e,i)=>(
-              <div key={i} style={{width:7,height:7,borderRadius:'50%',background:i<=emotionIdx?e.color:'rgba(255,255,255,0.1)',opacity:i===emotionIdx?1:0.4,transition:'all 0.3s'}}/>
-            ))}
-            <span style={{color:'var(--mist-2)',marginLeft:'0.25rem'}}>{meterOpen?<Icons.chevUp size={13}/>:<Icons.chevDown size={13}/>}</span>
+
+          {/* Signal bars — 5 segments, AI style */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:3}}>
+            {EMOTION_LEVELS.map((e,i) => {
+              const active = i <= (4 - emotionIdx);
+              return (
+                <div key={i} style={{position:'relative'}}>
+                  <div style={{
+                    height: 4 + i * 3,
+                    borderRadius:1,
+                    background: active ? e.color : 'rgba(255,255,255,0.05)',
+                    boxShadow: active ? `0 0 8px ${e.color}80` : 'none',
+                    transition:'all 0.4s ease',
+                  }}/>
+                  {active && <div style={{
+                    position:'absolute',top:-2,left:0,right:0,height:1,
+                    background:e.color,opacity:0.8,
+                    filter:`blur(1px)`,
+                  }}/>}
+                </div>
+              );
+            })}
           </div>
         </div>
+
         {meterOpen && (
-          <div style={{padding:'0 1rem 1rem',borderTop:'1px solid rgba(255,255,255,0.05)'}}>
-            <div style={{height:'7px',borderRadius:'99px',background:'linear-gradient(90deg,#3b82f6,#10b981,#f59e0b,#f97316,#ef4444)',marginBottom:'0.5rem',marginTop:'0.75rem',position:'relative'}}>
-              <div style={{position:'absolute',top:'50%',transform:'translateY(-50%)',left:`${Math.max(2,Math.min(96,(emotionIdx/4)*100))}%`,width:'11px',height:'11px',borderRadius:'50%',background:'white',border:`2px solid ${emotion.color}`,boxShadow:`0 0 6px ${emotion.color}`,transition:'left 0.5s'}}/>
+          <div style={{borderTop:`1px solid ${emotion.color}15`,padding:'0.875rem 1.125rem',
+            display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            {/* Key metrics grid */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
+              {[
+                {l:'Net Profit',  v:`J$${profit.toLocaleString()}`,  c:profit>=0?'#1adb8a':'#ff6040'},
+                {l:'MRR',         v:`J$${mrr.toLocaleString()}/mo`,  c:'var(--bolt)'},
+                {l:'Level Target',v:`J$${minTarget.toLocaleString()}`,c:'var(--horizon)'},
+                {l:'MRR vs Target',v:`${minTarget>0?Math.round((mrr/minTarget)*100):0}%`,c:emotion.color},
+              ].map(m => (
+                <div key={m.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,
+                  padding:'0.5rem 0.75rem',border:'1px solid rgba(0,212,255,0.06)'}}>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
+                    letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginBottom:3}}>
+                    {m.l}
+                  </div>
+                  <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,
+                    color:m.c,lineHeight:1,textShadow:`0 0 10px ${m.c}60`}}>
+                    {m.v}
+                  </div>
+                </div>
+              ))}
             </div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.75rem'}}>
-              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#3b82f6'}}>Thriving</span>
-              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#ff6040'}}>Danger</span>
-            </div>
+            {/* MRR progress */}
             <div>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-                <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>Level {level} target</span>
-                <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:emotion.color}}>J${minTarget.toLocaleString()}/mo</span>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em'}}>
+                  MRR PROGRESS TO TARGET
+                </span>
+                <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:emotion.color}}>
+                  {minTarget>0?Math.round((mrr/minTarget)*100):0}%
+                </span>
               </div>
-              <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,background:emotion.color,borderRadius:'99px',transition:'width 0.6s'}}/>
+              <div style={{height:'3px',background:'rgba(0,212,255,0.07)',borderRadius:99,overflow:'hidden',position:'relative'}}>
+                <div style={{
+                  position:'absolute',inset:0,
+                  background:'repeating-linear-gradient(90deg,rgba(0,212,255,0.05) 0,rgba(0,212,255,0.05) 8px,transparent 8px,transparent 16px)',
+                }}/>
+                <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,
+                  background:`linear-gradient(90deg,var(--bolt-2),${emotion.color})`,
+                  borderRadius:99,boxShadow:`0 0 8px ${emotion.color}80`,transition:'width 0.8s'}}/>
               </div>
-              <div style={{fontSize:'11px',color:'var(--mist-2)',marginTop:'4px'}}>MRR J${mrr.toLocaleString()} vs J${minTarget.toLocaleString()}/mo target</div>
             </div>
           </div>
         )}
@@ -1394,7 +1742,18 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
       {report==='projection' && (
         <div className="card fade-in">
-          <div className="card-label">6-Month Projection</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
+            <div className="card-label" style={{margin:0}}>{projMonths}-Month Projection</div>
+            <div style={{display:'flex',gap:4}}>
+              {[3,6,12].map(m=>(
+                <button key={m} onClick={()=>setProjMonths(m)}
+                  className={`pill ${projMonths===m?'active':''}`}
+                  style={{padding:'0.2rem 0.5rem',fontSize:'9px'}}>
+                  {m}M
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR. Dashed = min target.</div>
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
@@ -1415,25 +1774,47 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         </div>
       )}
 
-      {report==='breakdown' && (
-        <div className="card fade-in">
-          <div className="card-label">Income by Category</div>
-          {cats.length===0 ? <Empty text="No income yet."/> : cats.map(c=>{
-            const pct=totalIncome>0?(c.value/totalIncome)*100:0;
-            return (
-              <div key={c.name} style={{marginBottom:'0.75rem'}}>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-                  <span style={{fontWeight:600,fontSize:'13px'}}>{c.name}</span>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${c.value.toLocaleString()} ({Math.round(pct)}%)</span>
-                </div>
-                <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${pct}%`,background:'#1adb8a',borderRadius:'99px'}}/>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {report==='breakdown' && (() => {
+        const expCats = (()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
+        return (
+          <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            <div className="card fade-in">
+              <div className="card-label">Income by Category</div>
+              {cats.length===0 ? <Empty text="No income yet."/> : cats.map(c=>{
+                const pct=totalIncome>0?(c.value/totalIncome)*100:0;
+                return (
+                  <div key={c.name} style={{marginBottom:'0.75rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                      <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
+                    </div>
+                    <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),#1adb8a)',borderRadius:99,boxShadow:'0 0 6px rgba(26,219,138,0.4)'}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="card fade-in">
+              <div className="card-label">Expenses by Category</div>
+              {expCats.length===0 ? <Empty text="No expenses yet."/> : expCats.map(c=>{
+                const pct=totalExpenses>0?(c.value/totalExpenses)*100:0;
+                return (
+                  <div key={c.name} style={{marginBottom:'0.75rem'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                      <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#ff6040'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
+                    </div>
+                    <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--fire-dk),#ff6040)',borderRadius:99,boxShadow:'0 0 6px rgba(255,96,64,0.4)'}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       <div style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
         <div className="tab-row" style={{flex:1}}>
@@ -1445,22 +1826,38 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
       </div>
 
       {filtered.length===0 ? <Empty text="No transactions yet."/> : (
-        <div className="list">
-          {filtered.map(f=>(
-            <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
-              <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'#1adb8a':'#ff6040'}}/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
-                <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#7b6cf5'}}> · linked</span>:''}</div>
+        <>
+          <div className="list">
+            {finPaged.map(f=>(
+              <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
+                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'#1adb8a':'#ff6040'}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:500,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
+                  <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#7b6cf5'}}> · linked</span>:''}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
+                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'#1adb8a':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
+                  <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
+                </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                <div style={{fontFamily:'var(--fm)',fontWeight:700,fontSize:'13px',color:f.type==='income'?'#1adb8a':'#ff6040',whiteSpace:'nowrap'}}><span style={{color:f.type==='income'?'#1adb8a':'#ff6040'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</span></div>
-                <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
-                <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
-              </div>
+            ))}
+          </div>
+          {finPageCount > 1 && (
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'0.4rem'}}>
+              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.max(0,p-1))} disabled={finPage===0}>←</button>
+              {Array.from({length:finPageCount},(_,i)=>(
+                <button key={i} className={`pill ${finPage===i?'active':''}`}
+                  style={{minWidth:28,justifyContent:'center',padding:'0.2rem 0.5rem'}}
+                  onClick={()=>setFinPage(i)}>{i+1}</button>
+              ))}
+              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.min(finPageCount-1,p+1))} disabled={finPage===finPageCount-1}>→</button>
             </div>
-          ))}
-        </div>
+          )}
+          <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',textAlign:'center'}}>
+            {filtered.length} transactions · page {finPage+1} of {finPageCount||1}
+          </div>
+        </>
       )}
 
       {form!==null && <FinanceModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
@@ -1490,7 +1887,7 @@ function FinanceModal({data,onSave,onClose}) {
 }
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({goals,onAdd,onUpdate,onDelete}) {
+function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
   const [form,setForm]=useState(null);
   return (
     <div className="section">
@@ -1516,6 +1913,19 @@ function Goals({goals,onAdd,onUpdate,onDelete}) {
                     <div style={{fontSize:'11px',color:'var(--mist-2)',marginTop:'2px'}}>{g.category}{g.dueDate?` · Due ${g.dueDate}`:''}</div>
                   </div>
                   <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
+                    {pct < 100 && (
+                      <button className="icon-btn mint-btn" title="Mark complete (+100 XP)"
+                        onClick={()=>{onUpdate(g.id,{...g,current:g.target});onGoalComplete&&onGoalComplete(g);}}>
+                        ✓
+                      </button>
+                    )}
+                    {pct >= 100 && (
+                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#1adb8a',
+                        padding:'0.2rem 0.5rem',border:'1px solid rgba(26,219,138,0.3)',
+                        borderRadius:4,background:'rgba(26,219,138,0.07)'}}>
+                        DONE
+                      </span>
+                    )}
                     <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
                     <button className="icon-btn danger-btn" onClick={()=>onDelete(g.id)}><Icons.trash size={12}/></button>
                   </div>
@@ -1949,6 +2359,16 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
 
 // ─── JAXON FLOATING ───────────────────────────────────────────────────────────
 function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,totalExpenses,profit,xp,level,todayStr,paidLeads,openLeads}) {
+  // Allow pipeline "Ask JAXON" button to open chat with pre-filled message
+  useEffect(() => {
+    window._openJaxonChat = (msg) => {
+      setOpen(true);
+      setTimeout(() => {
+        setInput(msg);
+      }, 100);
+    };
+    return () => { delete window._openJaxonChat; };
+  }, []);
   const [open,setOpen]           = useState(false);
   const [messages,setMessages]   = useState([]);
   const [input,setInput]         = useState('');
