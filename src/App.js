@@ -462,53 +462,70 @@ export default function App() {
   const todayStr  = new Date().toISOString().slice(0,10);
 
   useEffect(() => {
-    // Splash must show for at least 4 seconds — no matter how fast data loads
     const SPLASH_MS = 4000;
-    const startTime = Date.now();
-    let dataReady = false;
     let timerDone = false;
+    let dataReady = false;
 
     const tryDismiss = () => {
-      if (dataReady && timerDone) setLoading(false);
+      if (timerDone && dataReady) setLoading(false);
     };
 
-    // 4-second hard minimum timer
+    // Hard 4-second minimum — always fires
     const timer = setTimeout(() => {
       timerDone = true;
       tryDismiss();
     }, SPLASH_MS);
 
-    const unsubs = []; let loaded = 0;
+    // Safety net — if Firebase never responds, dismiss after 8s anyway
+    const fallback = setTimeout(() => {
+      setLoading(false);
+    }, 8000);
+
     const cols = [
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
     ];
-    cols.forEach(([col,setter]) => {
+
+    // Track which collections have fired at least once
+    const fired = new Set();
+    const unsubs = [];
+
+    cols.forEach(([col, setter]) => {
       try {
-        const q = query(collection(db,col), orderBy('createdAt','desc'));
-        const unsub = onSnapshot(q, snap => {
-          setter(snap.docs.map(d => ({id:d.id,...d.data()})));
-          loaded++;
-          if (loaded >= cols.length) {
-            dataReady = true;
-            tryDismiss();
+        const q = query(collection(db, col), orderBy('createdAt','desc'));
+        const unsub = onSnapshot(q,
+          snap => {
+            setter(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+            fired.add(col);
+            if (fired.size >= cols.length) {
+              dataReady = true;
+              tryDismiss();
+            }
+          },
+          err => {
+            console.warn('Snapshot error for', col, err.message);
+            fired.add(col); // count it as done so we don't hang
+            if (fired.size >= cols.length) {
+              dataReady = true;
+              tryDismiss();
+            }
           }
-        }, () => {
-          setError('Firebase connection issue');
+        );
+        unsubs.push(unsub);
+      } catch (e) {
+        console.warn('Collection error', col, e.message);
+        fired.add(col);
+        if (fired.size >= cols.length) {
           dataReady = true;
           tryDismiss();
-        });
-        unsubs.push(unsub);
-      } catch {
-        setError('Firebase not configured');
-        dataReady = true;
-        tryDismiss();
+        }
       }
     });
 
     return () => {
       clearTimeout(timer);
+      clearTimeout(fallback);
       unsubs.forEach(u => u());
     };
   }, []);
