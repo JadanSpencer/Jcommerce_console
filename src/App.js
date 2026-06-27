@@ -273,7 +273,11 @@ function binarySearchDate(sortedArr, targetDate, key='date') {
   return result;
 }
 
-function VelocityTracker({ leads, financesSorted, habits, todos, todayStr, xp }) {
+function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
+  // Sort finances by date once inside component — O(n log n)
+  const financesSorted = useMemo(() =>
+    [...(finances||[])].sort((a,b)=>(a.date||''). localeCompare(b.date||'')),
+  [finances]);
   const now    = new Date(todayStr);
   const w7ago  = new Date(now - 7  * 86400000).toISOString().slice(0,10);
   const w14ago = new Date(now - 14 * 86400000).toISOString().slice(0,10);
@@ -1016,7 +1020,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
 
       {/* ⚡ Velocity Tracker */}
       <VelocityTracker
-        leads={leads} financesSorted={financesSorted}
+        leads={leads} finances={finances}
         habits={habits} todos={todos}
         todayStr={todayStr} xp={xp}
       />
