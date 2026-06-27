@@ -462,6 +462,22 @@ export default function App() {
   const todayStr  = new Date().toISOString().slice(0,10);
 
   useEffect(() => {
+    // Splash must show for at least 4 seconds — no matter how fast data loads
+    const SPLASH_MS = 4000;
+    const startTime = Date.now();
+    let dataReady = false;
+    let timerDone = false;
+
+    const tryDismiss = () => {
+      if (dataReady && timerDone) setLoading(false);
+    };
+
+    // 4-second hard minimum timer
+    const timer = setTimeout(() => {
+      timerDone = true;
+      tryDismiss();
+    }, SPLASH_MS);
+
     const unsubs = []; let loaded = 0;
     const cols = [
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
@@ -474,12 +490,27 @@ export default function App() {
         const unsub = onSnapshot(q, snap => {
           setter(snap.docs.map(d => ({id:d.id,...d.data()})));
           loaded++;
-          if (loaded >= cols.length) setLoading(false);
-        }, () => { setError('Firebase connection issue'); setLoading(false); });
+          if (loaded >= cols.length) {
+            dataReady = true;
+            tryDismiss();
+          }
+        }, () => {
+          setError('Firebase connection issue');
+          dataReady = true;
+          tryDismiss();
+        });
         unsubs.push(unsub);
-      } catch { setError('Firebase not configured'); setLoading(false); }
+      } catch {
+        setError('Firebase not configured');
+        dataReady = true;
+        tryDismiss();
+      }
     });
-    return () => unsubs.forEach(u => u());
+
+    return () => {
+      clearTimeout(timer);
+      unsubs.forEach(u => u());
+    };
   }, []);
 
   const add    = async (col, data) => { try { await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
