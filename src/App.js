@@ -154,10 +154,23 @@ function calcEmotionLevel(finances, leads, xp, level) {
 function calcTodoXP(todos, todayStr) {
   const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0,10);
   let xp = 0;
-  todos.forEach(t => { xp += Object.entries(t.doneOn||{}).filter(([,v])=>v).length * 5; });
-  todos.forEach(t => { if (t.addedDate && t.addedDate <= yesterday && !t.doneOn?.[yesterday]) xp -= 10; });
-  const yt = todos.filter(t => t.addedDate === yesterday);
-  if (yt.length > 0 && yt.length < 5) xp -= 10;
+  // Reward: +5 XP for every todo completed on any day
+  todos.forEach(t => {
+    xp += Object.entries(t.doneOn||{})
+      .filter(([date,done]) => done && date < todayStr) // only count past completions for XP calc
+      .length * 5;
+    // Also count today's completions as reward (no penalty for incomplete today)
+    if (t.doneOn?.[todayStr]) xp += 5;
+  });
+  // Penalty: only for todos that existed ON OR BEFORE yesterday and were NOT done yesterday
+  // NEVER penalise today — `t.addedDate <= yesterday` ensures only past days are judged
+  todos.forEach(t => {
+    if (t.addedDate && t.addedDate <= yesterday && !t.doneOn?.[yesterday]) xp -= 10;
+  });
+  // Penalty: if fewer than 5 todos existed yesterday (low effort the previous day)
+  const todosExistingYesterday = todos.filter(t => t.addedDate && t.addedDate <= yesterday);
+  const todosCompletedYesterday = todosExistingYesterday.filter(t => t.doneOn?.[yesterday]);
+  if (todosExistingYesterday.length > 0 && todosCompletedYesterday.length < 5) xp -= 10;
   return xp;
 }
 
@@ -183,11 +196,16 @@ function getLast20Weeks() {
 function calcXP(habits, leads, todos, todayStr) {
   let xp = 0;
   const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0,10);
+  // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
+  // Today's habits and todos have until 11:59pm — no penalty until the next day.
   habits.forEach(h => {
+    // Add XP for every completed habit on any past day
     xp += Object.values(h.completions||{}).filter(Boolean).length * 10;
+    // Penalty: only if habit existed yesterday AND was not completed yesterday
     const created = h.createdAt?.toDate ? h.createdAt.toDate().toISOString().slice(0,10) : null;
-    if (created && yesterday < created) return;
-    if (!h.completions?.[yesterday]) xp -= 10;
+    if (created && yesterday < created) return; // habit didn't exist yet yesterday
+    if (!h.completions?.[yesterday]) xp -= 10;  // missed yesterday — deduct
+    // Note: today (todayStr) is NEVER checked here — you have until midnight
   });
   leads.filter(l => l.status==='Paid').forEach(() => { xp += 200; });
   xp += calcTodoXP(todos, todayStr);
@@ -205,6 +223,41 @@ function useEntrance(delay = 0) {
   return visible;
 }
 
+
+
+// ─── NOTIFICATIONS ─────────────────────────────────────────────────────────────
+function useNotifications(alerts) {
+  const [permission, setPermission] = useState(Notification?.permission || 'default');
+  const notifiedRef = useRef(new Set());
+
+  const requestPermission = async () => {
+    if (!('Notification' in window)) return;
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    return result;
+  };
+
+  // Fire notifications for unseen alerts
+  useEffect(() => {
+    if (permission !== 'granted' || !alerts?.length) return;
+    alerts.forEach(alert => {
+      if (alert.seen || notifiedRef.current.has(alert.id)) return;
+      notifiedRef.current.add(alert.id);
+      try {
+        const n = new Notification(alert.title || 'JAXON', {
+          body: alert.body || alert.message || '',
+          icon: '/logo192.png',
+          badge: '/logo192.png',
+          tag: alert.id,
+          requireInteraction: alert.type === 'MORNING_WAKE_UP',
+        });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch(e) {}
+    });
+  }, [alerts, permission]);
+
+  return { permission, requestPermission };
+}
 
 // ─── CIRCUIT BOARD BACKGROUND ────────────────────────────────────────────────
 function Particles() {
@@ -403,6 +456,7 @@ export default function App() {
   const [invoiceData, setInvoiceData] = useState(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const weekDates = getWeekDates();
+  const { permission: notifPerm, requestPermission } = useNotifications(alerts);
   // Allow pipeline to trigger invoice from lead
   useEffect(() => { window._openInvoice = (data) => { setInvoiceData(data); setInvoiceOpen(true); }; return () => { delete window._openInvoice; }; }, []);
   const todayStr  = new Date().toISOString().slice(0,10);
@@ -556,6 +610,50 @@ export default function App() {
               {todayBriefing.content}
             </div>
           </div>
+        </div>
+      )}
+
+
+      {/* NOTIFICATION CENTRE */}
+      {alerts.length > 0 && notifPerm !== 'granted' && (
+        <div style={{
+          position:'fixed',bottom:'calc(var(--bh) + 1rem)',left:'1rem',right:'1rem',
+          maxWidth:440,margin:'0 auto',
+          background:'rgba(0,24,36,0.97)',border:'1px solid rgba(0,212,255,0.2)',
+          borderTop:'2px solid var(--bolt)',borderRadius:12,
+          padding:'0.875rem 1rem',zIndex:150,
+          boxShadow:'0 8px 32px rgba(0,0,0,0.6)',
+          animation:'riseUp 0.3s ease',
+        }}>
+          <div style={{display:'flex',alignItems:'center',gap:'0.625rem'}}>
+            <div style={{width:8,height:8,borderRadius:'50%',background:'var(--bolt)',
+              boxShadow:'0 0 8px var(--bolt)',animation:'blink 1.5s ease-in-out infinite',flexShrink:0}}/>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',
+                letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:2}}>
+                JAXON Alert
+              </div>
+              <div style={{fontSize:'13px',fontWeight:400,color:'var(--mist-0)'}}>
+                {alerts[0]?.title||'New notification'}
+              </div>
+              <div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-2)',marginTop:2,lineHeight:1.5}}>
+                {alerts[0]?.body||alerts[0]?.message}
+              </div>
+            </div>
+            <button className="icon-btn" style={{flexShrink:0}}
+              onClick={async()=>{
+                if(alerts[0]?.id) {
+                  const {doc,updateDoc} = await import('firebase/firestore');
+                  // Mark seen
+                }
+              }}>✕</button>
+          </div>
+          {alerts.length > 1 && (
+            <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
+              marginTop:'0.5rem',letterSpacing:'0.08em'}}>
+              +{alerts.length-1} more alerts
+            </div>
+          )}
         </div>
       )}
 
@@ -1702,6 +1800,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
   const [meterOpen,setMeterOpen] = useState(false);
   const [projMonths,setProjMonths] = useState(6);
   const [finPage,setFinPage] = useState(0);
+  const [investAdvice,setInvestAdvice] = useState(null);
+  const [investLoading,setInvestLoading] = useState(false);
   const FIN_PER_PAGE = 8;
   const filtered = filter==='all' ? finances : finances.filter(f=>f.type===filter);
   const finPageCount = Math.ceil(filtered.length / FIN_PER_PAGE);
@@ -1819,8 +1919,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             {/* Key metrics grid */}
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
               {[
-                {l:'Net Profit',  v:`J$${profit.toLocaleString()}`,  c:profit>=0?'#1adb8a':'#ff6040'},
-                {l:'MRR',         v:`J$${mrr.toLocaleString()}/mo`,  c:'var(--bolt)'},
+                {l:'Net Profit',  v:`J$${profit.toLocaleString()}`,  c:profit>=0?'var(--bolt)':'#ff6040'},
+                {l:'MRR',         v:`J$${mrr.toLocaleString()}/mo`,  c:'var(--bolt-lt)'},
                 {l:'Level Target',v:`J$${minTarget.toLocaleString()}`,c:'var(--horizon)'},
                 {l:'MRR vs Target',v:`${minTarget>0?Math.round((mrr/minTarget)*100):0}%`,c:emotion.color},
               ].map(m => (
@@ -1863,20 +1963,20 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
       <div className="hero">
         <div className="hero-eye">Finance</div>
-        <div className="hero-big" style={{color:profit>=0?'#1adb8a':'#ff6040'}}>J${profit.toLocaleString()}</div>
+        <div className="hero-big" style={{color:profit>=0?'var(--bolt)':'#ff6040'}}>J${profit.toLocaleString()}</div>
         <div className="hero-sub">Net profit · J${totalIncome.toLocaleString()} in · J${totalExpenses.toLocaleString()} out{mrr>0?` · MRR J${mrr.toLocaleString()}`:''}</div>
       </div>
 
       <div className="grid-2">
-        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar}   color="var(--horizon)"/>
-        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar}   color="var(--fire)"/>
-        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}`}           icon={Icons.trend}    color="var(--mist-2)"/>
-        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--horizon)"/>
+        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar}   color="var(--bolt)"/>
+        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar}   color="#ff6040"/>
+        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}`}           icon={Icons.trend}    color="var(--bolt-lt)"/>
+        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
       </div>
 
       <div className="tab-row">
-        {['overview','projection','breakdown'].map(t=>(
-          <button key={t} className={`tab-btn ${report===t?'active':''}`} onClick={()=>setReport(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
+        {['overview','projection','breakdown','invest'].map(t=>(
+          <button key={t} className={`tab-btn ${report===t?'active':''}`} onClick={()=>setReport(t)}>{t==='invest'?'⚡ Invest':t.charAt(0).toUpperCase()+t.slice(1)}</button>
         ))}
       </div>
 
@@ -1890,8 +1990,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
               <YAxis tick={{fill:'#4a5568',fontSize:9}} width={46}/>
               <Tooltip contentStyle={tt}/>
               <Legend wrapperStyle={{fontSize:'10px',color:'#64748b'}}/>
-              <Bar dataKey="income" fill="#10b981" radius={[3,3,0,0]} name="Income"/>
-              <Bar dataKey="expenses" fill="#ef4444" radius={[3,3,0,0]} name="Expenses"/>
+              <Bar dataKey="income" fill="#00d4ff" radius={[3,3,0,0]} name="Income"/>
+              <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses"/>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -1915,17 +2015,19 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
               <defs>
-                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.25}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.25}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0088c8" stopOpacity={0.25}/><stop offset="95%" stopColor="#0088c8" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
               <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
               <YAxis tick={{fill:'#4a5568',fontSize:9}} width={46}/>
               <Tooltip contentStyle={tt}/>
               <Legend wrapperStyle={{fontSize:'10px',color:'#64748b'}}/>
-              <Area type="monotone" dataKey="projected" stroke="#10b981" fill="url(#g1)" name="Income" strokeWidth={2}/>
-              <Area type="monotone" dataKey="profit"    stroke="#8b5cf6" fill="url(#g2)" name="Profit" strokeWidth={2}/>
-              <Area type="monotone" dataKey="minimum"   stroke="#f59e0b" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3"/>
+              <Area type="monotone" dataKey="projected" stroke="#00d4ff" fill="url(#g1)" name="Projected Income" strokeWidth={2}/>
+              <Area type="monotone" dataKey="profit"    stroke="#0088c8" fill="url(#g2)" name="Profit" strokeWidth={2}/>
+              <Area type="monotone" dataKey="expenses"  stroke="#ff6040" fill="url(#g3)" name="Expenses" strokeWidth={1.5}/>
+              <Area type="monotone" dataKey="minimum"   stroke="rgba(0,212,255,0.3)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3"/>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1943,10 +2045,10 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
                   <div key={c.name} style={{marginBottom:'0.75rem'}}>
                     <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
                       <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#1adb8a'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
                     </div>
                     <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),#1adb8a)',borderRadius:99,boxShadow:'0 0 6px rgba(26,219,138,0.4)'}}/>
+                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),var(--bolt))',borderRadius:99,boxShadow:'0 0 6px rgba(0,212,255,0.4)'}}/>
                     </div>
                   </div>
                 );
@@ -1973,6 +2075,32 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         );
       })()}
 
+
+      {report==='invest' && (
+        <InvestAdvisor
+          profit={profit} mrr={mrr} totalIncome={totalIncome} totalExpenses={totalExpenses}
+          level={level} paidClients={leads.filter(l=>l.status==='Paid').length}
+          openLeads={leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length}
+          finances={finances}
+          advice={investAdvice} loading={investLoading}
+          onFetch={async()=>{
+            setInvestLoading(true);
+            try {
+              const r = await fetch('https://jaxon-rctv.onrender.com/invest', {
+                method:'POST', headers:{'Content-Type':'application/json'},
+                body:JSON.stringify({profit,mrr,totalIncome,totalExpenses,level,
+                  paidClients:leads.filter(l=>l.status==='Paid').length,
+                  openLeads:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length,
+                  recentFinances:finances.slice(-20).map(f=>({type:f.type,amount:f.amount,category:f.category,date:f.date}))})
+              });
+              const d = await r.json();
+              setInvestAdvice(d);
+            } catch(e){ console.error(e); }
+            setInvestLoading(false);
+          }}
+        />
+      )}
+
       <div style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
         <div className="tab-row" style={{flex:1}}>
           {['all','income','expense'].map(t=>(
@@ -1987,13 +2115,13 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
           <div className="list">
             {finPaged.map(f=>(
               <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
-                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'#1adb8a':'#ff6040'}}/>
+                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'var(--bolt)':'#ff6040'}}/>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontWeight:500,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
                   <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#7b6cf5'}}> · linked</span>:''}</div>
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'#1adb8a':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
+                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
                   <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
                   <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
                 </div>
