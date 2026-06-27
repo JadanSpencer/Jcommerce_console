@@ -225,38 +225,78 @@ function useEntrance(delay = 0) {
 
 
 
-// ─── NOTIFICATIONS ─────────────────────────────────────────────────────────────
-function useNotifications(alerts) {
+// ─── WEB PUSH NOTIFICATIONS ───────────────────────────────────────────────────
+const VAPID_PUBLIC = 'BHLx8C2kAHcDVJL13KyqNZYtADwBAii8vDpLbDMi5fjJi5Cn7XHuq9xlk08fCJdcQvOGhxovmHrZtp3Fmccdie0';
+
+function urlBase64ToUint8Array(base64String) {
+  const pad = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + pad).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = window.atob(base64);
+  return Uint8Array.from({length: raw.length}, (_, i) => raw.charCodeAt(i));
+}
+
+function useNotifications() {
   const [permission, setPermission] = useState(Notification?.permission || 'default');
-  const notifiedRef = useRef(new Set());
+  const [swReady, setSwReady]       = useState(false);
+  const [subbed, setSubbed]         = useState(false);
+
+  // Register service worker on mount
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(reg => {
+        setSwReady(true);
+        // Check if already subscribed
+        return reg.pushManager.getSubscription();
+      })
+      .then(sub => { if (sub) setSubbed(true); })
+      .catch(err => console.warn('SW registration failed:', err));
+  }, []);
 
   const requestPermission = async () => {
-    if (!('Notification' in window)) return;
+    if (!('Notification' in window)) {
+      alert('This browser does not support notifications.');
+      return;
+    }
+
+    // 1. Ask for notification permission
     const result = await Notification.requestPermission();
     setPermission(result);
+    if (result !== 'granted') return result;
+
+    // 2. Subscribe to Web Push
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC),
+      });
+
+      // 3. Save subscription to Firebase so JAXON can reach this device
+      const subJson = sub.toJSON();
+      await fetch('https://jaxon-rctv.onrender.com/subscribe', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          subscription: subJson,
+          deviceInfo: {
+            userAgent: navigator.userAgent,
+            platform: navigator.platform,
+            timestamp: new Date().toISOString(),
+          },
+        }),
+      });
+
+      setSubbed(true);
+      console.log('✓ Push subscription saved to JAXON');
+    } catch (err) {
+      console.error('Push subscription failed:', err);
+    }
+
     return result;
   };
 
-  // Fire notifications for unseen alerts
-  useEffect(() => {
-    if (permission !== 'granted' || !alerts?.length) return;
-    alerts.forEach(alert => {
-      if (alert.seen || notifiedRef.current.has(alert.id)) return;
-      notifiedRef.current.add(alert.id);
-      try {
-        const n = new Notification(alert.title || 'JAXON', {
-          body: alert.body || alert.message || '',
-          icon: '/logo192.png',
-          badge: '/logo192.png',
-          tag: alert.id,
-          requireInteraction: alert.type === 'MORNING_WAKE_UP',
-        });
-        n.onclick = () => { window.focus(); n.close(); };
-      } catch(e) {}
-    });
-  }, [alerts, permission]);
-
-  return { permission, requestPermission };
+  return { permission, requestPermission, swReady, subbed };
 }
 
 
@@ -402,10 +442,23 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
 }
 
 // ─── ALERT BANNER ─────────────────────────────────────────────────────────────
-function AlertBanner({ alerts, onDismiss }) {
+function AlertBanner({ alerts }) {
   const [idx, setIdx] = useState(0);
-  const cur = alerts[Math.min(idx, alerts.length - 1)];
+  // Keep idx in bounds when alerts shrink
+  const safeIdx = Math.min(idx, Math.max(0, alerts.length - 1));
+  const cur = alerts[safeIdx];
   if (!cur) return null;
+
+  const dismiss = (id) => {
+    // Use the session-level dismiss that blocks Firestore from reverting
+    if (window._dismissAlert) window._dismissAlert(id);
+    setIdx(0); // reset to first remaining alert
+  };
+
+  const dismissAll = () => {
+    alerts.forEach(a => window._dismissAlert?.(a.id));
+    setIdx(0);
+  };
 
   const typeColor = {
     MORNING_WAKE_UP: 'var(--bolt)',
@@ -417,7 +470,7 @@ function AlertBanner({ alerts, onDismiss }) {
   return (
     <div style={{
       position: 'fixed',
-      bottom: 'calc(var(--bh) + 5rem)', // well above FAB
+      bottom: 'calc(var(--bh) + 5rem)',
       left: '1rem', right: '1rem',
       maxWidth: 440, margin: '0 auto',
       background: 'rgba(4,8,15,0.98)',
@@ -425,26 +478,27 @@ function AlertBanner({ alerts, onDismiss }) {
       borderTop: `2px solid ${typeColor}`,
       borderRadius: 12,
       padding: '0.875rem 1rem',
-      zIndex: 300,  // highest — always on top
+      zIndex: 300,
       boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 20px ${typeColor}10`,
       animation: 'riseUp 0.3s ease',
       backdropFilter: 'blur(20px)',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-        {/* Pulse dot */}
         <div style={{
           width: 8, height: 8, borderRadius: '50%',
-          background: typeColor, flexShrink: 0, marginTop: 4,
+          background: typeColor, flexShrink: 0, marginTop: 5,
           boxShadow: `0 0 8px ${typeColor}`,
           animation: 'blink 1.5s ease-in-out infinite',
         }}/>
-        {/* Content */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontFamily: 'var(--fm)', fontSize: '8px', color: typeColor,
             letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 3, opacity: 0.8,
           }}>
             {cur.type?.replace(/_/g,' ') || 'JAXON'}
+            {alerts.length > 1 && (
+              <span style={{marginLeft:8,opacity:0.5}}>{safeIdx+1}/{alerts.length}</span>
+            )}
           </div>
           <div style={{
             fontFamily: 'var(--fe)', fontSize: '15px', fontWeight: 600,
@@ -459,16 +513,15 @@ function AlertBanner({ alerts, onDismiss }) {
             {cur.body || cur.message}
           </div>
         </div>
-        {/* Close — large tap target, no overlap */}
+        {/* Close this alert */}
         <button
-          onClick={() => { onDismiss(cur.id); setIdx(0); }}
+          onClick={() => dismiss(cur.id)}
           style={{
-            flexShrink: 0,
-            width: 32, height: 32,
+            flexShrink: 0, width: 32, height: 32,
             background: 'rgba(255,255,255,0.06)',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: 6, cursor: 'pointer',
-            color: 'var(--mist-2)', fontSize: '16px',
+            color: 'var(--mist-1)', fontSize: '18px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             lineHeight: 1,
           }}>
@@ -476,31 +529,35 @@ function AlertBanner({ alerts, onDismiss }) {
         </button>
       </div>
 
-      {/* Multiple alerts nav */}
-      {alerts.length > 1 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          marginTop: '0.625rem', paddingTop: '0.5rem',
-          borderTop: `1px solid ${typeColor}15`,
-        }}>
-          <span style={{
+      {/* Footer: nav + dismiss all */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginTop: '0.625rem', paddingTop: '0.5rem',
+        borderTop: `1px solid ${typeColor}18`,
+      }}>
+        <button
+          onClick={dismissAll}
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
             fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
-            letterSpacing: '0.08em',
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+            padding: '0.2rem 0',
           }}>
-            {idx + 1} of {alerts.length}
-          </span>
+          Clear all ({alerts.length})
+        </button>
+        {alerts.length > 1 && (
           <div style={{ display: 'flex', gap: 4 }}>
-            <button onClick={() => setIdx(i => Math.max(0, i-1))} disabled={idx===0}
+            <button onClick={() => setIdx(i => Math.max(0, i-1))} disabled={safeIdx===0}
               style={{ background:'none', border:'1px solid rgba(255,255,255,0.08)',
                 borderRadius:4, color:'var(--mist-2)', cursor:'pointer',
-                padding:'0.15rem 0.5rem', fontSize:'11px', opacity: idx===0?0.3:1 }}>←</button>
-            <button onClick={() => setIdx(i => Math.min(alerts.length-1, i+1))} disabled={idx===alerts.length-1}
+                padding:'0.15rem 0.6rem', fontSize:'12px', opacity: safeIdx===0?0.3:1 }}>←</button>
+            <button onClick={() => setIdx(i => Math.min(alerts.length-1, i+1))} disabled={safeIdx===alerts.length-1}
               style={{ background:'none', border:'1px solid rgba(255,255,255,0.08)',
                 borderRadius:4, color:'var(--mist-2)', cursor:'pointer',
-                padding:'0.15rem 0.5rem', fontSize:'11px', opacity: idx===alerts.length-1?0.3:1 }}>→</button>
+                padding:'0.15rem 0.6rem', fontSize:'12px', opacity: safeIdx===alerts.length-1?0.3:1 }}>→</button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -703,7 +760,7 @@ export default function App() {
   const [invoiceData, setInvoiceData] = useState(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const weekDates = getWeekDates();
-  const { permission: notifPerm, requestPermission } = useNotifications(alerts);
+  const { permission: notifPerm, requestPermission, subbed: notifSubbed } = useNotifications();
   // Allow pipeline to trigger invoice from lead
   useEffect(() => { window._openInvoice = (data) => { setInvoiceData(data); setInvoiceOpen(true); }; return () => { delete window._openInvoice; }; }, []);
   const todayStr  = new Date().toISOString().slice(0,10);
@@ -794,7 +851,7 @@ export default function App() {
     const cols = [
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
-      ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],['alerts',setAlerts],
+      ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
     ];
 
     // Track which collections have fired at least once
@@ -838,6 +895,50 @@ export default function App() {
       clearTimeout(fallback);
       unsubs.forEach(u => u());
     };
+  }, []);
+
+  // ── ALERTS — separate listener with local dismissed set ──────────────────
+  useEffect(() => {
+    const dismissed = new Set(); // tracks ids dismissed this session
+
+    // Use already-imported firebase functions
+    const unsub = onSnapshot(
+      query(collection(db, 'alerts'),
+        where('seen', '!=', true),
+        orderBy('seen'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      ),
+      snap => {
+        const fresh = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(a => !dismissed.has(a.id)); // never show locally dismissed ones
+        setAlerts(fresh);
+      },
+      err => {
+        // If compound query fails (missing index), fall back to simple fetch
+        console.warn('Alerts query error:', err.message);
+        onSnapshot(
+          query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(20)),
+          snap => {
+            const fresh = snap.docs
+              .map(d => ({ id: d.id, ...d.data() }))
+              .filter(a => !a.seen && !dismissed.has(a.id));
+            setAlerts(fresh);
+          }
+        );
+      }
+    );
+
+    // Expose dismiss function that blocks Firestore from un-dismissing
+    window._dismissAlert = (id) => {
+      dismissed.add(id); // local block — permanent for this session
+      setAlerts(prev => prev.filter(a => a.id !== id));
+      // Write seen=true to Firestore so it never comes back after refresh
+      update('alerts', id, { seen: true });
+    };
+
+    return () => { unsub(); delete window._dismissAlert; };
   }, []);
 
   const add    = async (col, data) => { try { await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
@@ -973,15 +1074,7 @@ export default function App() {
 
       {/* NOTIFICATION CENTRE — zIndex 300 so it's always above FAB */}
       {alerts.length > 0 && (
-        <AlertBanner
-          alerts={alerts}
-          onDismiss={id => {
-            // Optimistic local dismiss — remove from state immediately
-            setAlerts(prev => prev.filter(a => a.id !== id));
-            // Persist to Firestore
-            update('alerts', id, { seen: true });
-          }}
-        />
+        <AlertBanner alerts={alerts} />
       )}
 
       {/* Invoice Generator */}
@@ -1148,8 +1241,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
   const [showDial,setShowDial]   = useState(false);
 
   const totalVal = leads.filter(l=>!['Flaked','Lost'].includes(l.status)).reduce((s,l)=>s+(Number(l.value)||0),0);
-  // O(1) lookup via pre-built map
-  const getPayments = lid => financeByLead?.get(lid) || finances.filter(f=>f.pipelineLeadId===lid);
+  const getPayments = lid => finances.filter(f=>f.pipelineLeadId===lid);
 
   const getAlert = lead => {
     if (!lead.retainerAmount || !lead.retainerDueDay) return null;
