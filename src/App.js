@@ -450,6 +450,7 @@ export default function App() {
   const [queue, setQueue]       = useState([]);
   const [logs, setLogs]         = useState([]);
   const [briefings, setBriefings] = useState([]);
+  const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [briefingOpen, setBriefingOpen] = useState(false);
@@ -484,7 +485,7 @@ export default function App() {
     const cols = [
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
-      ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
+      ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],['alerts',setAlerts],
     ];
 
     // Track which collections have fired at least once
@@ -3356,8 +3357,6 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  //comment
 
   return (
     <Modal title="Invoice Generator" onClose={onClose}>
