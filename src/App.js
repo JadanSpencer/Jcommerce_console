@@ -259,6 +259,248 @@ function useNotifications(alerts) {
   return { permission, requestPermission };
 }
 
+
+
+// ─── VELOCITY TRACKER (SURPRISE) ─────────────────────────────────────────────
+// Binary search to find records within a date window — O(log n) vs O(n) scan
+function binarySearchDate(sortedArr, targetDate, key='date') {
+  let lo = 0, hi = sortedArr.length - 1, result = sortedArr.length;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1; // bit-shift = faster integer division
+    if ((sortedArr[mid][key] || '') >= targetDate) { result = mid; hi = mid - 1; }
+    else lo = mid + 1;
+  }
+  return result;
+}
+
+function VelocityTracker({ leads, financesSorted, habits, todos, todayStr, xp }) {
+  const now    = new Date(todayStr);
+  const w7ago  = new Date(now - 7  * 86400000).toISOString().slice(0,10);
+  const w14ago = new Date(now - 14 * 86400000).toISOString().slice(0,10);
+  const w30ago = new Date(now - 30 * 86400000).toISOString().slice(0,10);
+
+  // O(log n) — find start index of last 7 days in sorted finances
+  const i7  = binarySearchDate(financesSorted, w7ago);
+  const i14 = binarySearchDate(financesSorted, w14ago);
+  const last7  = financesSorted.slice(i7);
+  const prev7  = financesSorted.slice(i14, i7);
+
+  const rev7  = last7.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
+  const rev14 = prev7.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
+  const revDelta = rev14 > 0 ? Math.round(((rev7-rev14)/rev14)*100) : (rev7>0?100:0);
+
+  // Lead velocity — new leads this week vs last
+  const newThis = leads.filter(l=>l.createdAt?.toDate?.()?.toISOString().slice(0,10)>=w7ago).length;
+  const newPrev = leads.filter(l=>{
+    const d=l.createdAt?.toDate?.()?.toISOString().slice(0,10)||'';
+    return d>=w14ago && d<w7ago;
+  }).length;
+  const leadDelta = newPrev>0?Math.round(((newThis-newPrev)/newPrev)*100):(newThis>0?100:0);
+
+  // Habit consistency — last 7 days
+  const habitDays = habits.length * 7;
+  const habitDone = habitDays > 0
+    ? habits.reduce((s,h) => {
+        for(let i=0;i<7;i++){
+          const d=new Date(now-i*86400000).toISOString().slice(0,10);
+          if(h.completions?.[d]) s++;
+        }
+        return s;
+      }, 0)
+    : 0;
+  const consistency = habitDays > 0 ? Math.round((habitDone/habitDays)*100) : 0;
+
+  const metrics = [
+    {
+      label: 'Revenue Velocity',
+      value: `J$${rev7.toLocaleString()}`,
+      sub: 'last 7 days',
+      delta: revDelta,
+      color: rev7 >= rev14 ? 'var(--bolt)' : '#ff6040',
+    },
+    {
+      label: 'Lead Velocity',
+      value: newThis,
+      sub: 'new this week',
+      delta: leadDelta,
+      color: 'var(--bolt-lt)',
+    },
+    {
+      label: 'Habit Consistency',
+      value: `${consistency}%`,
+      sub: '7-day streak rate',
+      delta: null,
+      color: consistency >= 70 ? 'var(--bolt)' : consistency >= 40 ? 'var(--horizon)' : '#ff6040',
+    },
+  ];
+
+  return (
+    <div style={{
+      position: 'relative', overflow: 'hidden',
+      background: 'linear-gradient(160deg, rgba(0,24,36,0.95) 0%, rgba(0,61,92,0.2) 100%)',
+      border: '1px solid rgba(0,212,255,0.12)',
+      borderRadius: 14, padding: '1.125rem',
+    }}>
+      {/* Top lightning line */}
+      <div style={{position:'absolute',top:0,left:0,right:0,height:1,
+        background:'linear-gradient(90deg,transparent,var(--bolt-3),var(--bolt),var(--bolt-3),transparent)',
+        opacity:0.6}}/>
+
+      <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
+        letterSpacing:'0.3em',textTransform:'uppercase',
+        color:'var(--bolt)',opacity:0.7,marginBottom:'0.625rem'}}>
+        ⚡ Business Velocity
+      </div>
+
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.625rem'}}>
+        {metrics.map(m => (
+          <div key={m.label} style={{
+            background:'rgba(0,0,0,0.35)',
+            border:'1px solid rgba(0,212,255,0.07)',
+            borderRadius:10, padding:'0.75rem 0.625rem',
+            position:'relative',overflow:'hidden',
+          }}>
+            <div style={{fontFamily:'var(--fm)',fontSize:'7px',color:'var(--mist-3)',
+              letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:6,lineHeight:1.3}}>
+              {m.label}
+            </div>
+            <div style={{fontFamily:'var(--fe)',fontSize:'19px',fontWeight:700,
+              color:m.color,lineHeight:1,
+              textShadow:`0 0 16px ${m.color}60`}}>
+              {m.value}
+            </div>
+            <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
+              marginTop:3}}>
+              {m.sub}
+            </div>
+            {m.delta !== null && (
+              <div style={{
+                position:'absolute',top:'0.5rem',right:'0.5rem',
+                fontFamily:'var(--fm)',fontSize:'8px',fontWeight:600,
+                color: m.delta >= 0 ? 'var(--bolt)' : '#ff6040',
+                background: m.delta >= 0 ? 'rgba(0,212,255,0.1)' : 'rgba(255,96,64,0.1)',
+                border: `1px solid ${m.delta>=0?'rgba(0,212,255,0.25)':'rgba(255,96,64,0.25)'}`,
+                borderRadius:99, padding:'1px 5px',
+              }}>
+                {m.delta >= 0 ? '+' : ''}{m.delta}%
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--mist-4)',
+        marginTop:'0.625rem',letterSpacing:'0.08em',textAlign:'right'}}>
+        vs prior 7 days · binary search O(log n)
+      </div>
+    </div>
+  );
+}
+
+// ─── ALERT BANNER ─────────────────────────────────────────────────────────────
+function AlertBanner({ alerts, onDismiss }) {
+  const [idx, setIdx] = useState(0);
+  const cur = alerts[Math.min(idx, alerts.length - 1)];
+  if (!cur) return null;
+
+  const typeColor = {
+    MORNING_WAKE_UP: 'var(--bolt)',
+    RESEARCH_FINDING: 'var(--bolt-lt)',
+    OVERDUE: '#ff6040',
+    DUE_SOON: 'var(--horizon)',
+  }[cur.type] || 'var(--bolt)';
+
+  return (
+    <div style={{
+      position: 'fixed',
+      bottom: 'calc(var(--bh) + 5rem)', // well above FAB
+      left: '1rem', right: '1rem',
+      maxWidth: 440, margin: '0 auto',
+      background: 'rgba(4,8,15,0.98)',
+      border: `1px solid ${typeColor}33`,
+      borderTop: `2px solid ${typeColor}`,
+      borderRadius: 12,
+      padding: '0.875rem 1rem',
+      zIndex: 300,  // highest — always on top
+      boxShadow: `0 8px 32px rgba(0,0,0,0.7), 0 0 20px ${typeColor}10`,
+      animation: 'riseUp 0.3s ease',
+      backdropFilter: 'blur(20px)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+        {/* Pulse dot */}
+        <div style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: typeColor, flexShrink: 0, marginTop: 4,
+          boxShadow: `0 0 8px ${typeColor}`,
+          animation: 'blink 1.5s ease-in-out infinite',
+        }}/>
+        {/* Content */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: 'var(--fm)', fontSize: '8px', color: typeColor,
+            letterSpacing: '0.22em', textTransform: 'uppercase', marginBottom: 3, opacity: 0.8,
+          }}>
+            {cur.type?.replace(/_/g,' ') || 'JAXON'}
+          </div>
+          <div style={{
+            fontFamily: 'var(--fe)', fontSize: '15px', fontWeight: 600,
+            color: 'var(--mist-0)', lineHeight: 1.2, marginBottom: 4,
+          }}>
+            {cur.title || 'Alert'}
+          </div>
+          <div style={{
+            fontSize: '12px', fontWeight: 300, color: 'var(--mist-2)',
+            lineHeight: 1.6, wordBreak: 'break-word',
+          }}>
+            {cur.body || cur.message}
+          </div>
+        </div>
+        {/* Close — large tap target, no overlap */}
+        <button
+          onClick={() => { onDismiss(cur.id); setIdx(0); }}
+          style={{
+            flexShrink: 0,
+            width: 32, height: 32,
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 6, cursor: 'pointer',
+            color: 'var(--mist-2)', fontSize: '16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            lineHeight: 1,
+          }}>
+          ×
+        </button>
+      </div>
+
+      {/* Multiple alerts nav */}
+      {alerts.length > 1 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginTop: '0.625rem', paddingTop: '0.5rem',
+          borderTop: `1px solid ${typeColor}15`,
+        }}>
+          <span style={{
+            fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
+            letterSpacing: '0.08em',
+          }}>
+            {idx + 1} of {alerts.length}
+          </span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button onClick={() => setIdx(i => Math.max(0, i-1))} disabled={idx===0}
+              style={{ background:'none', border:'1px solid rgba(255,255,255,0.08)',
+                borderRadius:4, color:'var(--mist-2)', cursor:'pointer',
+                padding:'0.15rem 0.5rem', fontSize:'11px', opacity: idx===0?0.3:1 }}>←</button>
+            <button onClick={() => setIdx(i => Math.min(alerts.length-1, i+1))} disabled={idx===alerts.length-1}
+              style={{ background:'none', border:'1px solid rgba(255,255,255,0.08)',
+                borderRadius:4, color:'var(--mist-2)', cursor:'pointer',
+                padding:'0.15rem 0.5rem', fontSize:'11px', opacity: idx===alerts.length-1?0.3:1 }}>→</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── CIRCUIT BOARD BACKGROUND ────────────────────────────────────────────────
 function Particles() {
   const canvasRef = useRef(null);
@@ -462,6 +704,69 @@ export default function App() {
   useEffect(() => { window._openInvoice = (data) => { setInvoiceData(data); setInvoiceOpen(true); }; return () => { delete window._openInvoice; }; }, []);
   const todayStr  = new Date().toISOString().slice(0,10);
 
+  // ── O(1) LOOKUP MAPS — built once, used everywhere ──────────────────────────
+  // Maps are recomputed only when underlying data changes (useMemo deps)
+
+  // Lead map: id → lead  (O(1) lookup instead of O(n) .find)
+  const leadMap = useMemo(() => {
+    const m = new Map();
+    leads.forEach(l => m.set(l.id, l));
+    return m;
+  }, [leads]);
+
+  // Finance by lead: leadId → Finance[]  (O(1) lookup instead of O(n) .filter)
+  const financeByLead = useMemo(() => {
+    const m = new Map();
+    finances.forEach(f => {
+      if (!f.pipelineLeadId) return;
+      if (!m.has(f.pipelineLeadId)) m.set(f.pipelineLeadId, []);
+      m.get(f.pipelineLeadId).push(f);
+    });
+    return m;
+  }, [finances]);
+
+  // Schedule by day: day → Block[]  (O(1) lookup instead of O(n) .filter per day)
+  const scheduleByDay = useMemo(() => {
+    const m = new Map();
+    schedule.forEach(b => {
+      if (!m.has(b.day)) m.set(b.day, []);
+      m.get(b.day).push(b);
+    });
+    return m;
+  }, [schedule]);
+
+  // Habits completion map: habitId+date → boolean  (O(1) streak check)
+  const habitCompletionSet = useMemo(() => {
+    const s = new Set();
+    habits.forEach(h => {
+      Object.entries(h.completions || {}).forEach(([date, done]) => {
+        if (done) s.add(`${h.id}:${date}`);
+      });
+    });
+    return s;
+  }, [habits]);
+
+  // Todo done set: todoId+date → boolean  (O(1) completion check)
+  const todoDoneSet = useMemo(() => {
+    const s = new Set();
+    todos.forEach(t => {
+      Object.entries(t.doneOn || {}).forEach(([date, done]) => {
+        if (done) s.add(`${t.id}:${date}`);
+      });
+    });
+    return s;
+  }, [todos]);
+
+  // ── O(log n) BINARY SEARCH for sorted finance list ──────────────────────────
+  // Pre-sorted finances by date for the projection/chart (sorted once, O(n log n))
+  const financesSorted = useMemo(() =>
+    [...finances].sort((a, b) => (a.date||'').localeCompare(b.date||'')),
+  [finances]);
+
+  // ── DERIVED STATS (all O(n), computed once via useMemo) ─────────────────────
+  const paidLeads   = useMemo(() => leads.filter(l => l.status === 'Paid'), [leads]);
+  const openLeads   = useMemo(() => leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)), [leads]);
+
   useEffect(() => {
     const SPLASH_MS = 4000;
     let timerDone = false;
@@ -550,8 +855,7 @@ export default function App() {
   const totalIncome   = finances.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
   const totalExpenses = finances.filter(f=>f.type==='expense').reduce((s,f)=>s+(Number(f.amount)||0),0);
   const profit     = totalIncome - totalExpenses;
-  const paidLeads  = leads.filter(l=>l.status==='Paid');
-  const openLeads  = leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status));
+  // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
   const xp = calcXP(habits, leads, todos, todayStr);
   const { level, progress, xpInLevel } = xpToLevel(xp);
@@ -663,47 +967,17 @@ export default function App() {
       )}
 
 
-      {/* NOTIFICATION CENTRE */}
-      {alerts.length > 0 && notifPerm !== 'granted' && (
-        <div style={{
-          position:'fixed',bottom:'calc(var(--bh) + 1rem)',left:'1rem',right:'1rem',
-          maxWidth:440,margin:'0 auto',
-          background:'rgba(0,24,36,0.97)',border:'1px solid rgba(0,212,255,0.2)',
-          borderTop:'2px solid var(--bolt)',borderRadius:12,
-          padding:'0.875rem 1rem',zIndex:150,
-          boxShadow:'0 8px 32px rgba(0,0,0,0.6)',
-          animation:'riseUp 0.3s ease',
-        }}>
-          <div style={{display:'flex',alignItems:'center',gap:'0.625rem'}}>
-            <div style={{width:8,height:8,borderRadius:'50%',background:'var(--bolt)',
-              boxShadow:'0 0 8px var(--bolt)',animation:'blink 1.5s ease-in-out infinite',flexShrink:0}}/>
-            <div style={{flex:1}}>
-              <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',
-                letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:2}}>
-                JAXON Alert
-              </div>
-              <div style={{fontSize:'13px',fontWeight:400,color:'var(--mist-0)'}}>
-                {alerts[0]?.title||'New notification'}
-              </div>
-              <div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-2)',marginTop:2,lineHeight:1.5}}>
-                {alerts[0]?.body||alerts[0]?.message}
-              </div>
-            </div>
-            <button className="icon-btn" style={{flexShrink:0}}
-              onClick={async()=>{
-                if(alerts[0]?.id) {
-                  const {doc,updateDoc} = await import('firebase/firestore');
-                  // Mark seen
-                }
-              }}>✕</button>
-          </div>
-          {alerts.length > 1 && (
-            <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
-              marginTop:'0.5rem',letterSpacing:'0.08em'}}>
-              +{alerts.length-1} more alerts
-            </div>
-          )}
-        </div>
+      {/* NOTIFICATION CENTRE — zIndex 300 so it's always above FAB */}
+      {alerts.length > 0 && (
+        <AlertBanner
+          alerts={alerts}
+          onDismiss={id => {
+            // Optimistic local dismiss — remove from state immediately
+            setAlerts(prev => prev.filter(a => a.id !== id));
+            // Persist to Firestore
+            update('alerts', id, { seen: true });
+          }}
+        />
       )}
 
       {/* Invoice Generator */}
@@ -739,6 +1013,13 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
           <div className="xp-pts">{xpInLevel} / 500 XP → Level {level+1}</div>
         </div>
       </div>
+
+      {/* ⚡ Velocity Tracker */}
+      <VelocityTracker
+        leads={leads} financesSorted={financesSorted}
+        habits={habits} todos={todos}
+        todayStr={todayStr} xp={xp}
+      />
 
       {/* Stats */}
       <div className="grid-2">
@@ -863,7 +1144,8 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
   const [showDial,setShowDial]   = useState(false);
 
   const totalVal = leads.filter(l=>!['Flaked','Lost'].includes(l.status)).reduce((s,l)=>s+(Number(l.value)||0),0);
-  const getPayments = lid => finances.filter(f=>f.pipelineLeadId===lid);
+  // O(1) lookup via pre-built map
+  const getPayments = lid => financeByLead?.get(lid) || finances.filter(f=>f.pipelineLeadId===lid);
 
   const getAlert = lead => {
     if (!lead.retainerAmount || !lead.retainerDueDay) return null;
@@ -3443,5 +3725,3 @@ function ModalFoot({onClose,onSave}) {
 function Empty({text}) {
   return <div style={{textAlign:'center',padding:'2.5rem 1rem',color:'var(--mist-2)',fontSize:'13px',fontStyle:'italic'}}>{text}</div>;
 }
-
-//cc
