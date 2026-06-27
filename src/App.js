@@ -994,7 +994,34 @@ export default function App() {
           </div>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(201,168,76,0.2)',color:'#1adb8a'}}>📄</button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(0,212,255,0.2)',color:'var(--bolt)'}}>📄</button>
+          <button
+            onClick={requestPermission}
+            title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on — tap to enable push':'Tap to enable notifications'}
+            style={{
+              position:'relative',background:'none',
+              border:`1px solid ${notifSubbed?'rgba(0,212,255,0.35)':'rgba(255,255,255,0.08)'}`,
+              cursor:'pointer',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              width:32,height:32,
+              color:notifSubbed?'var(--bolt)':notifPerm==='granted'?'var(--bolt-3)':'var(--mist-3)',
+              borderRadius:'var(--r1)',
+              boxShadow:notifSubbed?'0 0 8px rgba(0,212,255,0.3)':'none',
+              flexShrink:0,
+            }}>
+            <Icons.bell size={15}/>
+            {alerts.length > 0 && (
+              <span style={{
+                position:'absolute',top:-3,right:-3,
+                background:'#ff6040',color:'white',
+                borderRadius:'50%',width:15,height:15,
+                fontSize:'8px',fontWeight:700,lineHeight:1,
+                display:'flex',alignItems:'center',justifyContent:'center',
+                border:'1.5px solid var(--lake-1)',
+                boxShadow:'0 0 6px rgba(255,96,64,0.7)',
+              }}>{Math.min(9,alerts.length)}</span>
+            )}
+          </button>
           {todayBriefing && (
             <button className="briefing-pill" onClick={() => setBriefingOpen(true)}>
               <span className="briefing-dot"/>
