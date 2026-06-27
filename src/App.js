@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from './firebase';
 import {
   collection, addDoc, updateDoc, deleteDoc,
-  doc, onSnapshot, query, orderBy, serverTimestamp
+  doc, onSnapshot, query, orderBy, where, limit, serverTimestamp
 } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -902,31 +902,18 @@ export default function App() {
     const dismissed = new Set(); // tracks ids dismissed this session
 
     // Use already-imported firebase functions
+    // Simple query — no composite index required
+    // Client-side filter for seen:false and dismissed set
     const unsub = onSnapshot(
-      query(collection(db, 'alerts'),
-        where('seen', '!=', true),
-        orderBy('seen'),
-        orderBy('createdAt', 'desc'),
-        limit(20)
-      ),
+      query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(30)),
       snap => {
         const fresh = snap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(a => !dismissed.has(a.id)); // never show locally dismissed ones
+          .filter(a => !a.seen && !dismissed.has(a.id));
         setAlerts(fresh);
       },
       err => {
-        // If compound query fails (missing index), fall back to simple fetch
-        console.warn('Alerts query error:', err.message);
-        onSnapshot(
-          query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(20)),
-          snap => {
-            const fresh = snap.docs
-              .map(d => ({ id: d.id, ...d.data() }))
-              .filter(a => !a.seen && !dismissed.has(a.id));
-            setAlerts(fresh);
-          }
-        );
+        console.warn('Alerts listener error:', err.message);
       }
     );
 
