@@ -3357,6 +3357,8 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
     URL.revokeObjectURL(url);
   };
 
+  //comment
+
   return (
     <Modal title="Invoice Generator" onClose={onClose}>
       <div className="grid-2">
