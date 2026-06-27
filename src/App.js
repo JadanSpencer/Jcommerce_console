@@ -42,6 +42,7 @@ const Icons = {
   whatsapp:  () => <svg width={20} height={20} viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>,
   send:      () => <Icon d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" />,
   phone:     () => <Icon d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.81 19.79 19.79 0 01.12 1.22 2 2 0 012.1 0h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 7.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" />,
+  briefcase: () => <Icon d="M20 7H4a2 2 0 00-2 2v11a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2zM16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />,
   loader:    () => <Icon d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
@@ -526,6 +527,7 @@ export default function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
         {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXp(x=>x+100)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
+        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)}/>}
       </main>
 
       <nav className="bottom-nav">
@@ -705,6 +707,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
   const [fSource,setFSource]     = useState('All');
   const [fWhatsApp,setFWhatsApp] = useState('All'); // All / Yes / No
   const [fPriority,setFPriority] = useState('All');
+  const [fSize,setFSize] = useState('All'); // All / Small / Medium / Large
   const [search,setSearch]       = useState('');
 
   // Dial queue
@@ -737,6 +740,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
     if (fWhatsApp==='Yes' && !l.phone) return false;
     if (fWhatsApp==='No' && l.phone) return false;
     if (fPriority!=='All' && l.priority!==fPriority) return false;
+    if (fSize!=='All' && (l.businessSize||'Small')!==fSize) return false;
     if (search && !l.businessName?.toLowerCase().includes(search.toLowerCase()) &&
         !l.contactName?.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -756,7 +760,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
     setShowDial(true);
   };
 
-  const activeFilters = [fStatus,fLocation,fSource,fWhatsApp,fPriority].filter(f=>f!=='All').length + (search?1:0);
+  const activeFilters = [fStatus,fLocation,fSource,fWhatsApp,fPriority,fSize].filter(f=>f!=='All').length + (search?1:0);
 
   // Unique locations from leads
   const leadLocations = [...new Set(leads.map(l=>l.location||l.parish).filter(Boolean))];
@@ -798,7 +802,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             <span className="card-label" style={{margin:0}}>Filters</span>
             {activeFilters>0 && (
               <button className="btn-ghost" style={{fontSize:'11px',padding:'0.2rem 0.5rem'}}
-                onClick={()=>{setFStatus('All');setFLocation('All');setFSource('All');setFWhatsApp('All');setFPriority('All');setSearch('');setPage(0);}}>
+                onClick={()=>{setFStatus('All');setFLocation('All');setFSource('All');setFWhatsApp('All');setFPriority('All');setFSize('All');setSearch('');setPage(0);}}>
                 Clear all
               </button>
             )}
@@ -850,6 +854,19 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             <div className="pill-row">
               {['All','high','medium','low'].map(p=>(
                 <button key={p} className={`pill ${fPriority===p?'active':''}`} onClick={()=>{setFPriority(p);setPage(0);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Business Size */}
+          <div>
+            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Business Size</div>
+            <div className="pill-row">
+              {['All','Small','Medium','Large'].map(s=>(
+                <button key={s} className={`pill ${fSize===s?'active':''}`}
+                  onClick={()=>{setFSize(s);setPage(0);}}>
+                  {s==='Small'?'🏪 Small (1-10)':s==='Medium'?'🏢 Medium (10-50)':s==='Large'?'🏦 Large (50+)':'All Sizes'}
+                </button>
               ))}
             </div>
           </div>
@@ -1087,6 +1104,108 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
       {form!==null && <LeadModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
       {payForm!==null && <PaymentModal lead={payForm} existing={getPayments(payForm.id)} onLog={(s,a,d)=>onLogPayment(payForm,s,a,d)} onUpdateEntry={(s,a,d)=>onUpdatePayment(payForm,s,a,d)} onClose={()=>setPayForm(null)}/>}
     </div>
+  );
+}
+
+
+// ─── LEAD MODAL ────────────────────────────────────────────────────────────────
+function LeadModal({data,onSave,onClose}) {
+  const [f,setF] = useState({
+    businessName:'', contactName:'', phone:'', websiteUrl:'',
+    location:'', country:'Jamaica', businessType:'Restaurant',
+    businessSize:'Small', status:'New', value:'', retainerAmount:'',
+    retainerDueDay:'', priority:'medium',
+    notes:'', nextAction:'', nextActionDate:'',
+    outreachDraft:'', ...data
+  });
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const BIZ_TYPES=['Restaurant','Retail','Pharmacy','School','Salon','Mechanic',
+    'Wholesale','Real Estate','Bakery','Church','Hotel','Other'];
+  return (
+    <Modal title={data.id?'Edit Lead':'New Lead'} onClose={onClose}>
+      <Field label="Business Name"><input className="input" value={f.businessName} onChange={e=>s('businessName',e.target.value)} placeholder="e.g. Kicks Jamaica"/></Field>
+      <div className="grid-2">
+        <Field label="Type">
+          <select className="input" value={f.businessType} onChange={e=>s('businessType',e.target.value)}>
+            {BIZ_TYPES.map(t=><option key={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="Size">
+          <select className="input" value={f.businessSize||'Small'} onChange={e=>s('businessSize',e.target.value)}>
+            <option>Small</option><option>Medium</option><option>Large</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid-2">
+        <Field label="Contact Name"><input className="input" value={f.contactName} onChange={e=>s('contactName',e.target.value)}/></Field>
+        <Field label="Phone"><input className="input" value={f.phone} onChange={e=>s('phone',e.target.value)} placeholder="+1876..."/></Field>
+      </div>
+      <div className="grid-2">
+        <Field label="Location"><input className="input" value={f.location} onChange={e=>s('location',e.target.value)} placeholder="Kingston"/></Field>
+        <Field label="Country"><input className="input" value={f.country} onChange={e=>s('country',e.target.value)} placeholder="Jamaica"/></Field>
+      </div>
+      <Field label="Website"><input className="input" value={f.websiteUrl} onChange={e=>s('websiteUrl',e.target.value)} placeholder="https://..."/></Field>
+      <div className="grid-2">
+        <Field label="Status">
+          <select className="input" value={f.status} onChange={e=>s('status',e.target.value)}>
+            {LEAD_STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+        </Field>
+        <Field label="Priority">
+          <select className="input" value={f.priority||'medium'} onChange={e=>s('priority',e.target.value)}>
+            <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid-2">
+        <Field label="Setup Value (J$)"><input className="input" type="number" value={f.value} onChange={e=>s('value',e.target.value)} placeholder="45000"/></Field>
+        <Field label="Retainer/mo (J$)"><input className="input" type="number" value={f.retainerAmount} onChange={e=>s('retainerAmount',e.target.value)} placeholder="15000"/></Field>
+      </div>
+      <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={f.notes} onChange={e=>s('notes',e.target.value)}/></Field>
+      <div className="grid-2">
+        <Field label="Next Action"><input className="input" value={f.nextAction} onChange={e=>s('nextAction',e.target.value)} placeholder="Follow up call"/></Field>
+        <Field label="Date"><input className="input" type="date" value={f.nextActionDate} onChange={e=>s('nextActionDate',e.target.value)}/></Field>
+      </div>
+      <Field label="JAXON Draft Message"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={f.outreachDraft} onChange={e=>s('outreachDraft',e.target.value)} placeholder="WhatsApp outreach message..."/></Field>
+      <ModalFoot onClose={onClose} onSave={()=>f.businessName.trim()&&onSave(f)}/>
+    </Modal>
+  );
+}
+
+// ─── PAYMENT MODAL ──────────────────────────────────────────────────────────────
+function PaymentModal({lead,existing,onLog,onUpdateEntry,onClose}) {
+  const [stage,setStage]=useState(PAYMENT_STAGES[0]);
+  const [amount,setAmount]=useState('');
+  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  return (
+    <Modal title={`Log Payment — ${lead.businessName}`} onClose={onClose}>
+      {existing.length>0&&(
+        <div className="payment-log">
+          <div className="card-label" style={{margin:0,marginBottom:'0.5rem'}}>Existing Payments</div>
+          {existing.map(p=>(
+            <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'0.25rem 0',
+              fontSize:'12px',borderBottom:'1px solid rgba(0,212,255,0.06)'}}>
+              <span style={{fontFamily:'var(--fm)',color:'var(--mist-2)'}}>{p.paymentStage}</span>
+              <span style={{fontFamily:'var(--fm)',color:'#1adb8a',fontWeight:600}}>J${Number(p.amount).toLocaleString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Field label="Payment Stage">
+        <select className="input" value={stage} onChange={e=>setStage(e.target.value)}>
+          {PAYMENT_STAGES.map(s=><option key={s}>{s}</option>)}
+        </select>
+      </Field>
+      <div className="grid-2">
+        <Field label="Amount (J$)"><input className="input" type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="22500"/></Field>
+        <Field label="Date"><input className="input" type="date" value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      </div>
+      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}}
+        onClick={()=>{if(amount&&Number(amount)>0){onLog(stage,amount,date);onClose();}}}>
+        Log Payment
+      </button>
+      <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={onClose}>Cancel</button>
+    </Modal>
   );
 }
 
@@ -1428,74 +1547,112 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
       )}
 
       {/* ─── GRID / TIMETABLE VIEW ─────────────────────────── */}
-      {viewMode==='grid' && (
-        <div className="card" style={{padding:'0.75rem',overflowX:'auto'}}>
-          <div style={{minWidth:480}}>
-            {/* Header row */}
-            <div style={{display:'grid',
-              gridTemplateColumns:`48px repeat(${DAYS.length},1fr)`,
-              gap:1,marginBottom:2}}>
-              <div/>
-              {DAYS.map(d => (
-                <div key={d} style={{
-                  fontFamily:'var(--fm)',fontSize:'9px',fontWeight:400,
-                  letterSpacing:'0.1em',textTransform:'uppercase',textAlign:'center',
-                  color:d===todayDayName&&weekOffset===0?'var(--bolt-lt)':'var(--mist-3)',
-                  padding:'0.375rem 0',
-                  borderBottom:`1px solid ${d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.3)':'rgba(255,255,255,0.05)'}`,
-                }}>
-                  {d}
+      {viewMode==='grid' && (() => {
+        const gridH = 640;
+        const timeToMin = t => { if(!t)return 0; const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+        const startMin = 6*60; const endMin = 22*60; const totalMins = endMin-startMin;
+        const topPct = t => ((timeToMin(t)-startMin)/totalMins)*gridH;
+        const heightPct = (s,e) => ((timeToMin(e)-timeToMin(s))/totalMins)*gridH;
+        const HOURS_G = Array.from({length:17},(_,i)=>i+6);
+        const findClashesAll = () => {
+          const clashes = new Set();
+          DAYS.forEach(d => {
+            const db = schedule.filter(b=>b.day===d).sort((a,b)=>timeToMin(a.start)-timeToMin(b.start));
+            for(let i=0;i<db.length;i++) for(let j=i+1;j<db.length;j++) {
+              if(timeToMin(db[i].start)<timeToMin(db[j].end)&&timeToMin(db[j].start)<timeToMin(db[i].end)) {
+                clashes.add(db[i].id); clashes.add(db[j].id);
+              }
+            }
+          });
+          return clashes;
+        };
+        const allClashes = findClashesAll();
+        return (
+          <div className="card" style={{padding:'0.75rem 0.5rem',overflowX:'auto'}}>
+            <div style={{minWidth:520,userSelect:'none'}}>
+              {/* Day headers */}
+              <div style={{display:'grid',gridTemplateColumns:'40px repeat(7,1fr)',gap:1,marginBottom:4}}>
+                <div/>
+                {DAYS.map(d=>(
+                  <div key={d} style={{fontFamily:'var(--fm)',fontSize:'8.5px',letterSpacing:'0.12em',
+                    textTransform:'uppercase',textAlign:'center',padding:'0.375rem 0',
+                    color:d===todayDayName&&weekOffset===0?'var(--bolt-lt)':'var(--mist-3)',
+                    borderBottom:`1px solid ${d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.4)':'rgba(255,255,255,0.04)'}`,
+                  }}>{d}</div>
+                ))}
+              </div>
+              {/* Grid body */}
+              <div style={{display:'grid',gridTemplateColumns:'40px repeat(7,1fr)',gap:1}}>
+                {/* Time column */}
+                <div style={{position:'relative',height:gridH}}>
+                  {HOURS_G.map(h=>(
+                    <div key={h} style={{
+                      position:'absolute',top:`${((h-6)/16)*gridH}px`,
+                      right:4,fontFamily:'var(--fm)',fontSize:'8px',
+                      color:'var(--mist-4)',lineHeight:1,transform:'translateY(-50%)',
+                    }}>{h.toString().padStart(2,'0')}</div>
+                  ))}
+                  {/* Hour lines */}
+                  {HOURS_G.map(h=>(
+                    <div key={`l${h}`} style={{
+                      position:'absolute',top:`${((h-6)/16)*gridH}px`,
+                      left:0,right:0,height:1,
+                      background:'rgba(0,212,255,0.04)',
+                    }}/>
+                  ))}
                 </div>
-              ))}
-            </div>
-            {/* Time rows */}
-            {HOURS.map(h => (
-              <div key={h} style={{display:'grid',
-                gridTemplateColumns:`48px repeat(${DAYS.length},1fr)`,
-                gap:1,minHeight:40,alignItems:'stretch'}}>
-                {/* Hour label */}
-                <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
-                  paddingTop:4,paddingRight:6,textAlign:'right',flexShrink:0}}>
-                  {h.toString().padStart(2,'0')}:00
-                </div>
-                {DAYS.map(d => {
-                  const hBlocks = schedule.filter(b => b.day===d && (() => {
-                    const bs=timeToMin(b.start), be=timeToMin(b.end);
-                    return bs < (h+1)*60 && be > h*60;
-                  })());
-                  const clashes = findClashes(d);
+                {/* Day columns */}
+                {DAYS.map(d=>{
+                  const dayB = schedule.filter(b=>b.day===d);
                   return (
                     <div key={d} style={{
-                      minHeight:40,padding:'2px',position:'relative',
-                      borderTop:'1px solid rgba(255,255,255,0.03)',
-                      background:d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.02)':'transparent',
+                      position:'relative',height:gridH,
+                      background:d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.015)':'transparent',
+                      borderLeft:'1px solid rgba(255,255,255,0.03)',
+                      cursor:'pointer',
                     }}
-                    onClick={()=>{setSel(d);setForm({day:d,start:`${h.toString().padStart(2,'0')}:00`,end:`${(h+1).toString().padStart(2,'0')}:00`});}}>
-                      {hBlocks.map(b => {
-                        const bs=timeToMin(b.start), be=timeToMin(b.end);
-                        const slotStart=h*60, slotEnd=(h+1)*60;
-                        const top=((bs-slotStart)/60)*100;
-                        const height=((Math.min(be,slotEnd)-Math.max(bs,slotStart))/60)*100;
-                        const color=clashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860';
+                    onClick={e=>{
+                      const rect=e.currentTarget.getBoundingClientRect();
+                      const clickY=e.clientY-rect.top;
+                      const mins=Math.floor((clickY/gridH)*totalMins/30)*30+startMin;
+                      const hh=Math.floor(mins/60).toString().padStart(2,'0');
+                      const mm=(mins%60).toString().padStart(2,'0');
+                      const eh=Math.floor((mins+60)/60).toString().padStart(2,'0');
+                      const em=((mins+60)%60).toString().padStart(2,'0');
+                      setSel(d); setForm({day:d,start:`${hh}:${mm}`,end:`${eh}:${em}`});
+                    }}>
+                      {/* Hour gridlines */}
+                      {HOURS_G.map(h=>(
+                        <div key={h} style={{
+                          position:'absolute',top:`${((h-6)/16)*gridH}px`,
+                          left:0,right:0,height:1,
+                          background:h%2===0?'rgba(0,212,255,0.05)':'rgba(255,255,255,0.02)',
+                        }}/>
+                      ))}
+                      {/* Blocks */}
+                      {dayB.map(b=>{
+                        const t=topPct(b.start);
+                        const h=Math.max(18,heightPct(b.start,b.end));
+                        const c=allClashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860';
                         return (
-                          <div key={b.id} style={{
-                            position:'absolute',
-                            top:`${Math.max(0,top)}%`,
-                            left:2,right:2,
-                            height:`${Math.min(100,height)}%`,
-                            minHeight:8,
-                            background:`${color}18`,
-                            border:`1px solid ${color}40`,
-                            borderLeft:`2px solid ${color}`,
-                            borderRadius:3,
-                            overflow:'hidden',
-                            cursor:'pointer',
-                            zIndex:1,
-                          }} onClick={e=>{e.stopPropagation();setForm(b);}}>
-                            <div style={{fontFamily:'var(--fm)',fontSize:'8px',
-                              color:color,padding:'2px 4px',
-                              whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',lineHeight:1.3}}>
+                          <div key={b.id}
+                            onClick={e=>{e.stopPropagation();setForm(b);}}
+                            style={{
+                              position:'absolute',top:`${t}px`,left:2,right:2,
+                              height:`${h}px`,minHeight:18,
+                              background:`${c}20`,
+                              border:`1px solid ${c}60`,borderLeft:`3px solid ${c}`,
+                              borderRadius:4,overflow:'hidden',cursor:'pointer',zIndex:2,
+                              boxShadow:`0 0 8px ${c}20`,
+                              transition:'all 0.15s',
+                            }}>
+                            <div style={{
+                              fontFamily:'var(--fm)',fontSize:'8px',fontWeight:500,
+                              color:c,padding:'3px 4px',lineHeight:1.3,
+                              overflow:'hidden',textShadow:`0 0 6px ${c}80`,
+                            }}>
                               {b.title}
+                              {h>28&&<span style={{display:'block',opacity:0.7,fontSize:'7px'}}>{b.start}–{b.end}</span>}
                             </div>
                           </div>
                         );
@@ -1504,14 +1661,14 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
                   );
                 })}
               </div>
-            ))}
+              <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
+                marginTop:'0.5rem',textAlign:'center',letterSpacing:'0.08em'}}>
+                TAP ANY SLOT TO ADD · TAP BLOCK TO EDIT · RED = CLASH
+              </div>
+            </div>
           </div>
-          <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
-            marginTop:'0.5rem',textAlign:'center'}}>
-            Tap any slot to add a block. Clashes shown in red.
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {form!==null && <SchedModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
     </div>
@@ -1975,6 +2132,337 @@ function GoalModal({data,onSave,onClose}) {
   );
 }
 
+
+// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
+function ClientManagement({leads,finances,onUpdateLead}) {
+  const paidClients = leads.filter(l=>l.status==='Paid');
+  const [sel,setSel]   = useState(paidClients[0]?.id||null);
+  const [editProduct,setEditProduct] = useState(false);
+  const client = paidClients.find(c=>c.id===sel);
+  const clientFinances = finances.filter(f=>f.pipelineLeadId===sel);
+  const totalReceived  = clientFinances.reduce((s,f)=>s+(Number(f.amount)||0),0);
+
+  if (paidClients.length===0) return (
+    <div className="section">
+      <div className="hero">
+        <div className="hero-eye">Client Management</div>
+        <div className="hero-big">No Clients Yet</div>
+        <div className="hero-sub">Paid clients will appear here for full product management.</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="section">
+      <div className="hero">
+        <div className="hero-eye">Client Management</div>
+        <div className="hero-big" style={{fontSize:'26px'}}>{client?.businessName||'Select Client'}</div>
+        <div className="hero-sub">{paidClients.length} active client{paidClients.length!==1?'s':''} · Full product control</div>
+      </div>
+
+      {/* Client selector */}
+      {paidClients.length>1&&(
+        <div className="pill-row">
+          {paidClients.map(c=>(
+            <button key={c.id} className={`pill ${sel===c.id?'active':''}`} onClick={()=>setSel(c.id)}>
+              {c.businessName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {client && (
+        <>
+          {/* ── QUICK STATS ── */}
+          <div className="grid-2">
+            {[
+              {l:'Monthly Retainer', v:`J$${Number(client.retainerAmount||0).toLocaleString()}/mo`, c:'var(--bolt)'},
+              {l:'Total Received',   v:`J$${totalReceived.toLocaleString()}`,                      c:'var(--valley)'},
+              {l:'Setup Value',      v:`J$${Number(client.value||0).toLocaleString()}`,            c:'var(--horizon)'},
+              {l:'Balance',          v:`J$${Math.max(0,Number(client.value||0)-totalReceived).toLocaleString()} due`, c:totalReceived>=Number(client.value||0)?'var(--valley)':'var(--fire)'},
+            ].map(s=>(
+              <div key={s.l} className="stat-card">
+                <div className="stat-label">{s.l}</div>
+                <div className="stat-value" style={{color:s.c,fontSize:'18px'}}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── PRODUCT CARD ── */}
+          <div className="card">
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
+              <div className="card-label" style={{margin:0}}>Product Built</div>
+              <button className="icon-btn" onClick={()=>setEditProduct(true)}><Icons.edit size={12}/></button>
+            </div>
+            {client.product ? (
+              <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+                <div>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Product Type</div>
+                  <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--mist-0)'}}>{client.product.type||'—'}</div>
+                </div>
+                <div>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Description</div>
+                  <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.6,fontWeight:300}}>{client.product.description||'—'}</div>
+                </div>
+              </div>
+            ) : (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>
+                No product details yet. Tap edit to add.
+              </div>
+            )}
+          </div>
+
+          {/* ── TECH STACK ── */}
+          <div className="card">
+            <div className="card-label">Tech Stack & Code</div>
+            {client.product?.techStack ? (
+              <div style={{display:'flex',flexDirection:'column',gap:'0.625rem'}}>
+                {[
+                  {l:'Framework / Language', v:client.product.techStack.framework},
+                  {l:'Hosting / Deploy',      v:client.product.techStack.hosting},
+                  {l:'Database',             v:client.product.techStack.database},
+                  {l:'AI / APIs',            v:client.product.techStack.apis},
+                  {l:'Version Control',      v:client.product.techStack.repo},
+                  {l:'Live URL',             v:client.product.techStack.liveUrl, link:true},
+                  {l:'GitHub Repo',          v:client.product.techStack.repoUrl, link:true},
+                  {l:'Admin Panel',          v:client.product.techStack.adminUrl, link:true},
+                ].filter(r=>r.v).map(row=>(
+                  <div key={row.l} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                    padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
+                      letterSpacing:'0.1em',textTransform:'uppercase',flexShrink:0,marginRight:'1rem'}}>
+                      {row.l}
+                    </span>
+                    {row.link ? (
+                      <a href={row.v} target="_blank" rel="noopener noreferrer"
+                        style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)',
+                          textDecoration:'none',wordBreak:'break-all',textAlign:'right'}}>
+                        {row.v}
+                      </a>
+                    ) : (
+                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',textAlign:'right'}}>
+                        {row.v}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No tech stack added yet.</div>
+            )}
+          </div>
+
+          {/* ── PLATFORMS ── */}
+          <div className="card">
+            <div className="card-label">Online Platforms</div>
+            {client.product?.platforms?.length>0 ? (
+              <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+                {(client.product.platforms||[]).map((p,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                    background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.08)',
+                    borderRadius:6,padding:'0.625rem 0.875rem'}}>
+                    <div>
+                      <div style={{fontSize:'13px',fontWeight:500,color:'var(--mist-0)'}}>{p.name}</div>
+                      <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:2}}>{p.role}</div>
+                    </div>
+                    {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer"
+                      style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--bolt)',textDecoration:'none'}}>
+                      Open ↗
+                    </a>}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No platforms added yet.</div>
+            )}
+          </div>
+
+          {/* ── MONTHLY COSTS ── */}
+          <div className="card">
+            <div className="card-label">Monthly Running Costs</div>
+            {client.product?.monthlyCosts?.length>0 ? (
+              <>
+                <div style={{display:'flex',flexDirection:'column',gap:'0.375rem'}}>
+                  {(client.product.monthlyCosts||[]).map((c,i)=>(
+                    <div key={i} style={{display:'flex',justifyContent:'space-between',
+                      padding:'0.5rem 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
+                      <span style={{fontSize:'13px',color:'var(--mist-1)',fontWeight:400}}>{c.name}</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'12px',color:'#ff6040',fontWeight:500}}>
+                        {c.currency==='USD'?'$':'J$'}{Number(c.amount).toLocaleString()}/{c.period||'mo'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',
+                  marginTop:'0.625rem',padding:'0.5rem 0',
+                  borderTop:'1px solid rgba(0,212,255,0.1)'}}>
+                  <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
+                    letterSpacing:'0.15em',textTransform:'uppercase'}}>Total Monthly</span>
+                  <span style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'#ff6040'}}>
+                    J${(client.product.monthlyCosts||[]).reduce((s,c)=>s+(Number(c.amount)||0),0).toLocaleString()}/mo
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No monthly costs tracked yet.</div>
+            )}
+          </div>
+
+          {/* ── CREDENTIALS & ACCESS ── */}
+          <div className="card">
+            <div className="card-label">Credentials & Access</div>
+            {client.product?.credentials?.length>0 ? (
+              <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+                {(client.product.credentials||[]).map((c,i)=>(
+                  <div key={i} style={{
+                    background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,212,255,0.1)',
+                    borderLeft:'2px solid var(--bolt-3)',borderRadius:6,padding:'0.625rem 0.875rem',
+                  }}>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',
+                      letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:3}}>{c.service}</div>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',lineHeight:1.6}}>{c.details}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No credentials stored yet.</div>
+            )}
+          </div>
+
+          {/* ── PAYMENT HISTORY ── */}
+          <div className="card">
+            <div className="card-label">Payment History</div>
+            {clientFinances.length===0 ? (
+              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No payments logged.</div>
+            ) : clientFinances.map(f=>(
+              <div key={f.id} style={{display:'flex',justifyContent:'space-between',
+                padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
+                <div>
+                  <div style={{fontSize:'13px',color:'var(--mist-1)'}}>{f.paymentStage||f.description}</div>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:1}}>{f.date}</div>
+                </div>
+                <div style={{fontFamily:'var(--fm)',fontSize:'13px',fontWeight:600,color:'#1adb8a'}}>
+                  +J${Number(f.amount).toLocaleString()}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── NOTES ── */}
+          {client.notes&&(
+            <div className="card">
+              <div className="card-label">Notes</div>
+              <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.7,fontWeight:300,whiteSpace:'pre-line'}}>
+                {client.notes}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── EDIT PRODUCT MODAL ── */}
+      {editProduct&&client&&(
+        <ProductModal client={client} onSave={d=>{onUpdateLead(client.id,{...client,product:d});setEditProduct(false);}} onClose={()=>setEditProduct(false)}/>
+      )}
+    </div>
+  );
+}
+
+function ProductModal({client,onSave,onClose}) {
+  const p0 = client.product||{};
+  const [type,setType]   = useState(p0.type||'WhatsApp AI Chatbot');
+  const [desc,setDesc]   = useState(p0.description||'');
+  const [stack,setStack] = useState(p0.techStack||{framework:'',hosting:'Render',database:'Firebase',apis:'',repo:'',liveUrl:'',repoUrl:'',adminUrl:''});
+  const [platforms,setPlatforms] = useState(p0.platforms||[]);
+  const [costs,setCosts]         = useState(p0.monthlyCosts||[]);
+  const [creds,setCreds]         = useState(p0.credentials||[]);
+
+  const ss=(k,v)=>setStack(s=>({...s,[k]:v}));
+
+  const addPlatform = ()=>setPlatforms(p=>[...p,{name:'',role:'',url:''}]);
+  const setPlatform = (i,k,v)=>setPlatforms(p=>{const n=[...p];n[i]={...n[i],[k]:v};return n;});
+  const delPlatform = i=>setPlatforms(p=>p.filter((_,j)=>j!==i));
+
+  const addCost = ()=>setCosts(c=>[...c,{name:'',amount:'',currency:'USD',period:'mo'}]);
+  const setCost = (i,k,v)=>setCosts(c=>{const n=[...c];n[i]={...n[i],[k]:v};return n;});
+  const delCost = i=>setCosts(c=>c.filter((_,j)=>j!==i));
+
+  const addCred = ()=>setCreds(c=>[...c,{service:'',details:''}]);
+  const setCred = (i,k,v)=>setCreds(c=>{const n=[...c];n[i]={...n[i],[k]:v};return n;});
+  const delCred = i=>setCreds(c=>c.filter((_,j)=>j!==i));
+
+  const TYPES=['WhatsApp AI Chatbot','Business Website','Online Ordering System',
+    'Admin Dashboard','Delivery Tracker','E-commerce Store','Other'];
+
+  return (
+    <Modal title={`Product — ${client.businessName}`} onClose={onClose}>
+      <Field label="Product Type">
+        <select className="input" value={type} onChange={e=>setType(e.target.value)}>
+          {TYPES.map(t=><option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Description">
+        <textarea className="input" style={{minHeight:'60px',resize:'vertical'}} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What was built and how it works..."/>
+      </Field>
+
+      {/* Tech Stack */}
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Tech Stack</div>
+      <div className="grid-2">
+        <Field label="Framework"><input className="input" value={stack.framework} onChange={e=>ss('framework',e.target.value)} placeholder="Node.js, React..."/></Field>
+        <Field label="Hosting"><input className="input" value={stack.hosting} onChange={e=>ss('hosting',e.target.value)} placeholder="Render, Vercel..."/></Field>
+        <Field label="Database"><input className="input" value={stack.database} onChange={e=>ss('database',e.target.value)} placeholder="Firebase, Supabase..."/></Field>
+        <Field label="APIs Used"><input className="input" value={stack.apis} onChange={e=>ss('apis',e.target.value)} placeholder="Claude AI, Twilio, Meta..."/></Field>
+      </div>
+      <Field label="Live URL"><input className="input" value={stack.liveUrl} onChange={e=>ss('liveUrl',e.target.value)} placeholder="https://..."/></Field>
+      <Field label="GitHub Repo URL"><input className="input" value={stack.repoUrl} onChange={e=>ss('repoUrl',e.target.value)} placeholder="https://github.com/..."/></Field>
+      <Field label="Admin / Dashboard URL"><input className="input" value={stack.adminUrl} onChange={e=>ss('adminUrl',e.target.value)} placeholder="https://..."/></Field>
+
+      {/* Platforms */}
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Online Platforms</div>
+      {platforms.map((p,i)=>(
+        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}>
+          <div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}>
+            <input className="input" style={{fontSize:'12px'}} value={p.name} onChange={e=>setPlatform(i,'name',e.target.value)} placeholder="Platform (e.g. WhatsApp Business, Meta, Firebase)"/>
+            <input className="input" style={{fontSize:'12px'}} value={p.role} onChange={e=>setPlatform(i,'role',e.target.value)} placeholder="Role (e.g. Customer messaging, Hosting)"/>
+            <input className="input" style={{fontSize:'12px'}} value={p.url} onChange={e=>setPlatform(i,'url',e.target.value)} placeholder="URL (optional)"/>
+          </div>
+          <button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>delPlatform(i)}><Icons.trash size={11}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addPlatform}><Icons.plus size={13}/> Add Platform</button>
+
+      {/* Monthly Costs */}
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Monthly Costs</div>
+      {costs.map((c,i)=>(
+        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'center'}}>
+          <input className="input" style={{flex:2,fontSize:'12px'}} value={c.name} onChange={e=>setCost(i,'name',e.target.value)} placeholder="Service name"/>
+          <input className="input" style={{flex:1,fontSize:'12px'}} type="number" value={c.amount} onChange={e=>setCost(i,'amount',e.target.value)} placeholder="Amount"/>
+          <select className="input" style={{flex:1,fontSize:'12px'}} value={c.currency} onChange={e=>setCost(i,'currency',e.target.value)}>
+            <option>USD</option><option>JMD</option>
+          </select>
+          <button className="icon-btn danger-btn" style={{flexShrink:0}} onClick={()=>delCost(i)}><Icons.trash size={11}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addCost}><Icons.plus size={13}/> Add Cost</button>
+
+      {/* Credentials */}
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Credentials & Access</div>
+      {creds.map((c,i)=>(
+        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}>
+          <div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}>
+            <input className="input" style={{fontSize:'12px'}} value={c.service} onChange={e=>setCred(i,'service',e.target.value)} placeholder="Service (e.g. Meta Business, Firebase Console)"/>
+            <textarea className="input" style={{fontSize:'12px',minHeight:'48px',resize:'vertical'}} value={c.details} onChange={e=>setCred(i,'details',e.target.value)} placeholder="Login details, API keys, account info..."/>
+          </div>
+          <button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>delCred(i)}><Icons.trash size={11}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addCred}><Icons.plus size={13}/> Add Credential</button>
+
+      <ModalFoot onClose={onClose} onSave={()=>onSave({type,description:desc,techStack:stack,platforms,monthlyCosts:costs,credentials:creds})}/>
+    </Modal>
+  );
+}
+
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
 function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
   const [tab,setTab] = useState('queue');
@@ -2084,6 +2572,7 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
           {id:'queue',    label:`Queue`,    count:pending.length},
           {id:'approved', label:`Approved`, count:approved.length},
           {id:'log',      label:'Log',      count:null},
+          {id:'research', label:'Research', count:null},
         ].map(t => (
           <button key={t.id}
             onClick={()=>setTab(t.id)}
@@ -2353,6 +2842,98 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
           </div>
         )
       )}
+
+      {/* RESEARCH TAB */}
+      {tab==='research' && (
+        <div style={{display:'flex',flexDirection:'column',gap:'0.875rem'}}>
+          <div style={{
+            position:'relative',overflow:'hidden',
+            background:'linear-gradient(135deg,rgba(0,24,36,0.95),rgba(26,16,53,0.4))',
+            border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.125rem',
+          }}>
+            <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',
+              textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>Research Mode</div>
+            <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,color:'var(--mist-0)',marginBottom:'0.5rem'}}>
+              Intelligence Hunter
+            </div>
+            <div style={{fontSize:'12.5px',color:'var(--mist-2)',fontWeight:300,lineHeight:1.6,marginBottom:'1rem'}}>
+              Set a research topic and JAXON will hunt for intelligence every hour during the period — market data, competitor analysis, hot lead profiles, concrete opportunities. All findings saved to memory.
+            </div>
+            <ResearchLauncher/>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResearchLauncher() {
+  const [topic,setTopic]   = useState('');
+  const [goal,setGoal]     = useState('');
+  const [hours,setHours]   = useState(24);
+  const [launched,setLaunched] = useState(false);
+  const [loading,setLoading]   = useState(false);
+
+  const launch = async () => {
+    if (!topic.trim()) return;
+    setLoading(true);
+    try {
+      const endTime = new Date(Date.now() + hours*3600000);
+      const res = await fetch('https://jaxon-rctv.onrender.com/research', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({topic, goal, hours, endTime: endTime.toISOString()}),
+      });
+      if (res.ok) setLaunched(true);
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  };
+
+  if (launched) return (
+    <div style={{textAlign:'center',padding:'1rem'}}>
+      <div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(0,212,255,0.6))'}}>⚡</div>
+      <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>
+        Research Active
+      </div>
+      <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>
+        JAXON will hunt every hour for {hours}h
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'0.625rem'}}>
+      <div>
+        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
+          textTransform:'uppercase',display:'block',marginBottom:4}}>Research Topic</label>
+        <input className="input" value={topic} onChange={e=>setTopic(e.target.value)}
+          placeholder="e.g. WhatsApp Business adoption among Jamaican restaurants"/>
+      </div>
+      <div>
+        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
+          textTransform:'uppercase',display:'block',marginBottom:4}}>Research Goal</label>
+        <textarea className="input" style={{minHeight:'52px',resize:'vertical'}}
+          value={goal} onChange={e=>setGoal(e.target.value)}
+          placeholder="What specific intelligence do we need? e.g. Find 20 restaurants in Kingston with no online presence and under 50 employees"/>
+      </div>
+      <div>
+        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
+          textTransform:'uppercase',display:'block',marginBottom:6}}>Research Period</label>
+        <div style={{display:'flex',gap:'0.375rem'}}>
+          {[6,12,24,48,72].map(h=>(
+            <button key={h}
+              className={`pill ${hours===h?'active':''}`}
+              style={{padding:'0.28rem 0.6rem'}}
+              onClick={()=>setHours(h)}>
+              {h}h
+            </button>
+          ))}
+        </div>
+      </div>
+      <button className="btn-primary" style={{justifyContent:'center',opacity:loading?0.7:1}}
+        onClick={launch} disabled={loading||!topic.trim()}>
+        {loading?'Launching...':'⚡ Launch Research'}
+      </button>
     </div>
   );
 }
