@@ -913,7 +913,7 @@ select.input {
 .error-toast button { background: none; border: none; cursor: pointer; color: var(--fire); }
 
 /* ─── SPLASH ──────────────────────────────────────────────────────── */
-.splash { position: fixed; inset: 0; background: #020509; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; animation: splashFade 0.6s ease 2.6s forwards; }
+.splash { position: fixed; inset: 0; background: #020509; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 9999; animation: splashFade 0.7s ease 4s forwards; }
 @keyframes splashFade { to{opacity:0;pointer-events:none;} }
 
 .splash-logo {
@@ -961,7 +961,7 @@ select.input {
 @keyframes splashText { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
 
 .splash-track { width: 120px; height: 1px; background: rgba(0,212,255,0.12); border-radius: 99px; overflow: hidden; margin-top: 3rem; animation: splashText 0.4s ease 1.2s both; }
-.splash-fill { height: 100%; background: linear-gradient(90deg, var(--bolt-dim), var(--bolt), var(--horizon)); border-radius: 99px; animation: splashFill 2s cubic-bezier(0.4,0,0.2,1) 1.4s both; box-shadow: 0 0 10px rgba(0,212,255,0.6); }
+.splash-fill { height: 100%; background: linear-gradient(90deg, var(--bolt-dim), var(--bolt), var(--horizon)); border-radius: 99px; animation: splashFill 2.6s cubic-bezier(0.4,0,0.2,1) 1.2s both; box-shadow: 0 0 10px rgba(0,212,255,0.6); }
 @keyframes splashFill { from{width:0%;} to{width:100%;} }
 
 /* ─── FINANCE ROW ─────────────────────────────────────────────────── */
