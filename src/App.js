@@ -72,16 +72,54 @@ const ALL_LOCATIONS = [...JAMAICAN_PARISHES, ...CARIBBEAN_COUNTRIES, ...US_STATE
 const LOGO_B64 = 'data:image/jpeg;base64,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';
 
 
+// Hollow neon SVG face icons — rendered inline as SVG paths
+const EMOTION_SVG = {
+  thriving: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
+    <circle cx="17" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <circle cx="31" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <path d="M15 29 Q24 37 33 29" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
+    <path d="M19 14 L17 11 M29 14 L31 11" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
+  </svg>`,
+  good: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
+    <circle cx="17" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <circle cx="31" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <path d="M16 29 Q24 35 32 29" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
+  </svg>`,
+  watchout: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
+    <line x1="15" y1="19" x2="21" y2="19" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="27" y1="19" x2="33" y2="19" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="16" y1="32" x2="32" y2="32" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+  </svg>`,
+  struggling: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
+    <path d="M15 18 L21 20 M33 18 L27 20" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="17" cy="21" r="2" stroke="${c}" stroke-width="1.5"/>
+    <circle cx="31" cy="21" r="2" stroke="${c}" stroke-width="1.5"/>
+    <path d="M16 33 Q24 27 32 33" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
+  </svg>`,
+  danger: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
+    <path d="M15 17 L21 21 M33 17 L27 21" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="17" cy="22" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <circle cx="31" cy="22" r="2.5" stroke="${c}" stroke-width="1.5"/>
+    <path d="M15 34 Q24 28 33 34" stroke="${c}" stroke-width="2.5" stroke-linecap="round" fill="none"/>
+    <line x1="24" y1="8" x2="24" y2="12" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+    <line x1="35" y1="11" x2="33" y2="14" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
+  </svg>`,
+};
+
 const EMOTION_LEVELS = [
-  { emoji:'😎', label:'Thriving',   color:'#3b82f6', bg:'rgba(201,168,76,0.08)',  desc:'Ahead of target' },
-  { emoji:'😊', label:'Good',       color:'#1adb8a', bg:'rgba(16,185,129,0.08)',  desc:'On track' },
-  { emoji:'😐', label:'Watch Out',  color:'#f0c060', bg:'rgba(240,192,96,0.08)',  desc:'Needs attention' },
-  { emoji:'😟', label:'Struggling', color:'#f97316', bg:'rgba(249,115,22,0.08)',  desc:'Pull up your socks' },
-  { emoji:'🚨', label:'Danger',     color:'#ff6040', bg:'rgba(255,96,64,0.08)',   desc:'Critical — act now' },
+  { svgKey:'thriving',   label:'Thriving',   color:'#00d4ff', bg:'rgba(0,212,255,0.07)',   desc:'Ahead of target — keep going' },
+  { svgKey:'good',       label:'Good',        color:'#40e8ff', bg:'rgba(64,232,255,0.07)',  desc:'On track' },
+  { svgKey:'watchout',   label:'Watch Out',   color:'#f0c060', bg:'rgba(240,192,96,0.07)',  desc:'Needs attention' },
+  { svgKey:'struggling', label:'Struggling',  color:'#ff8040', bg:'rgba(255,128,64,0.08)',  desc:'Pull up your socks' },
+  { svgKey:'danger',     label:'Danger',      color:'#ff3030', bg:'rgba(255,48,48,0.08)',   desc:'Critical — act now' },
 ];
 
 function calcEmotionLevel(finances, leads, xp, level) {
-  // Recalculates live from raw data every render — any money change updates immediately
   const totalIncome   = finances.filter(f => f.type==='income').reduce((s,f) => s+(Number(f.amount)||0), 0);
   const totalExpenses = finances.filter(f => f.type==='expense').reduce((s,f) => s+(Number(f.amount)||0), 0);
   const profit        = totalIncome - totalExpenses;
@@ -90,56 +128,52 @@ function calcEmotionLevel(finances, leads, xp, level) {
   const openLeads     = leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length;
   const hasData       = finances.length > 0;
 
-  // No data yet → neutral
   if (!hasData && paidClients === 0) return 2;
 
-  // Score built purely from real financial signals — no arbitrary base
-  let score = 50; // true neutral
+  // ── PROFIT IS THE MASTER SIGNAL ──────────────────────────────────────────
+  // Negative profit = cannot be Thriving or Good, no matter what else is true
+  // The score bands are designed so profit alone determines the floor/ceiling
 
-  // ── PROFIT (biggest signal — most direct money indicator)
-  if (profit > 100000)      score += 30;
-  else if (profit > 50000)  score += 22;
-  else if (profit > 20000)  score += 15;
-  else if (profit > 5000)   score += 8;
-  else if (profit > 0)      score += 3;
-  else if (profit < -50000) score -= 30;
-  else if (profit < -20000) score -= 20;
-  else if (profit < -5000)  score -= 12;
-  else if (profit < 0)      score -= 6;
+  let score = 50;
 
-  // ── MRR (recurring revenue = stability)
-  if (mrr > 100000)      score += 20;
-  else if (mrr > 50000)  score += 15;
-  else if (mrr > 20000)  score += 10;
-  else if (mrr > 10000)  score += 6;
-  else if (mrr > 5000)   score += 3;
-  else if (mrr === 0 && paidClients > 0) score -= 3; // clients with no retainer setup
+  // Profit — dominates the score (±40 pts possible)
+  if      (profit > 200000) score += 40;
+  else if (profit > 100000) score += 32;
+  else if (profit > 50000)  score += 25;
+  else if (profit > 20000)  score += 18;
+  else if (profit > 5000)   score += 10;
+  else if (profit > 0)      score += 4;
+  else if (profit === 0)    score += 0;
+  else if (profit > -5000)  score -= 15;   // slightly negative
+  else if (profit > -20000) score -= 25;   // meaningfully negative
+  else if (profit > -50000) score -= 35;   // bad
+  else                      score -= 45;   // critical
 
-  // ── PAID CLIENTS (proof of market)
-  if (paidClients >= 10)     score += 15;
-  else if (paidClients >= 5) score += 10;
-  else if (paidClients >= 3) score += 6;
+  // MRR — stability bonus (max +12)
+  if      (mrr > 50000) score += 12;
+  else if (mrr > 20000) score += 8;
+  else if (mrr > 7000)  score += 5;
+  else if (mrr > 0)     score += 2;
+
+  // Clients — proof bonus (max +8)
+  if      (paidClients >= 5) score += 8;
+  else if (paidClients >= 3) score += 5;
   else if (paidClients >= 1) score += 3;
-  else                       score -= 5; // no clients at all
+  else                       score -= 4;
 
-  // ── PIPELINE (future revenue signal)
-  if (openLeads >= 10)     score += 8;
-  else if (openLeads >= 5) score += 5;
-  else if (openLeads >= 2) score += 2;
-  else if (openLeads === 0) score -= 5; // dry pipeline = danger
+  // Pipeline (max +5)
+  if      (openLeads >= 10) score += 5;
+  else if (openLeads >= 5)  score += 3;
+  else if (openLeads >= 1)  score += 1;
+  else                      score -= 3;
 
-  // ── EXPENSE RATIO (burn rate warning)
+  // Expense ratio (max ±5)
   if (hasData && totalIncome > 0) {
     const er = totalExpenses / totalIncome;
-    if (er < 0.2)      score += 8;
-    else if (er < 0.4) score += 4;
-    else if (er > 0.8) score -= 10;
-    else if (er > 0.6) score -= 5;
+    if      (er < 0.3) score += 5;
+    else if (er > 1.0) score -= 5;
+    else if (er > 0.8) score -= 3;
   }
-
-  // ── XP MOMENTUM (active = healthy)
-  if (xp > 2000)      score += 5;
-  else if (xp > 500)  score += 2;
 
   score = Math.max(0, Math.min(100, score));
 
@@ -151,26 +185,42 @@ function calcEmotionLevel(finances, leads, xp, level) {
   return 4;                  // 🚨 Danger
 }
 
+
+// ─── LOCAL DATE (not UTC) ─────────────────────────────────────────────────────
+// toISOString() uses UTC which causes date to flip at 7pm in Jamaica (UTC-5)
+// Always use local date for XP, penalties, and todo logic
+function localDateStr(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function calcTodoXP(todos, todayStr) {
-  const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0,10);
+  const yesterday = localDateStr(new Date(new Date(todayStr) - 86400000));
   let xp = 0;
-  // Reward: +5 XP for every todo completed on any day
+
+  // REWARD: +5 XP for every todo completed on any past day (not today)
   todos.forEach(t => {
     xp += Object.entries(t.doneOn||{})
-      .filter(([date,done]) => done && date < todayStr) // only count past completions for XP calc
+      .filter(([date, done]) => done && date <= yesterday)
       .length * 5;
-    // Also count today's completions as reward (no penalty for incomplete today)
+    // Today's completions also reward — but NO penalty for incomplete today
     if (t.doneOn?.[todayStr]) xp += 5;
   });
-  // Penalty: only for todos that existed ON OR BEFORE yesterday and were NOT done yesterday
-  // NEVER penalise today — `t.addedDate <= yesterday` ensures only past days are judged
+
+  // PENALTY: only for todos added ON yesterday that were NOT completed yesterday
+  // KEY FIX: t.addedDate === yesterday (not <=) — we only judge ONE day at a time
+  // Each day is judged exactly once — the next morning. Never retroactively.
   todos.forEach(t => {
-    if (t.addedDate && t.addedDate <= yesterday && !t.doneOn?.[yesterday]) xp -= 10;
+    if (t.addedDate === yesterday && !t.doneOn?.[yesterday]) xp -= 10;
   });
-  // Penalty: if fewer than 5 todos existed yesterday (low effort the previous day)
-  const todosExistingYesterday = todos.filter(t => t.addedDate && t.addedDate <= yesterday);
-  const todosCompletedYesterday = todosExistingYesterday.filter(t => t.doneOn?.[yesterday]);
-  if (todosExistingYesterday.length > 0 && todosCompletedYesterday.length < 5) xp -= 10;
+
+  // PENALTY: if you had fewer than 5 todos yesterday (low effort)
+  const todosAddedYesterday = todos.filter(t => t.addedDate === yesterday);
+  const todosCompletedYesterday = todosAddedYesterday.filter(t => t.doneOn?.[yesterday]);
+  if (todosAddedYesterday.length > 0 && todosCompletedYesterday.length < 5) xp -= 10;
+
   return xp;
 }
 
@@ -178,8 +228,9 @@ function getWeekDates() {
   const today = new Date();
   const day = today.getDay();
   const monday = new Date(today);
+  // Uses local date via localDateStr — safe across timezones
   monday.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-  return DAYS.map((_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return d.toISOString().slice(0,10); });
+  return DAYS.map((_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return localDateStr(d); });
 }
 
 function getLast20Weeks() {
@@ -187,7 +238,7 @@ function getLast20Weeks() {
   for (let w = 19; w >= 0; w--) {
     const days = []; const monday = new Date(today); const dow = today.getDay();
     monday.setDate(today.getDate() - (dow===0?6:dow-1) - w*7);
-    for (let d = 0; d < 7; d++) { const day = new Date(monday); day.setDate(monday.getDate()+d); days.push(day.toISOString().slice(0,10)); }
+    for (let d = 0; d < 7; d++) { const day = new Date(monday); day.setDate(monday.getDate()+d); days.push(localDateStr(day)); }
     weeks.push(days);
   }
   return weeks;
@@ -195,7 +246,7 @@ function getLast20Weeks() {
 
 function calcXP(habits, leads, todos, todayStr) {
   let xp = 0;
-  const yesterday = new Date(new Date(todayStr) - 86400000).toISOString().slice(0,10);
+  const yesterday = localDateStr(new Date(new Date(todayStr) - 86400000));
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
   // Today's habits and todos have until 11:59pm — no penalty until the next day.
   habits.forEach(h => {
@@ -763,7 +814,7 @@ export default function App() {
   const { permission: notifPerm, requestPermission, subbed: notifSubbed } = useNotifications();
   // Allow pipeline to trigger invoice from lead
   useEffect(() => { window._openInvoice = (data) => { setInvoiceData(data); setInvoiceOpen(true); }; return () => { delete window._openInvoice; }; }, []);
-  const todayStr  = new Date().toISOString().slice(0,10);
+  const todayStr  = localDateStr();  // Local date — avoids UTC flip at 7pm Jamaica time
 
   // ── O(1) LOOKUP MAPS — built once, used everywhere ──────────────────────────
   // Maps are recomputed only when underlying data changes (useMemo deps)
@@ -2275,1563 +2326,202 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
   return (
     <div className="section">
-      {/* AI HEALTH SYSTEM — replaces emoji meter */}
-      <div style={{
-        position:'relative', overflow:'hidden',
-        background:'rgba(4,8,15,0.85)',
-        border:`1px solid ${emotion.color}22`,
-        borderRadius:14, cursor:'pointer',
-        backdropFilter:'blur(12px)',
-      }} onClick={()=>setMeterOpen(!meterOpen)}>
-        {/* Scan line */}
-        <div style={{position:'absolute',top:0,left:0,right:0,height:1,
-          background:`linear-gradient(90deg,transparent,${emotion.color},transparent)`,
-          opacity:0.6,animation:'lightningLine 3s ease-in-out infinite'}}/>
-        {/* Ambient glow behind */}
-        <div style={{position:'absolute',inset:0,
-          background:`radial-gradient(ellipse 80% 60% at 50% 0%,${emotion.color}10,transparent 70%)`,
-          pointerEvents:'none'}}/>
-
-        <div style={{padding:'1rem 1.125rem',position:'relative'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.875rem'}}>
-            <div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',fontWeight:300,
-                letterSpacing:'0.3em',textTransform:'uppercase',
-                color:emotion.color,opacity:0.7,marginBottom:4}}>
-                Business Health Index
-              </div>
-              <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,
-                color:emotion.color,lineHeight:1,
-                textShadow:`0 0 20px ${emotion.color}80`}}>
-                {emotion.label}
-              </div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'10px',fontWeight:300,
-                color:'var(--mist-2)',marginTop:3,letterSpacing:'0.04em'}}>
-                {emotion.desc}
-              </div>
-            </div>
-            {/* Circular gauge */}
-            <div style={{position:'relative',width:64,height:64,flexShrink:0}}>
-              <svg width="64" height="64" viewBox="0 0 64 64">
-                <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4"/>
-                <circle cx="32" cy="32" r="26" fill="none"
-                  stroke={emotion.color}
-                  strokeWidth="4"
-                  strokeDasharray={`${(1 - emotionIdx/4) * 163.4} 163.4`}
-                  strokeLinecap="round"
-                  strokeDashoffset="40.85"
-                  style={{filter:`drop-shadow(0 0 6px ${emotion.color})`,transition:'stroke-dasharray 0.8s ease'}}/>
-                <text x="32" y="37" textAnchor="middle"
-                  fill={emotion.color}
-                  fontSize="14" fontFamily="var(--fe)" fontWeight="600">
-                  {Math.round((1-emotionIdx/4)*100)}
-                </text>
-              </svg>
-            </div>
-          </div>
-
-          {/* Signal bars — 5 segments, AI style */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:3}}>
-            {EMOTION_LEVELS.map((e,i) => {
-              const active = i <= (4 - emotionIdx);
-              return (
-                <div key={i} style={{position:'relative'}}>
-                  <div style={{
-                    height: 4 + i * 3,
-                    borderRadius:1,
-                    background: active ? e.color : 'rgba(255,255,255,0.05)',
-                    boxShadow: active ? `0 0 8px ${e.color}80` : 'none',
-                    transition:'all 0.4s ease',
-                  }}/>
-                  {active && <div style={{
-                    position:'absolute',top:-2,left:0,right:0,height:1,
-                    background:e.color,opacity:0.8,
-                    filter:`blur(1px)`,
-                  }}/>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {meterOpen && (
-          <div style={{borderTop:`1px solid ${emotion.color}15`,padding:'0.875rem 1.125rem',
-            display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-            {/* Key metrics grid */}
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.5rem'}}>
-              {[
-                {l:'Net Profit',  v:`J$${profit.toLocaleString()}`,  c:profit>=0?'var(--bolt)':'#ff6040'},
-                {l:'MRR',         v:`J$${mrr.toLocaleString()}/mo`,  c:'var(--bolt-lt)'},
-                {l:'Level Target',v:`J$${minTarget.toLocaleString()}`,c:'var(--horizon)'},
-                {l:'MRR vs Target',v:`${minTarget>0?Math.round((mrr/minTarget)*100):0}%`,c:emotion.color},
-              ].map(m => (
-                <div key={m.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,
-                  padding:'0.5rem 0.75rem',border:'1px solid rgba(0,212,255,0.06)'}}>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
-                    letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginBottom:3}}>
-                    {m.l}
-                  </div>
-                  <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,
-                    color:m.c,lineHeight:1,textShadow:`0 0 10px ${m.c}60`}}>
-                    {m.v}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {/* MRR progress */}
-            <div>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em'}}>
-                  MRR PROGRESS TO TARGET
-                </span>
-                <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:emotion.color}}>
-                  {minTarget>0?Math.round((mrr/minTarget)*100):0}%
-                </span>
-              </div>
-              <div style={{height:'3px',background:'rgba(0,212,255,0.07)',borderRadius:99,overflow:'hidden',position:'relative'}}>
-                <div style={{
-                  position:'absolute',inset:0,
-                  background:'repeating-linear-gradient(90deg,rgba(0,212,255,0.05) 0,rgba(0,212,255,0.05) 8px,transparent 8px,transparent 16px)',
-                }}/>
-                <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,
-                  background:`linear-gradient(90deg,var(--bolt-2),${emotion.color})`,
-                  borderRadius:99,boxShadow:`0 0 8px ${emotion.color}80`,transition:'width 0.8s'}}/>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="hero">
-        <div className="hero-eye">Finance</div>
-        <div className="hero-big" style={{color:profit>=0?'var(--bolt)':'#ff6040'}}>J${profit.toLocaleString()}</div>
-        <div className="hero-sub">Net profit · J${totalIncome.toLocaleString()} in · J${totalExpenses.toLocaleString()} out{mrr>0?` · MRR J${mrr.toLocaleString()}`:''}</div>
-      </div>
-
-      <div className="grid-2">
-        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar}   color="var(--bolt)"/>
-        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar}   color="#ff6040"/>
-        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}`}           icon={Icons.trend}    color="var(--bolt-lt)"/>
-        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
-      </div>
-
-      <div className="tab-row">
-        {['overview','projection','breakdown','invest'].map(t=>(
-          <button key={t} className={`tab-btn ${report===t?'active':''}`} onClick={()=>setReport(t)}>{t==='invest'?'⚡ Invest':t.charAt(0).toUpperCase()+t.slice(1)}</button>
-        ))}
-      </div>
-
-      {report==='overview' && monthly.length>0 && (
-        <div className="card fade-in">
-          <div className="card-label">Monthly</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={monthly.slice(-6)} margin={{left:0,right:4,top:4,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={46}/>
-              <Tooltip contentStyle={tt}/>
-              <Legend wrapperStyle={{fontSize:'10px',color:'#64748b'}}/>
-              <Bar dataKey="income" fill="#00d4ff" radius={[3,3,0,0]} name="Income"/>
-              <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses"/>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {report==='projection' && (
-        <div className="card fade-in">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
-            <div className="card-label" style={{margin:0}}>{projMonths}-Month Projection</div>
-            <div style={{display:'flex',gap:4}}>
-              {[3,6,12].map(m=>(
-                <button key={m} onClick={()=>setProjMonths(m)}
-                  className={`pill ${projMonths===m?'active':''}`}
-                  style={{padding:'0.2rem 0.5rem',fontSize:'9px'}}>
-                  {m}M
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR. Dashed = min target.</div>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
-              <defs>
-                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0088c8" stopOpacity={0.25}/><stop offset="95%" stopColor="#0088c8" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={46}/>
-              <Tooltip contentStyle={tt}/>
-              <Legend wrapperStyle={{fontSize:'10px',color:'#64748b'}}/>
-              <Area type="monotone" dataKey="projected" stroke="#00d4ff" fill="url(#g1)" name="Projected Income" strokeWidth={2}/>
-              <Area type="monotone" dataKey="profit"    stroke="#0088c8" fill="url(#g2)" name="Profit" strokeWidth={2}/>
-              <Area type="monotone" dataKey="expenses"  stroke="#ff6040" fill="url(#g3)" name="Expenses" strokeWidth={1.5}/>
-              <Area type="monotone" dataKey="minimum"   stroke="rgba(0,212,255,0.3)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3"/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {report==='breakdown' && (() => {
-        const expCats = (()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
+      {/* EMOTION METER — hollow neon SVG face */}
+      {(() => {
+        const svgStr = EMOTION_SVG[emotion.svgKey]?.(emotion.color) || '';
         return (
-          <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-            <div className="card fade-in">
-              <div className="card-label">Income by Category</div>
-              {cats.length===0 ? <Empty text="No income yet."/> : cats.map(c=>{
-                const pct=totalIncome>0?(c.value/totalIncome)*100:0;
-                return (
-                  <div key={c.name} style={{marginBottom:'0.75rem'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                      <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
-                    </div>
-                    <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),var(--bolt))',borderRadius:99,boxShadow:'0 0 6px rgba(0,212,255,0.4)'}}/>
-                    </div>
+          <div style={{
+            position:'relative', overflow:'hidden',
+            background:`linear-gradient(160deg, rgba(4,8,15,0.95), ${emotion.color}08)`,
+            border:`1px solid ${emotion.color}25`,
+            borderRadius:14, cursor:'pointer',
+            backdropFilter:'blur(12px)',
+          }} onClick={()=>setMeterOpen(!meterOpen)}>
+            {/* Top scan line */}
+            <div style={{position:'absolute',top:0,left:0,right:0,height:1,
+              background:`linear-gradient(90deg,transparent,${emotion.color},transparent)`,
+              opacity:0.7}}/>
+
+            <div style={{padding:'1rem 1.125rem',position:'relative'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'1rem'}}>
+                {/* Hollow SVG face — neon glow */}
+                <div style={{
+                  width:64, height:64, flexShrink:0,
+                  filter:`drop-shadow(0 0 8px ${emotion.color}) drop-shadow(0 0 16px ${emotion.color}60)`,
+                  animation:'float 3s ease-in-out infinite',
+                }} dangerouslySetInnerHTML={{__html:svgStr}}/>
+
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',fontWeight:300,
+                    letterSpacing:'0.3em',textTransform:'uppercase',
+                    color:emotion.color,opacity:0.7,marginBottom:4}}>
+                    Business Health
                   </div>
-                );
-              })}
-            </div>
-            <div className="card fade-in">
-              <div className="card-label">Expenses by Category</div>
-              {expCats.length===0 ? <Empty text="No expenses yet."/> : expCats.map(c=>{
-                const pct=totalExpenses>0?(c.value/totalExpenses)*100:0;
-                return (
-                  <div key={c.name} style={{marginBottom:'0.75rem'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                      <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#ff6040'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
-                    </div>
-                    <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--fire-dk),#ff6040)',borderRadius:99,boxShadow:'0 0 6px rgba(255,96,64,0.4)'}}/>
-                    </div>
+                  <div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:600,
+                    color:emotion.color,lineHeight:1,marginBottom:4,
+                    textShadow:`0 0 20px ${emotion.color}80`}}>
+                    {emotion.label}
                   </div>
-                );
-              })}
+                  <div style={{fontFamily:'var(--fm)',fontSize:'10px',fontWeight:300,
+                    color:'var(--mist-2)',letterSpacing:'0.04em'}}>
+                    {emotion.desc}
+                  </div>
+                </div>
+
+                {/* Signal bars */}
+                <div style={{display:'flex',alignItems:'flex-end',gap:3,flexShrink:0,height:36}}>
+                  {EMOTION_LEVELS.map((e,i) => {
+                    const active = i <= (4 - emotionIdx);
+                    const h = 8 + i * 7;
+                    return (
+                      <div key={i} style={{
+                        width:5, height:h,
+                        borderRadius:2,
+                        background:active ? e.color : 'rgba(255,255,255,0.07)',
+                        boxShadow:active ? `0 0 6px ${e.color}80` : 'none',
+                        transition:'all 0.4s ease',
+                        alignSelf:'flex-end',
+                      }}/>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mini metric strip */}
+              <div style={{display:'flex',gap:'0.75rem',marginTop:'0.75rem',
+                paddingTop:'0.625rem',borderTop:`1px solid ${emotion.color}15`,
+                flexWrap:'wrap'}}>
+                {[
+                  {l:'Profit',  v:`J$${profit.toLocaleString()}`,          c:profit>=0?'var(--bolt)':'#ff3030'},
+                  {l:'MRR',     v:`J$${mrr.toLocaleString()}/mo`,          c:'var(--bolt-lt)'},
+                  {l:'Clients', v:paidLeads.length,                         c:'var(--horizon)'},
+                  {l:'Pipeline',v:openLeads.length,                         c:'var(--mist-2)'},
+                ].map(m=>(
+                  <div key={m.l}>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'7px',color:'var(--mist-3)',
+                      letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:2}}>{m.l}</div>
+                    <div style={{fontFamily:'var(--fe)',fontSize:'14px',fontWeight:600,
+                      color:m.c,lineHeight:1,textShadow:`0 0 8px ${m.c}60`}}>{m.v}</div>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {meterOpen && (
+              <div style={{borderTop:`1px solid ${emotion.color}15`,
+                padding:'0.875rem 1.125rem',display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+                {/* MRR progress */}
+                <div>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em'}}>
+                      MRR vs Level Target
+                    </span>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:emotion.color}}>
+                      {minTarget>0?Math.round((mrr/minTarget)*100):0}%
+                    </span>
+                  </div>
+                  <div style={{height:'3px',background:'rgba(0,212,255,0.07)',borderRadius:99,overflow:'hidden',position:'relative'}}>
+                    <div style={{
+                      position:'absolute',inset:0,
+                      background:'repeating-linear-gradient(90deg,rgba(0,212,255,0.05) 0,rgba(0,212,255,0.05) 8px,transparent 8px,transparent 16px)',
+                    }}/>
+                    <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,
+                      background:`linear-gradient(90deg,var(--bolt-2),${emotion.color})`,
+                      borderRadius:99,boxShadow:`0 0 8px ${emotion.color}80`,transition:'width 0.8s'}}/>
+                  </div>
+                  <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',marginTop:4}}>
+                    J${mrr.toLocaleString()} of J${minTarget.toLocaleString()} target
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         );
       })()}
 
-
-      {report==='invest' && (
-        <InvestAdvisor
-          profit={profit} mrr={mrr} totalIncome={totalIncome} totalExpenses={totalExpenses}
-          level={level} paidClients={leads.filter(l=>l.status==='Paid').length}
-          openLeads={leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length}
-          finances={finances}
-          advice={investAdvice} loading={investLoading}
-          onFetch={async()=>{
-            setInvestLoading(true);
-            try {
-              const r = await fetch('https://jaxon-rctv.onrender.com/invest', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body:JSON.stringify({profit,mrr,totalIncome,totalExpenses,level,
-                  paidClients:leads.filter(l=>l.status==='Paid').length,
-                  openLeads:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length,
-                  recentFinances:finances.slice(-20).map(f=>({type:f.type,amount:f.amount,category:f.category,date:f.date}))})
-              });
-              const d = await r.json();
-              setInvestAdvice(d);
-            } catch(e){ console.error(e); }
-            setInvestLoading(false);
-          }}
-        />
-      )}
-
-      <div style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
-        <div className="tab-row" style={{flex:1}}>
-          {['all','income','expense'].map(t=>(
-            <button key={t} className={`tab-btn ${filter===t?'active':''}`} onClick={()=>setFilter(t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>
-          ))}
-        </div>
-        <button className="btn-primary icon-only" onClick={()=>setForm({})}><Icons.plus size={16}/></button>
+      {/* Stats */}
+      <div className="grid-2">
+        <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}    icon={Icons.trend}   color={profit>=0?'#1adb8a':'#ff6040'} />
+        <StatCard label="Paid Clients"  value={paidLeads.length}                    icon={Icons.users}   color="var(--horizon)" />
+        <StatCard label="Open Pipeline" value={openLeads.length}                    icon={Icons.target}  color="var(--horizon)" />
+        <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--horizon)" />
       </div>
 
-      {filtered.length===0 ? <Empty text="No transactions yet."/> : (
-        <>
-          <div className="list">
-            {finPaged.map(f=>(
-              <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
-                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'var(--bolt)':'#ff6040'}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:500,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
-                  <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}{f.pipelineLeadId?<span style={{color:'#7b6cf5'}}> · linked</span>:''}</div>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
-                  <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
-                </div>
+      {/* Today habits quick */}
+      {habits.length > 0 && (
+        <div className="card fade-in">
+          <div className="card-label">Today's Habits</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+            {habits.map(h => (
+              <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
+                <button className="check-btn" onClick={()=>onToggleHabit(h,todayStr)} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
+                  {h.completions?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
+                </button>
+                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
+                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',flexShrink:0}}>+10</span>}
               </div>
             ))}
           </div>
-          {finPageCount > 1 && (
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'0.4rem'}}>
-              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.max(0,p-1))} disabled={finPage===0}>←</button>
-              {Array.from({length:finPageCount},(_,i)=>(
-                <button key={i} className={`pill ${finPage===i?'active':''}`}
-                  style={{minWidth:28,justifyContent:'center',padding:'0.2rem 0.5rem'}}
-                  onClick={()=>setFinPage(i)}>{i+1}</button>
-              ))}
-              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.min(finPageCount-1,p+1))} disabled={finPage===finPageCount-1}>→</button>
-            </div>
-          )}
-          <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',textAlign:'center'}}>
-            {filtered.length} transactions · page {finPage+1} of {finPageCount||1}
-          </div>
-        </>
-      )}
-
-      {form!==null && <FinanceModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
-    </div>
-  );
-}
-
-function FinanceModal({data,onSave,onClose}) {
-  const [f,setF]=useState({type:'income',description:'',amount:'',category:INCOME_CATS[0],date:new Date().toISOString().slice(0,10),...data});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  const cats=f.type==='income'?INCOME_CATS:EXPENSE_CATS;
-  return (
-    <Modal title={data.id?'Edit Transaction':'New Transaction'} onClose={onClose}>
-      <div className="tab-row" style={{marginBottom:'0.25rem'}}>
-        <button className={`tab-btn ${f.type==='income'?'active':''}`} onClick={()=>s('type','income')}>Income</button>
-        <button className={`tab-btn ${f.type==='expense'?'active':''}`} onClick={()=>s('type','expense')}>Expense</button>
-      </div>
-      <Field label="Description"><input className="input" value={f.description} onChange={e=>s('description',e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
-      <div className="grid-2">
-        <Field label="Amount (JMD)"><input className="input" type="number" value={f.amount} onChange={e=>s('amount',e.target.value)} placeholder="45000"/></Field>
-        <Field label="Category"><select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>{cats.map(c=><option key={c}>{c}</option>)}</select></Field>
-      </div>
-      <Field label="Date"><input className="input" type="date" value={f.date} onChange={e=>s('date',e.target.value)}/></Field>
-      <ModalFoot onClose={onClose} onSave={()=>f.description.trim()&&f.amount&&onSave(f)}/>
-    </Modal>
-  );
-}
-
-// ─── GOALS ────────────────────────────────────────────────────────────────────
-function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
-  const [form,setForm]=useState(null);
-  return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Goals</div>
-        <div className="hero-big">Level Up</div>
-        <div className="hero-sub">20 blocks. Fill them. Become him.</div>
-      </div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontWeight:700,fontSize:'15px'}}>{goals.length} Goals</span>
-        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> New</button>
-      </div>
-      {goals.length===0 ? <Empty text="No goals set. What do you want to become?"/> : (
-        <div className="list">
-          {goals.map(g=>{
-            const pct=Math.min(100,Math.round(((Number(g.current)||0)/(Number(g.target)||1))*100));
-            const lv=Math.floor(pct/5);
-            return (
-              <div key={g.id} className="card fade-in">
-                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.625rem',gap:'0.75rem'}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
-                    <div style={{fontSize:'11px',color:'var(--mist-2)',marginTop:'2px'}}>{g.category}{g.dueDate?` · Due ${g.dueDate}`:''}</div>
-                  </div>
-                  <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
-                    {pct < 100 && (
-                      <button className="icon-btn mint-btn" title="Mark complete (+100 XP)"
-                        onClick={()=>{onUpdate(g.id,{...g,current:g.target});onGoalComplete&&onGoalComplete(g);}}>
-                        ✓
-                      </button>
-                    )}
-                    {pct >= 100 && (
-                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#1adb8a',
-                        padding:'0.2rem 0.5rem',border:'1px solid rgba(26,219,138,0.3)',
-                        borderRadius:4,background:'rgba(26,219,138,0.07)'}}>
-                        DONE
-                      </span>
-                    )}
-                    <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
-                    <button className="icon-btn danger-btn" onClick={()=>onDelete(g.id)}><Icons.trash size={12}/></button>
-                  </div>
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',marginBottom:'0.25rem'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',fontWeight:700}}>Level {lv}/20</span>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{g.current||0}/{g.target||0} {g.unit||''}</span>
-                </div>
-                <div style={{display:'flex',gap:'3px',marginBottom:'0.5rem'}}>
-                  {Array.from({length:20},(_,i)=>(
-                    <div key={i} style={{flex:1,height:'5px',borderRadius:'2px',background:i<lv?(i===lv-1?'#1adb8a':'rgba(201,168,76,0.3)'):'rgba(255,255,255,0.06)',boxShadow:i===lv-1?'0 0 4px var(--horizon)':'none',transition:'all 0.3s'}}/>
-                  ))}
-                </div>
-                <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                  <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,rgba(201,168,76,0.6),var(--horizon))',borderRadius:'99px',boxShadow:'0 0 4px rgba(201,168,76,0.4)',transition:'width 0.6s'}}/>
-                </div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)',marginTop:'4px'}}>{pct}% complete</div>
-                {g.notes && <div style={{fontSize:'12px',color:'var(--mist-2)',marginTop:'0.5rem',fontStyle:'italic'}}>{g.notes}</div>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {form!==null && <GoalModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
-    </div>
-  );
-}
-
-function GoalModal({data,onSave,onClose}) {
-  const [f,setF]=useState({title:'',category:GOAL_CATS[0],target:'',current:'',unit:'',dueDate:'',notes:'',...data});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  return (
-    <Modal title={data.id?'Edit Goal':'New Goal'} onClose={onClose}>
-      <Field label="Goal Title"><input className="input" value={f.title} onChange={e=>s('title',e.target.value)} placeholder="e.g. 10 retainer clients"/></Field>
-      <div className="grid-2">
-        <Field label="Category"><select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>{GOAL_CATS.map(c=><option key={c}>{c}</option>)}</select></Field>
-        <Field label="Unit"><input className="input" value={f.unit} onChange={e=>s('unit',e.target.value)} placeholder="clients, JMD…"/></Field>
-      </div>
-      <div className="grid-2">
-        <Field label="Target"><input className="input" type="number" value={f.target} onChange={e=>s('target',e.target.value)} placeholder="10"/></Field>
-        <Field label="Current"><input className="input" type="number" value={f.current} onChange={e=>s('current',e.target.value)} placeholder="1"/></Field>
-      </div>
-      <Field label="Due Date"><input className="input" type="date" value={f.dueDate} onChange={e=>s('dueDate',e.target.value)}/></Field>
-      <Field label="Notes"><textarea className="input" style={{resize:'vertical',minHeight:'64px'}} value={f.notes} onChange={e=>s('notes',e.target.value)}/></Field>
-      <ModalFoot onClose={onClose} onSave={()=>f.title.trim()&&onSave(f)}/>
-    </Modal>
-  );
-}
-
-
-// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
-function ClientManagement({leads,finances,onUpdateLead}) {
-  const paidClients = leads.filter(l=>l.status==='Paid');
-  const [sel,setSel]   = useState(paidClients[0]?.id||null);
-  const [editProduct,setEditProduct] = useState(false);
-  const client = paidClients.find(c=>c.id===sel);
-  const clientFinances = finances.filter(f=>f.pipelineLeadId===sel);
-  const totalReceived  = clientFinances.reduce((s,f)=>s+(Number(f.amount)||0),0);
-
-  if (paidClients.length===0) return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Client Management</div>
-        <div className="hero-big">No Clients Yet</div>
-        <div className="hero-sub">Paid clients will appear here for full product management.</div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Client Management</div>
-        <div className="hero-big" style={{fontSize:'26px'}}>{client?.businessName||'Select Client'}</div>
-        <div className="hero-sub">{paidClients.length} active client{paidClients.length!==1?'s':''} · Full product control</div>
-      </div>
-
-      {/* Client selector */}
-      {paidClients.length>1&&(
-        <div className="pill-row">
-          {paidClients.map(c=>(
-            <button key={c.id} className={`pill ${sel===c.id?'active':''}`} onClick={()=>setSel(c.id)}>
-              {c.businessName}
-            </button>
-          ))}
         </div>
       )}
 
-      {client && (
-        <>
-          {/* ── QUICK STATS ── */}
-          <div className="grid-2">
-            {[
-              {l:'Monthly Retainer', v:`J$${Number(client.retainerAmount||0).toLocaleString()}/mo`, c:'var(--bolt)'},
-              {l:'Total Received',   v:`J$${totalReceived.toLocaleString()}`,                      c:'var(--valley)'},
-              {l:'Setup Value',      v:`J$${Number(client.value||0).toLocaleString()}`,            c:'var(--horizon)'},
-              {l:'Balance',          v:`J$${Math.max(0,Number(client.value||0)-totalReceived).toLocaleString()} due`, c:totalReceived>=Number(client.value||0)?'var(--valley)':'var(--fire)'},
-            ].map(s=>(
-              <div key={s.l} className="stat-card">
-                <div className="stat-label">{s.l}</div>
-                <div className="stat-value" style={{color:s.c,fontSize:'18px'}}>{s.v}</div>
+      {/* Today tasks quick */}
+      {todayTodos.length > 0 && (
+        <div className="card fade-in">
+          <div className="card-label">Tasks · {todayDone.length}/{todayTodos.length}</div>
+          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
+            {todayTodos.map(t => (
+              <div key={t.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
+                <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
+                  {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
+                </button>
+                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></span>
+                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5',flexShrink:0}}>+5</span>}
               </div>
             ))}
           </div>
+        </div>
+      )}
 
-          {/* ── PRODUCT CARD ── */}
-          <div className="card">
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
-              <div className="card-label" style={{margin:0}}>Product Built</div>
-              <button className="icon-btn" onClick={()=>setEditProduct(true)}><Icons.edit size={12}/></button>
-            </div>
-            {client.product ? (
-              <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-                <div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Product Type</div>
-                  <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--mist-0)'}}>{client.product.type||'—'}</div>
-                </div>
-                <div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Description</div>
-                  <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.6,fontWeight:300}}>{client.product.description||'—'}</div>
-                </div>
-              </div>
-            ) : (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>
-                No product details yet. Tap edit to add.
-              </div>
-            )}
-          </div>
-
-          {/* ── TECH STACK ── */}
-          <div className="card">
-            <div className="card-label">Tech Stack & Code</div>
-            {client.product?.techStack ? (
-              <div style={{display:'flex',flexDirection:'column',gap:'0.625rem'}}>
-                {[
-                  {l:'Framework / Language', v:client.product.techStack.framework},
-                  {l:'Hosting / Deploy',      v:client.product.techStack.hosting},
-                  {l:'Database',             v:client.product.techStack.database},
-                  {l:'AI / APIs',            v:client.product.techStack.apis},
-                  {l:'Version Control',      v:client.product.techStack.repo},
-                  {l:'Live URL',             v:client.product.techStack.liveUrl, link:true},
-                  {l:'GitHub Repo',          v:client.product.techStack.repoUrl, link:true},
-                  {l:'Admin Panel',          v:client.product.techStack.adminUrl, link:true},
-                ].filter(r=>r.v).map(row=>(
-                  <div key={row.l} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-                    padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
-                      letterSpacing:'0.1em',textTransform:'uppercase',flexShrink:0,marginRight:'1rem'}}>
-                      {row.l}
-                    </span>
-                    {row.link ? (
-                      <a href={row.v} target="_blank" rel="noopener noreferrer"
-                        style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)',
-                          textDecoration:'none',wordBreak:'break-all',textAlign:'right'}}>
-                        {row.v}
-                      </a>
-                    ) : (
-                      <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',textAlign:'right'}}>
-                        {row.v}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No tech stack added yet.</div>
-            )}
-          </div>
-
-          {/* ── PLATFORMS ── */}
-          <div className="card">
-            <div className="card-label">Online Platforms</div>
-            {client.product?.platforms?.length>0 ? (
-              <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-                {(client.product.platforms||[]).map((p,i)=>(
-                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
-                    background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.08)',
-                    borderRadius:6,padding:'0.625rem 0.875rem'}}>
-                    <div>
-                      <div style={{fontSize:'13px',fontWeight:500,color:'var(--mist-0)'}}>{p.name}</div>
-                      <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:2}}>{p.role}</div>
-                    </div>
-                    {p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer"
-                      style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--bolt)',textDecoration:'none'}}>
-                      Open ↗
-                    </a>}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No platforms added yet.</div>
-            )}
-          </div>
-
-          {/* ── MONTHLY COSTS ── */}
-          <div className="card">
-            <div className="card-label">Monthly Running Costs</div>
-            {client.product?.monthlyCosts?.length>0 ? (
-              <>
-                <div style={{display:'flex',flexDirection:'column',gap:'0.375rem'}}>
-                  {(client.product.monthlyCosts||[]).map((c,i)=>(
-                    <div key={i} style={{display:'flex',justifyContent:'space-between',
-                      padding:'0.5rem 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}>
-                      <span style={{fontSize:'13px',color:'var(--mist-1)',fontWeight:400}}>{c.name}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'12px',color:'#ff6040',fontWeight:500}}>
-                        {c.currency==='USD'?'$':'J$'}{Number(c.amount).toLocaleString()}/{c.period||'mo'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                <div style={{display:'flex',justifyContent:'space-between',
-                  marginTop:'0.625rem',padding:'0.5rem 0',
-                  borderTop:'1px solid rgba(0,212,255,0.1)'}}>
-                  <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
-                    letterSpacing:'0.15em',textTransform:'uppercase'}}>Total Monthly</span>
-                  <span style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'#ff6040'}}>
-                    J${(client.product.monthlyCosts||[]).reduce((s,c)=>s+(Number(c.amount)||0),0).toLocaleString()}/mo
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No monthly costs tracked yet.</div>
-            )}
-          </div>
-
-          {/* ── CREDENTIALS & ACCESS ── */}
-          <div className="card">
-            <div className="card-label">Credentials & Access</div>
-            {client.product?.credentials?.length>0 ? (
-              <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-                {(client.product.credentials||[]).map((c,i)=>(
-                  <div key={i} style={{
-                    background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,212,255,0.1)',
-                    borderLeft:'2px solid var(--bolt-3)',borderRadius:6,padding:'0.625rem 0.875rem',
-                  }}>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',
-                      letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:3}}>{c.service}</div>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',lineHeight:1.6}}>{c.details}</div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No credentials stored yet.</div>
-            )}
-          </div>
-
-          {/* ── PAYMENT HISTORY ── */}
-          <div className="card">
-            <div className="card-label">Payment History</div>
-            {clientFinances.length===0 ? (
-              <div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No payments logged.</div>
-            ) : clientFinances.map(f=>(
-              <div key={f.id} style={{display:'flex',justifyContent:'space-between',
-                padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
-                <div>
-                  <div style={{fontSize:'13px',color:'var(--mist-1)'}}>{f.paymentStage||f.description}</div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:1}}>{f.date}</div>
-                </div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'13px',fontWeight:600,color:'#1adb8a'}}>
-                  +J${Number(f.amount).toLocaleString()}
-                </div>
+      {/* Heatmap */}
+      <div className="card fade-in">
+        <div className="card-label">Consistency — 20 Weeks</div>
+        <div style={{overflowX:'auto'}}>
+          <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
+            {weeks.map((week,wi) => (
+              <div key={wi} style={{display:'flex',flexDirection:'column',gap:'3px'}}>
+                {week.map(date => {
+                  const e = habitHeatmap.find(h=>h.date===date);
+                  return <div key={date} className={`hcell lv${e?.lv||0}${date===todayStr?' today':''}`} title={date}/>;
+                })}
               </div>
             ))}
           </div>
-
-          {/* ── NOTES ── */}
-          {client.notes&&(
-            <div className="card">
-              <div className="card-label">Notes</div>
-              <div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.7,fontWeight:300,whiteSpace:'pre-line'}}>
-                {client.notes}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── EDIT PRODUCT MODAL ── */}
-      {editProduct&&client&&(
-        <ProductModal client={client} onSave={d=>{onUpdateLead(client.id,{...client,product:d});setEditProduct(false);}} onClose={()=>setEditProduct(false)}/>
-      )}
-    </div>
-  );
-}
-
-function ProductModal({client,onSave,onClose}) {
-  const p0 = client.product||{};
-  const [type,setType]   = useState(p0.type||'WhatsApp AI Chatbot');
-  const [desc,setDesc]   = useState(p0.description||'');
-  const [stack,setStack] = useState(p0.techStack||{framework:'',hosting:'Render',database:'Firebase',apis:'',repo:'',liveUrl:'',repoUrl:'',adminUrl:''});
-  const [platforms,setPlatforms] = useState(p0.platforms||[]);
-  const [costs,setCosts]         = useState(p0.monthlyCosts||[]);
-  const [creds,setCreds]         = useState(p0.credentials||[]);
-
-  const ss=(k,v)=>setStack(s=>({...s,[k]:v}));
-
-  const addPlatform = ()=>setPlatforms(p=>[...p,{name:'',role:'',url:''}]);
-  const setPlatform = (i,k,v)=>setPlatforms(p=>{const n=[...p];n[i]={...n[i],[k]:v};return n;});
-  const delPlatform = i=>setPlatforms(p=>p.filter((_,j)=>j!==i));
-
-  const addCost = ()=>setCosts(c=>[...c,{name:'',amount:'',currency:'USD',period:'mo'}]);
-  const setCost = (i,k,v)=>setCosts(c=>{const n=[...c];n[i]={...n[i],[k]:v};return n;});
-  const delCost = i=>setCosts(c=>c.filter((_,j)=>j!==i));
-
-  const addCred = ()=>setCreds(c=>[...c,{service:'',details:''}]);
-  const setCred = (i,k,v)=>setCreds(c=>{const n=[...c];n[i]={...n[i],[k]:v};return n;});
-  const delCred = i=>setCreds(c=>c.filter((_,j)=>j!==i));
-
-  const TYPES=['WhatsApp AI Chatbot','Business Website','Online Ordering System',
-    'Admin Dashboard','Delivery Tracker','E-commerce Store','Other'];
-
-  return (
-    <Modal title={`Product — ${client.businessName}`} onClose={onClose}>
-      <Field label="Product Type">
-        <select className="input" value={type} onChange={e=>setType(e.target.value)}>
-          {TYPES.map(t=><option key={t}>{t}</option>)}
-        </select>
-      </Field>
-      <Field label="Description">
-        <textarea className="input" style={{minHeight:'60px',resize:'vertical'}} value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What was built and how it works..."/>
-      </Field>
-
-      {/* Tech Stack */}
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Tech Stack</div>
-      <div className="grid-2">
-        <Field label="Framework"><input className="input" value={stack.framework} onChange={e=>ss('framework',e.target.value)} placeholder="Node.js, React..."/></Field>
-        <Field label="Hosting"><input className="input" value={stack.hosting} onChange={e=>ss('hosting',e.target.value)} placeholder="Render, Vercel..."/></Field>
-        <Field label="Database"><input className="input" value={stack.database} onChange={e=>ss('database',e.target.value)} placeholder="Firebase, Supabase..."/></Field>
-        <Field label="APIs Used"><input className="input" value={stack.apis} onChange={e=>ss('apis',e.target.value)} placeholder="Claude AI, Twilio, Meta..."/></Field>
-      </div>
-      <Field label="Live URL"><input className="input" value={stack.liveUrl} onChange={e=>ss('liveUrl',e.target.value)} placeholder="https://..."/></Field>
-      <Field label="GitHub Repo URL"><input className="input" value={stack.repoUrl} onChange={e=>ss('repoUrl',e.target.value)} placeholder="https://github.com/..."/></Field>
-      <Field label="Admin / Dashboard URL"><input className="input" value={stack.adminUrl} onChange={e=>ss('adminUrl',e.target.value)} placeholder="https://..."/></Field>
-
-      {/* Platforms */}
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Online Platforms</div>
-      {platforms.map((p,i)=>(
-        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}>
-          <div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}>
-            <input className="input" style={{fontSize:'12px'}} value={p.name} onChange={e=>setPlatform(i,'name',e.target.value)} placeholder="Platform (e.g. WhatsApp Business, Meta, Firebase)"/>
-            <input className="input" style={{fontSize:'12px'}} value={p.role} onChange={e=>setPlatform(i,'role',e.target.value)} placeholder="Role (e.g. Customer messaging, Hosting)"/>
-            <input className="input" style={{fontSize:'12px'}} value={p.url} onChange={e=>setPlatform(i,'url',e.target.value)} placeholder="URL (optional)"/>
-          </div>
-          <button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>delPlatform(i)}><Icons.trash size={11}/></button>
         </div>
-      ))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addPlatform}><Icons.plus size={13}/> Add Platform</button>
-
-      {/* Monthly Costs */}
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Monthly Costs</div>
-      {costs.map((c,i)=>(
-        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'center'}}>
-          <input className="input" style={{flex:2,fontSize:'12px'}} value={c.name} onChange={e=>setCost(i,'name',e.target.value)} placeholder="Service name"/>
-          <input className="input" style={{flex:1,fontSize:'12px'}} type="number" value={c.amount} onChange={e=>setCost(i,'amount',e.target.value)} placeholder="Amount"/>
-          <select className="input" style={{flex:1,fontSize:'12px'}} value={c.currency} onChange={e=>setCost(i,'currency',e.target.value)}>
-            <option>USD</option><option>JMD</option>
-          </select>
-          <button className="icon-btn danger-btn" style={{flexShrink:0}} onClick={()=>delCost(i)}><Icons.trash size={11}/></button>
-        </div>
-      ))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addCost}><Icons.plus size={13}/> Add Cost</button>
-
-      {/* Credentials */}
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginTop:'0.25rem'}}>Credentials & Access</div>
-      {creds.map((c,i)=>(
-        <div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}>
-          <div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}>
-            <input className="input" style={{fontSize:'12px'}} value={c.service} onChange={e=>setCred(i,'service',e.target.value)} placeholder="Service (e.g. Meta Business, Firebase Console)"/>
-            <textarea className="input" style={{fontSize:'12px',minHeight:'48px',resize:'vertical'}} value={c.details} onChange={e=>setCred(i,'details',e.target.value)} placeholder="Login details, API keys, account info..."/>
-          </div>
-          <button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>delCred(i)}><Icons.trash size={11}/></button>
-        </div>
-      ))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={addCred}><Icons.plus size={13}/> Add Credential</button>
-
-      <ModalFoot onClose={onClose} onSave={()=>onSave({type,description:desc,techStack:stack,platforms,monthlyCosts:costs,credentials:creds})}/>
-    </Modal>
-  );
-}
-
-// ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
-function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
-  const [tab,setTab] = useState('queue');
-  const pending  = queue.filter(q=>q.status==='pending').sort((a,b)=>({high:0,medium:1,low:2}[a.priority]||1)-({high:0,medium:1,low:2}[b.priority]||1));
-  const approved = queue.filter(q=>q.status==='approved');
-  const executed = queue.filter(q=>q.status==='executed');
-  const todayBriefing = briefings.find(b=>b.date===todayStr);
-  const latestLog = logs[0];
-
-  const AL = {
-    ADD_LEAD:'Add Lead', UPDATE_LEAD:'Update Lead',
-    MARK_LEAD_DEAD:'Mark Dead', ADD_FINANCE_ENTRY:'Log Transaction', ADD_TODO:'Add Task'
-  };
-
-  const PRIORITY_STYLE = {
-    high:   { color:'#ff6040', border:'rgba(255,96,64,0.3)',  bg:'rgba(255,96,64,0.07)'  },
-    medium: { color:'#f0c060', border:'rgba(240,192,96,0.3)', bg:'rgba(240,192,96,0.07)' },
-    low:    { color:'#3a4860', border:'rgba(58,72,96,0.3)',   bg:'rgba(58,72,96,0.07)'   },
-  };
-
-  return (
-    <div className="section">
-
-      {/* COMMAND HEADER */}
-      <div style={{
-        position:'relative', overflow:'hidden',
-        background:'linear-gradient(160deg, rgba(0,24,36,0.95) 0%, rgba(0,61,92,0.3) 50%, rgba(26,16,53,0.4) 100%)',
-        border:'1px solid rgba(0,212,255,0.15)',
-        borderRadius:14, padding:'1.5rem 1.25rem',
-      }}>
-        {/* Corner lightning */}
-        <div style={{position:'absolute',top:0,right:0,width:120,height:120,
-          background:'radial-gradient(circle at 100% 0%, rgba(0,212,255,0.12) 0%, transparent 70%)',
-          pointerEvents:'none'}}/>
-        <div style={{position:'absolute',bottom:0,left:0,width:80,height:80,
-          background:'radial-gradient(circle at 0% 100%, rgba(68,85,255,0.1) 0%, transparent 70%)',
-          pointerEvents:'none'}}/>
-        {/* Top line */}
-        <div style={{position:'absolute',top:0,left:0,right:0,height:1,
-          background:'linear-gradient(90deg, transparent, rgba(0,136,200,0.5), rgba(0,212,255,0.8), rgba(64,232,255,0.4), transparent)'}}/>
-
-        <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,letterSpacing:'0.3em',
-          textTransform:'uppercase',color:'var(--bolt)',opacity:0.6,marginBottom:'0.5rem',
-          textShadow:'0 0 8px rgba(0,212,255,0.5)'}}>
-          JAXON Intelligence
-        </div>
-        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,
-          letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',
-          color:'var(--bolt-white)',
-          textShadow:'0 0 30px rgba(0,212,255,0.3), 0 0 60px rgba(0,212,255,0.1)'}}>
-          Second Brain
-        </div>
-        <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
-          {[
-            {label:'Pending',  value:pending.length,  color:'var(--bolt)',    glow:'rgba(0,212,255,0.5)'},
-            {label:'Approved', value:approved.length, color:'var(--valley)',  glow:'rgba(26,219,138,0.4)'},
-            {label:'Executed', value:executed.length, color:'var(--steel)',   glow:'rgba(68,136,204,0.4)'},
-          ].map(s => (
-            <div key={s.label}>
-              <div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,
-                color:s.color,lineHeight:1,
-                textShadow:`0 0 16px ${s.glow}, 0 0 32px ${s.glow}`}}>
-                {s.value}
-              </div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
-                letterSpacing:'0.15em',textTransform:'uppercase',
-                color:'var(--mist-3)',marginTop:2}}>
-                {s.label}
-              </div>
-            </div>
-          ))}
+        <div className="heatmap-legend">
+          <span>Less</span>
+          {[0,1,2,3,4].map(l => <div key={l} className={`hcell lv${l}`}/>)}
+          <span>More</span>
         </div>
       </div>
 
-      {/* BRIEFING — if today */}
-      {todayBriefing && (
-        <div className="fade-in" style={{
-          position:'relative',overflow:'hidden',
-          background:'linear-gradient(135deg, rgba(0,95,138,0.12), rgba(0,24,36,0.8))',
-          border:'1px solid rgba(0,170,238,0.2)',
-          borderLeft:'3px solid var(--bolt)',
-          borderRadius:10, padding:'1.125rem',
-        }}>
-          <div style={{position:'absolute',top:0,right:0,width:100,height:100,
-            background:'radial-gradient(circle at 100% 0%, rgba(0,212,255,0.07) 0%, transparent 70%)',
-            pointerEvents:'none'}}/>
-          <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}>
-            <div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',
-              boxShadow:'0 0 8px rgba(0,212,255,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/>
-            <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
-              letterSpacing:'0.25em',textTransform:'uppercase',
-              color:'var(--bolt-lt)',opacity:0.8}}>
-              Morning Briefing — {todayStr}
-            </span>
-          </div>
-          <div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',
-            whiteSpace:'pre-line',fontWeight:300}}>
-            {todayBriefing.content}
-          </div>
-        </div>
-      )}
-
-      {/* TABS */}
-      <div style={{display:'flex',gap:'2px',background:'rgba(0,24,36,0.6)',
-        border:'1px solid rgba(0,212,255,0.08)',borderRadius:8,padding:3}}>
-        {[
-          {id:'queue',    label:`Queue`,    count:pending.length},
-          {id:'approved', label:`Approved`, count:approved.length},
-          {id:'log',      label:'Log',      count:null},
-          {id:'research', label:'Research', count:null},
-        ].map(t => (
-          <button key={t.id}
-            onClick={()=>setTab(t.id)}
-            style={{
-              flex:1, padding:'0.4rem 0.5rem', border:'none',
-              background: tab===t.id ? 'rgba(0,136,200,0.15)' : 'none',
-              borderRadius:5, cursor:'pointer',
-              fontFamily:'var(--fs)', fontSize:'11.5px', fontWeight:400,
-              color: tab===t.id ? 'var(--bolt-lt)' : 'var(--mist-3)',
-              transition:'all 0.2s',
-              boxShadow: tab===t.id ? '0 0 10px rgba(0,212,255,0.1)' : 'none',
-              display:'flex', alignItems:'center', justifyContent:'center', gap:'0.375rem',
-            }}>
-            {t.label}
-            {t.count !== null && (
-              <span style={{
-                fontFamily:'var(--fm)',fontSize:'9px',
-                background: t.count > 0 && tab===t.id ? 'rgba(0,212,255,0.2)' : 'rgba(255,255,255,0.06)',
-                color: t.count > 0 && tab===t.id ? 'var(--bolt)' : 'var(--mist-3)',
-                borderRadius:99, padding:'0.1rem 0.45rem',
-                border: t.count > 0 && tab===t.id ? '1px solid rgba(0,212,255,0.3)' : '1px solid transparent',
-                boxShadow: t.count > 0 && tab===t.id ? '0 0 6px rgba(0,212,255,0.2)' : 'none',
-              }}>
-                {t.count}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* QUEUE TAB */}
-      {tab==='queue' && (
-        pending.length===0 ? (
-          <div style={{
-            textAlign:'center', padding:'3rem 1.5rem',
-            background:'rgba(0,24,36,0.5)', border:'1px solid rgba(0,212,255,0.06)',
-            borderRadius:14,
-          }}>
-            <div style={{fontSize:'32px',marginBottom:'0.75rem',
-              filter:'drop-shadow(0 0 12px rgba(0,212,255,0.4))'}}>⚡</div>
-            <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,
-              color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div>
-            <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,
-              color:'var(--mist-3)',letterSpacing:'0.06em'}}>
-              JAXON is scanning for opportunities
-            </div>
-          </div>
-        ) : (
-          <div className="list">
-            {pending.map(item => {
-              const ps = PRIORITY_STYLE[item.priority] || PRIORITY_STYLE.low;
-              return (
-                <div key={item.id} className="fade-in" style={{
-                  background:'rgba(7,13,24,0.85)',
-                  border:`1px solid rgba(0,212,255,0.08)`,
-                  borderLeft:`3px solid ${ps.color}`,
-                  borderRadius:12, padding:'1rem',
-                  backdropFilter:'blur(8px)',
-                  boxShadow:`0 0 20px rgba(0,0,0,0.3), inset 0 1px 0 rgba(0,212,255,0.06)`,
-                }}>
-                  {/* Header row */}
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}>
-                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-                      <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,
-                        color:'var(--bolt-lt)',letterSpacing:'0.08em',
-                        textShadow:'0 0 8px rgba(64,232,255,0.4)'}}>
-                        {AL[item.action]||item.action}
-                      </div>
-                    </div>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
-                      color:ps.color, background:ps.bg,
-                      border:`1px solid ${ps.border}`,
-                      borderRadius:99, padding:'0.15rem 0.5rem',
-                      textTransform:'uppercase',letterSpacing:'0.08em',
-                      boxShadow:`0 0 6px ${ps.bg}`}}>
-                      {item.priority}
-                    </div>
-                  </div>
-
-                  {/* Business name */}
-                  {item.data?.businessName && (
-                    <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,
-                      letterSpacing:'0.01em',marginBottom:'0.375rem',
-                      color:'var(--mist-0)'}}>
-                      {item.data.businessName}
-                    </div>
-                  )}
-
-                  {/* JAXON reasoning */}
-                  <div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',
-                    lineHeight:1.65,marginBottom:'0.75rem'}}>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'8.5px',
-                      color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',
-                      marginRight:'0.5rem'}}>JAXON</span>
-                    {item.reasoning}
-                  </div>
-
-                  {/* Draft message */}
-                  {item.data?.outreachDraft && (
-                    <div style={{
-                      background:'rgba(0,95,138,0.1)',
-                      borderLeft:'2px solid rgba(0,136,200,0.4)',
-                      borderRadius:'0 6px 6px 0',
-                      padding:'0.625rem 0.75rem', marginBottom:'0.75rem',
-                    }}>
-                      <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,
-                        color:'var(--bolt-4)',letterSpacing:'0.2em',
-                        textTransform:'uppercase',marginBottom:'6px',opacity:0.8}}>
-                        Draft Message
-                      </div>
-                      <div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>
-                        {item.data.outreachDraft}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Value */}
-                  {item.data?.value && (
-                    <div style={{display:'flex',gap:'1rem',marginBottom:'0.75rem',
-                      flexWrap:'wrap'}}>
-                      <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:500,
-                        color:'var(--valley)',
-                        textShadow:'0 0 8px rgba(26,219,138,0.4)'}}>
-                        J${Number(item.data.value).toLocaleString()}
-                      </div>
-                      {item.data.retainerAmount && (
-                        <div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:400,
-                          color:'var(--horizon)',opacity:0.8}}>
-                          +J${Number(item.data.retainerAmount).toLocaleString()}/mo
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Action buttons */}
-                  <div style={{display:'flex',gap:'0.5rem'}}>
-                    <button style={{
-                      flex:1, padding:'0.55rem', border:'1.5px solid var(--bolt-3)',
-                      background:'rgba(0,95,138,0.15)', borderRadius:6, cursor:'pointer',
-                      fontFamily:'var(--fs)', fontSize:'12.5px', fontWeight:600,
-                      color:'var(--bolt-lt)',
-                      boxShadow:'0 0 12px rgba(0,136,200,0.15)',
-                      transition:'all 0.2s',
-                    }} onClick={()=>onApprove(item.id)}>
-                      ✓ Approve
-                    </button>
-                    <button style={{
-                      flex:1, padding:'0.55rem', border:'1px solid rgba(255,96,64,0.2)',
-                      background:'rgba(255,96,64,0.05)', borderRadius:6, cursor:'pointer',
-                      fontFamily:'var(--fs)', fontSize:'12.5px', fontWeight:400,
-                      color:'var(--fire)', transition:'all 0.2s',
-                    }} onClick={()=>onReject(item.id)}>
-                      ✕ Reject
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
-      )}
-
-      {/* APPROVED TAB */}
-      {tab==='approved' && (
-        <div className="list">
-          {approved.length===0 ? (
-            <div style={{textAlign:'center',padding:'2.5rem 1rem'}}>
-              <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,
-                color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div>
-            </div>
-          ) : approved.map(item => (
-            <div key={item.id} className="fade-in" style={{
-              background:'rgba(0,95,138,0.07)',
-              border:'1px solid rgba(0,136,200,0.15)',
-              borderRadius:10, padding:'0.875rem 1rem',
-              display:'flex',alignItems:'center',gap:'0.75rem',
-            }}>
-              <div style={{width:8,height:8,borderRadius:'50%',background:'var(--valley)',
-                boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/>
-              <div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,
-                  color:'var(--valley)',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>
-                  Approved — executes next run
-                </div>
-                <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>
-                  {AL[item.action]} — {item.data?.businessName||item.action}
-                </div>
-              </div>
-            </div>
-          ))}
-          {executed.length > 0 && (
-            <>
-              <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
-                letterSpacing:'0.2em',textTransform:'uppercase',color:'var(--mist-4)',
-                padding:'0.25rem 0'}}>
-                Executed
-              </div>
-              {executed.map(item => (
-                <div key={item.id} className="fade-in" style={{
-                  background:'rgba(0,24,36,0.5)',
-                  border:'1px solid rgba(255,255,255,0.04)',
-                  borderRadius:10, padding:'0.875rem 1rem',
-                  display:'flex',alignItems:'center',gap:'0.75rem', opacity:0.5,
-                }}>
-                  <div style={{width:6,height:6,borderRadius:'50%',background:'var(--mist-3)',flexShrink:0}}/>
-                  <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-2)'}}>
-                    {AL[item.action]} — {item.data?.businessName||item.action}
-                  </div>
-                </div>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* LOG TAB */}
-      {tab==='log' && (
-        !latestLog ? (
-          <div style={{textAlign:'center',padding:'3rem 1rem'}}>
-            <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,
-              fontStyle:'italic',color:'var(--mist-3)'}}>
-              First log at midnight
-            </div>
-          </div>
-        ) : (
-          <div className="fade-in" style={{
-            background:'rgba(0,24,36,0.7)',
-            border:'1px solid rgba(0,136,200,0.15)',
-            borderTop:'2px solid var(--bolt-3)',
-            borderRadius:12, padding:'1.125rem',
-          }}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
-              <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,
-                color:'var(--bolt-lt)'}}>
-                Daily Log — {latestLog.date}
-              </div>
-            </div>
-            {latestLog.stats && (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',
-                gap:'0.5rem',marginBottom:'1rem'}}>
-                {[
-                  {l:'Queued',   v:latestLog.stats.actionsQueued, c:'var(--bolt)',   g:'rgba(0,212,255,0.5)'},
-                  {l:'Approved', v:latestLog.stats.approved,      c:'var(--valley)', g:'rgba(26,219,138,0.5)'},
-                  {l:'Rejected', v:latestLog.stats.rejected,      c:'var(--fire)',   g:'rgba(255,96,64,0.5)'},
-                ].map(s => (
-                  <div key={s.l} style={{
-                    background:'rgba(0,0,0,0.3)', borderRadius:8, padding:'0.625rem',
-                    textAlign:'center', border:'1px solid rgba(0,212,255,0.06)',
-                  }}>
-                    <div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,
-                      color:s.c, lineHeight:1, textShadow:`0 0 14px ${s.g}`}}>
-                      {s.v}
-                    </div>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
-                      color:'var(--mist-3)',letterSpacing:'0.15em',
-                      textTransform:'uppercase',marginTop:3}}>
-                      {s.l}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,
-              color:'var(--mist-1)',whiteSpace:'pre-line'}}>
-              {latestLog.content}
-            </div>
-          </div>
-        )
-      )}
-
-      {/* RESEARCH TAB */}
-      {tab==='research' && (
-        <div style={{display:'flex',flexDirection:'column',gap:'0.875rem'}}>
-          <div style={{
-            position:'relative',overflow:'hidden',
-            background:'linear-gradient(135deg,rgba(0,24,36,0.95),rgba(26,16,53,0.4))',
-            border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.125rem',
-          }}>
-            <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',
-              textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>Research Mode</div>
-            <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,color:'var(--mist-0)',marginBottom:'0.5rem'}}>
-              Intelligence Hunter
-            </div>
-            <div style={{fontSize:'12.5px',color:'var(--mist-2)',fontWeight:300,lineHeight:1.6,marginBottom:'1rem'}}>
-              Set a research topic and JAXON will hunt for intelligence every hour during the period — market data, competitor analysis, hot lead profiles, concrete opportunities. All findings saved to memory.
-            </div>
-            <ResearchLauncher/>
-          </div>
+      {/* Pipeline chart */}
+      {leads.length > 0 && (
+        <div className="card fade-in">
+          <div className="card-label">Pipeline</div>
+          <ResponsiveContainer width="100%" height={140}>
+            <BarChart data={LEAD_STATUSES.map(s=>({name:s,count:leads.filter(l=>l.status===s).length})).filter(d=>d.count>0)} margin={{left:0,right:0,top:4,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+              <XAxis dataKey="name" tick={{fill:'#4a5568',fontSize:9}}/>
+              <YAxis tick={{fill:'#4a5568',fontSize:9}} allowDecimals={false} width={22}/>
+              <Tooltip contentStyle={{background:'#0f172a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'10px',color:'#e2e8f0',fontSize:'11px'}}/>
+              <Bar dataKey="count" fill="#3b82f6" radius={[3,3,0,0]}/>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       )}
     </div>
   );
 }
 
-function ResearchLauncher() {
-  const [topic,setTopic]   = useState('');
-  const [goal,setGoal]     = useState('');
-  const [hours,setHours]   = useState(24);
-  const [launched,setLaunched] = useState(false);
-  const [loading,setLoading]   = useState(false);
-
-  const launch = async () => {
-    if (!topic.trim()) return;
-    setLoading(true);
-    try {
-      const endTime = new Date(Date.now() + hours*3600000);
-      const res = await fetch('https://jaxon-rctv.onrender.com/research', {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({topic, goal, hours, endTime: endTime.toISOString()}),
-      });
-      if (res.ok) setLaunched(true);
-    } catch(e) { console.error(e); }
-    setLoading(false);
-  };
-
-  if (launched) return (
-    <div style={{textAlign:'center',padding:'1rem'}}>
-      <div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(0,212,255,0.6))'}}>⚡</div>
-      <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>
-        Research Active
-      </div>
-      <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>
-        JAXON will hunt every hour for {hours}h
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:'0.625rem'}}>
-      <div>
-        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
-          textTransform:'uppercase',display:'block',marginBottom:4}}>Research Topic</label>
-        <input className="input" value={topic} onChange={e=>setTopic(e.target.value)}
-          placeholder="e.g. WhatsApp Business adoption among Jamaican restaurants"/>
-      </div>
-      <div>
-        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
-          textTransform:'uppercase',display:'block',marginBottom:4}}>Research Goal</label>
-        <textarea className="input" style={{minHeight:'52px',resize:'vertical'}}
-          value={goal} onChange={e=>setGoal(e.target.value)}
-          placeholder="What specific intelligence do we need? e.g. Find 20 restaurants in Kingston with no online presence and under 50 employees"/>
-      </div>
-      <div>
-        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',
-          textTransform:'uppercase',display:'block',marginBottom:6}}>Research Period</label>
-        <div style={{display:'flex',gap:'0.375rem'}}>
-          {[6,12,24,48,72].map(h=>(
-            <button key={h}
-              className={`pill ${hours===h?'active':''}`}
-              style={{padding:'0.28rem 0.6rem'}}
-              onClick={()=>setHours(h)}>
-              {h}h
-            </button>
-          ))}
-        </div>
-      </div>
-      <button className="btn-primary" style={{justifyContent:'center',opacity:loading?0.7:1}}
-        onClick={launch} disabled={loading||!topic.trim()}>
-        {loading?'Launching...':'⚡ Launch Research'}
-      </button>
-    </div>
-  );
-}
-
-// ─── JAXON FLOATING ───────────────────────────────────────────────────────────
-function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,totalExpenses,profit,xp,level,todayStr,paidLeads,openLeads}) {
-  // Allow pipeline "Ask JAXON" button to open chat with pre-filled message
-  useEffect(() => {
-    window._openJaxonChat = (msg) => {
-      setOpen(true);
-      setTimeout(() => {
-        setInput(msg);
-      }, 100);
-    };
-    return () => { delete window._openJaxonChat; };
-  }, []);
-  const [open,setOpen]           = useState(false);
-  const [messages,setMessages]   = useState([]);
-  const [input,setInput]         = useState('');
-  const [loading,setLoading]     = useState(false);
-  const [initialized,setInit]    = useState(false);
-  const bottomRef = useRef(null);
-
-  const send = async (msg) => {
-    if (!msg.trim()||loading) return;
-    const um={role:'user',content:msg.trim()};
-    const nm=[...messages,um];
-    setMessages(nm); setInput(''); setLoading(true);
-    try {
-      const r=await fetch('https://jaxon-rctv.onrender.com/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:nm.map(m=>({role:m.role,content:m.content}))})});
-      const d=await r.json();
-      if(!r.ok) throw new Error(d.error||'Failed');
-      setMessages(p=>[...p,{role:'assistant',content:d.reply}]);
-    } catch { setMessages(p=>[...p,{role:'assistant',content:'Connection error. Try again.'}]); }
-    finally { setLoading(false); }
-  };
-
-  useEffect(()=>{
-    if(!open||initialized) return; setInit(true);
-    const today=new Date(); const h=today.getHours();
-    const g=h<12?'Morning':h<17?'Afternoon':'Evening';
-    const habitsLeft=habits.filter(hb=>!hb.completions?.[todayStr]).length;
-    const tTasks=todos.filter(t=>t.addedDate===todayStr);
-    const done=tTasks.filter(t=>t.doneOn?.[todayStr]).length;
-    const overdue=leads.filter(l=>{if(!l.retainerDueDay)return false;const tm=new Date(today.getFullYear(),today.getMonth(),parseInt(l.retainerDueDay));return Math.ceil((tm-today)/86400000)<0;});
-    const parts=[`${g}, Jadan. JAXON online.\n`];
-    if(profit<0) parts.push(`⚠️ Profit negative at J$${profit.toLocaleString()}.`);
-    else if(profit>0) parts.push(`📈 J$${profit.toLocaleString()} profit. Keep going.`);
-    if(overdue.length>0) parts.push(`🚨 ${overdue.map(l=>l.businessName).join(', ')} — retainer overdue.`);
-    if(openLeads.length>0) parts.push(`${openLeads.length} leads need closing.`);
-    if(habitsLeft>0) parts.push(`${habitsLeft} habits undone.`);
-    if(tTasks.length===0) parts.push(`No tasks added yet.`);
-    else if(done<tTasks.length) parts.push(`${done}/${tTasks.length} tasks done.`);
-    parts.push(`\nWhat do you need?`);
-    setMessages([{role:'assistant',content:parts.join(' ')}]);
-  },[open]);
-
-  useEffect(()=>{ bottomRef.current?.scrollIntoView({behavior:'smooth'}); },[messages,loading]);
-
-  const quick=["What should I focus on?","How's my business doing?","Help me close open leads","Daily action plan"];
-
-  return (
-    <>
-      <button className={`fab ${open?'fab-open':''}`} onClick={()=>setOpen(o=>!o)}>
-        {open ? <Icons.close size={22}/> : <Icons.bot size={22}/>}
-        {!open&&messages.length===0 && <span className="fab-pip"/>}
-      </button>
-
-      {open && (
-        <div className="chat-panel">
-          <div className="chat-head">
-            <div className="chat-avatar"><Icons.bot size={15}/></div>
-            <div>
-              <div className="chat-name">JAXON</div>
-              <div className="chat-status"><span className="chat-dot"/>Always on</div>
-            </div>
-            <button className="icon-btn" style={{marginLeft:'auto'}} onClick={()=>setOpen(false)}><Icons.close size={14}/></button>
-          </div>
-          <div className="chat-msgs">
-            {messages.map((m,i)=>(
-              <div key={i} className={`chat-msg ${m.role}`}>
-                {m.role==='assistant'&&<div className="chat-msg-av"><Icons.bot size={11}/></div>}
-                <div className={`chat-bubble ${m.role}`}>
-                  {m.content.split('\n').map((line,j,arr)=><React.Fragment key={j}>{line}{j<arr.length-1&&<br/>}</React.Fragment>)}
-                </div>
-              </div>
-            ))}
-            {loading&&(
-              <div className="chat-msg assistant">
-                <div className="chat-msg-av"><Icons.bot size={11}/></div>
-                <div className="chat-bubble assistant chat-typing"><span/><span/><span/></div>
-              </div>
-            )}
-            <div ref={bottomRef}/>
-          </div>
-          {messages.length<=1&&!loading&&(
-            <div className="chat-quick">
-              {quick.map((p,i)=><button key={i} className="quick-btn" onClick={()=>send(p)}>{p}</button>)}
-            </div>
-          )}
-          <div className="chat-input-row">
-            <input className="chat-input" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&send(input)} placeholder="Ask JAXON…" disabled={loading}/>
-            <button className="chat-send" onClick={()=>send(input)} disabled={loading||!input.trim()}>
-              {loading?<span style={{display:'inline-block',animation:'spin 0.8s linear infinite'}}><Icons.loader size={14}/></span>:<Icons.send size={14}/>}
-            </button>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-
-// ─── INVOICE GENERATOR ───────────────────────────────────────────────────────
-function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
-  const nextNum = () => {
-    const existing = finances.filter(f=>f.invoiceNumber).map(f=>parseInt(f.invoiceNumber?.replace(/\D/g,'')||0));
-    const max = existing.length>0 ? Math.max(...existing) : 1;
-    return `INV-2026-${String(max+1).padStart(3,'0')}`;
-  };
-
-  const [inv,setInv] = useState({
-    invoiceNumber: nextNum(),
-    date: new Date().toISOString().slice(0,10),
-    dueDate: '',
-    status: 'PAYMENT DUE',
-    clientName: initialData?.clientName||'',
-    clientLocation: initialData?.clientLocation||'Kingston, Jamaica',
-    services: initialData?.services||[{desc:'',amount:''}],
-    notes: '',
-    paymentMethod: 'Bank Transfer: Name: Jadan Spencer, Acc#: 504813584, Bank: NCB Perth Mandeville',
-    ...initialData
-  });
-
-  const s = (k,v) => setInv(p=>({...p,[k]:v}));
-  const total = inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
-
-  const addService = () => setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}));
-  const removeService = i => setInv(p=>({...p,services:p.services.filter((_,idx)=>idx!==i)}));
-  const setService = (i,k,v) => setInv(p=>{
-    const svs=[...p.services]; svs[i]={...svs[i],[k]:v}; return {...p,services:svs};
-  });
-
-  const generatePDF = () => {
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; background: #fff; padding: 40px; }
-  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:40px; padding-bottom:24px; border-bottom:3px solid #0d9488; }
-  .logo { width:80px; height:80px; object-fit:contain; }
-  .company { text-align:right; }
-  .company h1 { font-size:28px; font-weight:900; color:#0d9488; letter-spacing:-0.03em; }
-  .company p { font-size:12px; color:#666; margin-top:4px; }
-  .invoice-title { font-size:36px; font-weight:900; color:#1a1a2e; letter-spacing:-0.04em; margin-bottom:8px; }
-  .meta-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:32px; }
-  .meta-block h3 { font-size:10px; text-transform:uppercase; letter-spacing:0.12em; color:#999; margin-bottom:8px; }
-  .meta-block p { font-size:14px; font-weight:600; color:#1a1a2e; }
-  .meta-block .sub { font-size:12px; color:#666; font-weight:400; }
-  .badge { display:inline-block; padding:4px 12px; border-radius:99px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
-  .badge-due { background:#fef3c7; color:#d97706; }
-  .badge-paid { background:#d1fae5; color:#065f46; }
-  table { width:100%; border-collapse:collapse; margin-bottom:32px; }
-  th { background:#f8fafc; padding:12px 16px; text-align:left; font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#999; font-weight:700; }
-  td { padding:14px 16px; border-bottom:1px solid #f1f5f9; font-size:14px; }
-  td:last-child, th:last-child { text-align:right; }
-  .total-row td { font-weight:800; font-size:16px; border-top:2px solid #0d9488; border-bottom:none; color:#0d9488; }
-  .footer { margin-top:40px; padding-top:24px; border-top:1px solid #f1f5f9; }
-  .payment { background:#f8fafc; border-radius:12px; padding:20px; margin-bottom:20px; }
-  .payment h3 { font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:#999; margin-bottom:8px; }
-  .payment p { font-size:13px; color:#1a1a2e; }
-  .thank-you { text-align:center; font-size:13px; color:#666; margin-top:24px; }
-  .accent { color:#0d9488; font-weight:700; }
-</style>
-</head><body>
-<div class="header">
-  <div>
-    <img src="${LOGO_B64}" class="logo" alt="JCommerce Logo"/>
-  </div>
-  <div class="company">
-    <h1>JCommerce & Tech</h1>
-    <p>Mandeville, Jamaica</p>
-    <p>WhatsApp: (876) 817-0095</p>
-  </div>
-</div>
-
-<div style="margin-bottom:32px;">
-  <div class="invoice-title">INVOICE</div>
-  <span class="badge ${inv.status==='PAID'?'badge-paid':'badge-due'}">${inv.status}</span>
-</div>
-
-<div class="meta-grid">
-  <div>
-    <div class="meta-block">
-      <h3>Invoice Details</h3>
-      <p>${inv.invoiceNumber}</p>
-      <p class="sub">Date: ${inv.date}</p>
-      ${inv.dueDate?`<p class="sub">Due: ${inv.dueDate}</p>`:'<p class="sub">Due: Upon Receipt</p>'}
-    </div>
-    <div class="meta-block" style="margin-top:20px;">
-      <h3>Billed By</h3>
-      <p>Jadan Spencer</p>
-      <p class="sub">JCommerce & Tech</p>
-      <p class="sub">Mandeville, Jamaica</p>
-    </div>
-  </div>
-  <div>
-    <div class="meta-block">
-      <h3>Billed To</h3>
-      <p>${inv.clientName||'Client Name'}</p>
-      <p class="sub">${inv.clientLocation}</p>
-    </div>
-  </div>
-</div>
-
-<table>
-  <thead>
-    <tr><th>Description</th><th>Amount</th></tr>
-  </thead>
-  <tbody>
-    ${inv.services.map(sv=>`<tr><td>${sv.desc||'Service'}</td><td>JMD ${Number(sv.amount||0).toLocaleString()}.00</td></tr>`).join('')}
-  </tbody>
-  <tfoot>
-    <tr class="total-row"><td>TOTAL DUE</td><td>JMD ${total.toLocaleString()}.00</td></tr>
-  </tfoot>
-</table>
-
-<div class="footer">
-  <div class="payment">
-    <h3>Payment Methods</h3>
-    <p>${inv.paymentMethod}</p>
-  </div>
-  ${inv.notes?`<div class="payment"><h3>Notes</h3><p>${inv.notes}</p></div>`:''}
-  <div class="thank-you">
-    Thank you for your business! Questions? Contact <span class="accent">Jadan Spencer</span> via WhatsApp <span class="accent">(876) 817-0095</span>
-  </div>
-</div>
-</body></html>`;
-
-    const blob = new Blob([html], {type:'text/html'});
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `JCommerce-${inv.invoiceNumber}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <Modal title="Invoice Generator" onClose={onClose}>
-      <div className="grid-2">
-        <Field label="Invoice #"><input className="input" value={inv.invoiceNumber} onChange={e=>s('invoiceNumber',e.target.value)}/></Field>
-        <Field label="Status">
-          <select className="input" value={inv.status} onChange={e=>s('status',e.target.value)}>
-            <option>PAYMENT DUE</option><option>DEPOSIT DUE</option><option>PAID</option>
-          </select>
-        </Field>
-      </div>
-      <div className="grid-2">
-        <Field label="Date"><input className="input" type="date" value={inv.date} onChange={e=>s('date',e.target.value)}/></Field>
-        <Field label="Due Date"><input className="input" type="date" value={inv.dueDate} onChange={e=>s('dueDate',e.target.value)}/></Field>
-      </div>
-      <Field label="Client Name"><input className="input" value={inv.clientName} onChange={e=>s('clientName',e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
-      <Field label="Client Location"><input className="input" value={inv.clientLocation} onChange={e=>s('clientLocation',e.target.value)} placeholder="Kingston, Jamaica"/></Field>
-
-      <div>
-        <div className="card-label">Services</div>
-        {inv.services.map((sv,i)=>(
-          <div key={i} style={{display:'flex',gap:'0.5rem',alignItems:'center',marginBottom:'0.5rem'}}>
-            <input className="input" style={{flex:2}} value={sv.desc} onChange={e=>setService(i,'desc',e.target.value)} placeholder="Description"/>
-            <input className="input" style={{flex:1}} type="number" value={sv.amount} onChange={e=>setService(i,'amount',e.target.value)} placeholder="Amount"/>
-            {inv.services.length>1 && <button className="icon-btn danger-btn" onClick={()=>removeService(i)}><Icons.close size={12}/></button>}
-          </div>
-        ))}
-        <button className="btn-ghost" style={{width:'100%',justifyContent:'center',marginTop:'0.25rem'}} onClick={addService}>
-          <Icons.plus size={13}/> Add Line
-        </button>
-      </div>
-
-      <div style={{background:'rgba(201,168,76,0.06)',border:'1px solid rgba(201,168,76,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}>
-        <span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span>
-        <span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'#1adb8a'}}>J${total.toLocaleString()}</span>
-      </div>
-
-      <Field label="Notes (optional)"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)} placeholder="e.g. Balance due on delivery"/></Field>
-
-      <button className="btn-primary" style={{width:'100%',justifyContent:'center',gap:'0.5rem'}} onClick={generatePDF}>
-        📄 Download Invoice (HTML → print to PDF)
-      </button>
-      <div style={{fontSize:'11px',color:'var(--mist-2)',textAlign:'center'}}>
-        Opens as HTML file — open in browser and Print → Save as PDF
-      </div>
-    </Modal>
-  );
-}
-
-// ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
-function Modal({title,onClose,children}) {
-  return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="modal-handle"/>
-        <div className="modal-head">
-          <span style={{fontFamily:'var(--fe)',fontWeight:800,fontSize:'15px'}}>{title}</span>
-          <button className="icon-btn" onClick={onClose}><Icons.close size={15}/></button>
-        </div>
-        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function Field({label,children}) {
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:'0.3rem'}}>
-      <label style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:700,textTransform:'uppercase',letterSpacing:'0.1em',color:'var(--mist-2)'}}>{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function ModalFoot({onClose,onSave}) {
-  return (
-    <div style={{display:'flex',gap:'0.5rem',paddingTop:'0.25rem'}}>
-      <button className="btn-ghost" style={{flex:1,justifyContent:'center'}} onClick={onClose}>Cancel</button>
-      <button className="btn-primary" style={{flex:1,justifyContent:'center'}} onClick={onSave}>Save</button>
-    </div>
-  );
-}
-
-function Empty({text}) {
-  return <div style={{textAlign:'center',padding:'2.5rem 1rem',color:'var(--mist-2)',fontSize:'13px',fontStyle:'italic'}}>{text}</div>;
-}
+// ─── PIPELINE ─────────────────────────────────────────────────────────────────
