@@ -801,6 +801,7 @@ export default function App() {
   const [schedule, setSchedule] = useState([]);
   const [finances, setFinances] = useState([]);
   const [goals, setGoals]       = useState([]);
+  const [xpBonus, setXpBonus]   = useState(0);
   const [todos, setTodos]       = useState([]);
   const [queue, setQueue]       = useState([]);
   const [logs, setLogs]         = useState([]);
