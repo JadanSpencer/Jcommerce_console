@@ -2525,3 +2525,438 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 }
 
 // ─── PIPELINE ─────────────────────────────────────────────────────────────────
+// ─── INVEST ADVISOR ────────────────────────────────────────────────────────────
+function InvestAdvisor({profit,mrr,totalIncome,totalExpenses,level,paidClients,openLeads,finances,advice,loading,onFetch}) {
+  const cashAvailable = Math.max(0, profit);
+  const monthlyBurn   = totalExpenses;
+  const runway        = monthlyBurn > 0 ? Math.floor(cashAvailable / monthlyBurn) : 99;
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem'}}>
+      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(0,24,36,0.95),rgba(0,61,92,0.3))',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.25rem'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,var(--bolt),transparent)'}}/>
+        <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>Financial Position</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem',marginBottom:'1rem'}}>
+          {[{l:'Available Cash',v:`J$${cashAvailable.toLocaleString()}`,c:'var(--bolt)'},{l:'Monthly Burn',v:`J$${monthlyBurn.toLocaleString()}`,c:'#ff6040'},{l:'MRR',v:`J$${mrr.toLocaleString()}/mo`,c:'var(--bolt-lt)'},{l:'Runway',v:runway>=99?'Stable':`${runway}mo`,c:runway<3?'#ff6040':'var(--bolt)'}].map(s=>(
+            <div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem 0.75rem',border:'1px solid rgba(0,212,255,0.06)'}}>
+              <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:4}}>{s.l}</div>
+              <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:s.c,lineHeight:1}}>{s.v}</div>
+            </div>
+          ))}
+        </div>
+        <button className="btn-primary" style={{width:'100%',justifyContent:'center',opacity:loading?0.7:1}} onClick={onFetch} disabled={loading}>
+          {loading?'JAXON analysing...':'⚡ Get Smart Reinvestment Advice'}
+        </button>
+      </div>
+      {advice && (<>
+        <div className="card fade-in" style={{borderLeft:'3px solid var(--bolt)'}}>
+          <div className="card-label">JAXON Assessment</div>
+          <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-0)',lineHeight:1.75,fontFamily:'var(--fe)'}}>{advice.summary}</div>
+        </div>
+        {advice.opportunities?.map((opp,i)=>(
+          <div key={i} className="card fade-in" style={{borderLeft:`3px solid ${opp.risk==='Low'?'var(--bolt)':opp.risk==='Medium'?'rgba(0,212,255,0.5)':'#ff6040'}`,background:'rgba(0,24,36,0.85)'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.625rem'}}>
+              <div style={{fontFamily:'var(--fe)',fontSize:'17px',fontWeight:600,color:'var(--mist-0)',lineHeight:1.1}}>{opp.name}</div>
+              <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:600,padding:'0.15rem 0.5rem',borderRadius:99,textTransform:'uppercase',background:opp.risk==='Low'?'rgba(0,212,255,0.1)':'rgba(255,96,64,0.1)',color:opp.risk==='Low'?'var(--bolt)':'#ff6040',border:`1px solid ${opp.risk==='Low'?'rgba(0,212,255,0.3)':'rgba(255,96,64,0.3)'}`,flexShrink:0,marginLeft:'0.5rem'}}>{opp.risk} Risk</span>
+            </div>
+            <div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.65,marginBottom:'0.75rem'}}>{opp.description}</div>
+            {opp.firstStep&&<div style={{fontFamily:'var(--fm)',fontSize:'10.5px',color:'var(--bolt)',background:'rgba(0,95,138,0.1)',border:'1px solid rgba(0,136,200,0.15)',borderRadius:6,padding:'0.5rem 0.75rem'}}>→ {opp.firstStep}</div>}
+          </div>
+        ))}
+        {advice.warning&&<div style={{background:'rgba(255,96,64,0.07)',border:'1px solid rgba(255,96,64,0.2)',borderLeft:'3px solid #ff6040',borderRadius:'0 8px 8px 0',padding:'0.875rem',fontSize:'12.5px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.65}}><span style={{fontFamily:'var(--fm)',fontSize:'8px',color:'#ff6040',letterSpacing:'0.15em',textTransform:'uppercase',display:'block',marginBottom:4}}>⚠ Warning</span>{advice.warning}</div>}
+      </>)}
+    </div>
+  );
+}
+
+// ─── FINANCE MODAL ──────────────────────────────────────────────────────────────
+function FinanceModal({data,onSave,onClose}) {
+  const [f,setF]=useState({type:'income',description:'',amount:'',category:INCOME_CATS[0],date:localDateStr(),...data});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  const cats = f.type==='income'?INCOME_CATS:EXPENSE_CATS;
+  return (
+    <Modal title={data.id?'Edit Transaction':'New Transaction'} onClose={onClose}>
+      <div className="tab-row">
+        {['income','expense'].map(t=><button key={t} className={`tab-btn ${f.type===t?'active':''}`} onClick={()=>s('type',t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+      </div>
+      <Field label="Description"><input className="input" value={f.description} onChange={e=>s('description',e.target.value)} placeholder="e.g. D&D Wholesale payment"/></Field>
+      <div className="grid-2">
+        <Field label="Amount (J$)"><input className="input" type="number" value={f.amount} onChange={e=>s('amount',e.target.value)} placeholder="22500"/></Field>
+        <Field label="Date"><input className="input" type="date" value={f.date} onChange={e=>s('date',e.target.value)}/></Field>
+      </div>
+      <Field label="Category">
+        <select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>
+          {cats.map(c=><option key={c}>{c}</option>)}
+        </select>
+      </Field>
+      <ModalFoot onClose={onClose} onSave={()=>f.description.trim()&&Number(f.amount)>0&&onSave(f)}/>
+    </Modal>
+  );
+}
+
+// ─── GOALS ──────────────────────────────────────────────────────────────────────
+function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
+  const [form,setForm]=useState(null);
+  return (
+    <div className="section">
+      <div className="hero">
+        <div className="hero-eye">Goals</div>
+        <div className="hero-big">Level Up</div>
+        <div className="hero-sub">{goals.filter(g=>Number(g.current)>=Number(g.target)).length} of {goals.length} complete</div>
+      </div>
+      <div style={{display:'flex',justifyContent:'flex-end'}}>
+        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> Goal</button>
+      </div>
+      {goals.length===0?<Empty text="No goals yet. What are you working toward?"/>:(
+        <div className="list">
+          {goals.map(g=>{
+            const pct=g.target>0?Math.min(100,(Number(g.current)/Number(g.target))*100):0;
+            const lvl=Math.floor(pct/5);
+            return (
+              <div key={g.id} className="card fade-in">
+                <div className="goal-header">
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:4}}>
+                      <div style={{fontFamily:'var(--fe)',fontSize:'15px',fontWeight:600,color:'var(--mist-0)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
+                      {g.category&&<span className="badge" style={{background:'rgba(0,212,255,0.08)',color:'var(--bolt)',border:'1px solid rgba(0,212,255,0.2)',flexShrink:0}}>{g.category}</span>}
+                    </div>
+                    <div className="goal-level-label">
+                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>J${Number(g.current||0).toLocaleString()} / J${Number(g.target||0).toLocaleString()}</span>
+                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)'}}>Level {Math.min(20,lvl)}/20</span>
+                    </div>
+                    <div className="level-blocks">
+                      {Array.from({length:20},(_,i)=>(
+                        <div key={i} className={`level-block ${i<lvl?'filled':''} ${i===lvl&&pct<100?'current':''}`}/>
+                      ))}
+                    </div>
+                    <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',marginTop:3}}>{Math.round(pct)}% complete</div>
+                  </div>
+                  <div style={{display:'flex',gap:'0.35rem',flexShrink:0,alignItems:'flex-start',marginTop:2}}>
+                    {pct<100?(
+                      <button className="icon-btn mint-btn" title="Mark complete (+100 XP)" onClick={()=>{onUpdate(g.id,{...g,current:g.target});onGoalComplete&&onGoalComplete(g);}}>✓</button>
+                    ):(
+                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#1adb8a',padding:'0.2rem 0.5rem',border:'1px solid rgba(26,219,138,0.3)',borderRadius:4,background:'rgba(26,219,138,0.07)'}}>DONE</span>
+                    )}
+                    <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
+                    <button className="icon-btn danger-btn" onClick={()=>onDelete(g.id)}><Icons.trash size={12}/></button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {form!==null&&<GoalModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+    </div>
+  );
+}
+
+function GoalModal({data,onSave,onClose}) {
+  const [f,setF]=useState({title:'',category:GOAL_CATS[0],target:'',current:'0',...data});
+  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+  return (
+    <Modal title={data.id?'Edit Goal':'New Goal'} onClose={onClose}>
+      <Field label="Goal Title"><input className="input" value={f.title} onChange={e=>s('title',e.target.value)} placeholder="e.g. Reach J$500k revenue"/></Field>
+      <div className="grid-2">
+        <Field label="Category">
+          <select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>
+            {GOAL_CATS.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </Field>
+        <Field label="Target (J$)"><input className="input" type="number" value={f.target} onChange={e=>s('target',e.target.value)} placeholder="500000"/></Field>
+      </div>
+      <Field label="Current Progress (J$)"><input className="input" type="number" value={f.current} onChange={e=>s('current',e.target.value)} placeholder="0"/></Field>
+      <ModalFoot onClose={onClose} onSave={()=>f.title.trim()&&onSave(f)}/>
+    </Modal>
+  );
+}
+
+// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
+function ClientManagement({leads,finances,onUpdateLead}) {
+  const paidClients=leads.filter(l=>l.status==='Paid');
+  const [sel,setSel]=useState(paidClients[0]?.id||null);
+  const [editProduct,setEditProduct]=useState(false);
+  const client=paidClients.find(c=>c.id===sel);
+  const clientFinances=finances.filter(f=>f.pipelineLeadId===sel);
+  const totalReceived=clientFinances.reduce((s,f)=>s+(Number(f.amount)||0),0);
+  if(paidClients.length===0) return(
+    <div className="section">
+      <div className="hero"><div className="hero-eye">Client Management</div><div className="hero-big">No Clients Yet</div><div className="hero-sub">Paid clients appear here for full product management.</div></div>
+    </div>
+  );
+  return (
+    <div className="section">
+      <div className="hero">
+        <div className="hero-eye">Client Management</div>
+        <div className="hero-big" style={{fontSize:'26px'}}>{client?.businessName||'Select Client'}</div>
+        <div className="hero-sub">{paidClients.length} active client{paidClients.length!==1?'s':''}</div>
+      </div>
+      {paidClients.length>1&&<div className="pill-row">{paidClients.map(c=><button key={c.id} className={`pill ${sel===c.id?'active':''}`} onClick={()=>setSel(c.id)}>{c.businessName}</button>)}</div>}
+      {client&&(<>
+        <div className="grid-2">
+          {[{l:'Monthly Retainer',v:`J$${Number(client.retainerAmount||0).toLocaleString()}/mo`,c:'var(--bolt)'},{l:'Total Received',v:`J$${totalReceived.toLocaleString()}`,c:'#1adb8a'},{l:'Setup Value',v:`J$${Number(client.value||0).toLocaleString()}`,c:'var(--horizon)'},{l:'Balance',v:`J$${Math.max(0,Number(client.value||0)-totalReceived).toLocaleString()} due`,c:totalReceived>=Number(client.value||0)?'#1adb8a':'#ff6040'}].map(s=>(<div key={s.l} className="stat-card"><div className="stat-label">{s.l}</div><div className="stat-value" style={{color:s.c,fontSize:'18px'}}>{s.v}</div></div>))}
+        </div>
+        <div className="card">
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
+            <div className="card-label" style={{margin:0}}>Product Built</div>
+            <button className="icon-btn" onClick={()=>setEditProduct(true)}><Icons.edit size={12}/></button>
+          </div>
+          {client.product?(<div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            <div><div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Product Type</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--mist-0)'}}>{client.product.type||'—'}</div></div>
+            {client.product.description&&<div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.6,fontWeight:300}}>{client.product.description}</div>}
+          </div>):<div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No product details yet. Tap edit to add.</div>}
+        </div>
+        {client.product?.techStack&&(<div className="card">
+          <div className="card-label">Tech Stack & Links</div>
+          {[{l:'Framework',v:client.product.techStack.framework},{l:'Hosting',v:client.product.techStack.hosting},{l:'Database',v:client.product.techStack.database},{l:'APIs',v:client.product.techStack.apis},{l:'Live URL',v:client.product.techStack.liveUrl,link:true},{l:'GitHub Repo',v:client.product.techStack.repoUrl,link:true},{l:'Admin Panel',v:client.product.techStack.adminUrl,link:true}].filter(r=>r.v).map(row=>(<div key={row.l} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
+            <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em',textTransform:'uppercase',flexShrink:0,marginRight:'1rem'}}>{row.l}</span>
+            {row.link?<a href={row.v} target="_blank" rel="noopener noreferrer" style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)',textDecoration:'none',wordBreak:'break-all',textAlign:'right'}}>{row.v}</a>:<span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',textAlign:'right'}}>{row.v}</span>}
+          </div>))}
+        </div>)}
+        {client.product?.platforms?.length>0&&(<div className="card"><div className="card-label">Online Platforms</div><div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>{client.product.platforms.map((p,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.08)',borderRadius:6,padding:'0.625rem 0.875rem'}}><div><div style={{fontSize:'13px',fontWeight:500,color:'var(--mist-0)'}}>{p.name}</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:2}}>{p.role}</div></div>{p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--bolt)',textDecoration:'none'}}>Open ↗</a>}</div>))}</div></div>)}
+        {client.product?.monthlyCosts?.length>0&&(<div className="card"><div className="card-label">Monthly Running Costs</div>{client.product.monthlyCosts.map((c,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',padding:'0.5rem 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}><span style={{fontSize:'13px',color:'var(--mist-1)'}}>{c.name}</span><span style={{fontFamily:'var(--fm)',fontSize:'12px',color:'#ff6040',fontWeight:500}}>{c.currency==='USD'?'$':'J$'}{Number(c.amount).toLocaleString()}/mo</span></div>))}<div style={{display:'flex',justifyContent:'space-between',marginTop:'0.625rem',paddingTop:'0.5rem',borderTop:'1px solid rgba(0,212,255,0.1)'}}><span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase'}}>Total Monthly</span><span style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'#ff6040'}}>J${client.product.monthlyCosts.reduce((s,c)=>s+(Number(c.amount)||0),0).toLocaleString()}/mo</span></div></div>)}
+        {client.product?.credentials?.length>0&&(<div className="card"><div className="card-label">Credentials & Access</div><div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>{client.product.credentials.map((c,i)=>(<div key={i} style={{background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,212,255,0.1)',borderLeft:'2px solid var(--bolt-3)',borderRadius:6,padding:'0.625rem 0.875rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:3}}>{c.service}</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',lineHeight:1.6}}>{c.details}</div></div>))}</div></div>)}
+        <div className="card"><div className="card-label">Payment History</div>{clientFinances.length===0?<div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No payments logged.</div>:clientFinances.map(f=>(<div key={f.id} style={{display:'flex',justifyContent:'space-between',padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}><div><div style={{fontSize:'13px',color:'var(--mist-1)'}}>{f.paymentStage||f.description}</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:1}}>{f.date}</div></div><div style={{fontFamily:'var(--fm)',fontSize:'13px',fontWeight:600,color:'#1adb8a'}}>+J${Number(f.amount).toLocaleString()}</div></div>))}</div>
+      </>)}
+      {editProduct&&client&&<ProductModal client={client} onSave={d=>{onUpdateLead(client.id,{...client,product:d});setEditProduct(false);}} onClose={()=>setEditProduct(false)}/>}
+    </div>
+  );
+}
+
+function ProductModal({client,onSave,onClose}) {
+  const p0=client.product||{};
+  const [type,setType]=useState(p0.type||'WhatsApp AI Chatbot');
+  const [desc,setDesc]=useState(p0.description||'');
+  const [stack,setStack]=useState(p0.techStack||{framework:'',hosting:'Render',database:'Firebase',apis:'',liveUrl:'',repoUrl:'',adminUrl:''});
+  const [platforms,setPlatforms]=useState(p0.platforms||[]);
+  const [costs,setCosts]=useState(p0.monthlyCosts||[]);
+  const [creds,setCreds]=useState(p0.credentials||[]);
+  const ss=(k,v)=>setStack(s=>({...s,[k]:v}));
+  const TYPES=['WhatsApp AI Chatbot','Business Website','Online Ordering System','Admin Dashboard','Delivery Tracker','E-commerce Store','Other'];
+  return (
+    <Modal title={`Product — ${client.businessName}`} onClose={onClose}>
+      <Field label="Product Type"><select className="input" value={type} onChange={e=>setType(e.target.value)}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
+      <Field label="Description"><textarea className="input" style={{minHeight:'60px',resize:'vertical'}} value={desc} onChange={e=>setDesc(e.target.value)}/></Field>
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Tech Stack</div>
+      <div className="grid-2">
+        <Field label="Framework"><input className="input" value={stack.framework} onChange={e=>ss('framework',e.target.value)} placeholder="Node.js, React..."/></Field>
+        <Field label="Hosting"><input className="input" value={stack.hosting} onChange={e=>ss('hosting',e.target.value)} placeholder="Render, Vercel..."/></Field>
+        <Field label="Database"><input className="input" value={stack.database} onChange={e=>ss('database',e.target.value)} placeholder="Firebase..."/></Field>
+        <Field label="APIs"><input className="input" value={stack.apis} onChange={e=>ss('apis',e.target.value)} placeholder="Claude AI, Twilio..."/></Field>
+      </div>
+      <Field label="Live URL"><input className="input" value={stack.liveUrl} onChange={e=>ss('liveUrl',e.target.value)} placeholder="https://..."/></Field>
+      <Field label="GitHub Repo"><input className="input" value={stack.repoUrl} onChange={e=>ss('repoUrl',e.target.value)} placeholder="https://github.com/..."/></Field>
+      <Field label="Admin URL"><input className="input" value={stack.adminUrl} onChange={e=>ss('adminUrl',e.target.value)} placeholder="https://..."/></Field>
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Platforms</div>
+      {platforms.map((p,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}><div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}><input className="input" style={{fontSize:'12px'}} value={p.name} onChange={e=>{const n=[...platforms];n[i]={...n[i],name:e.target.value};setPlatforms(n);}} placeholder="Platform name"/><input className="input" style={{fontSize:'12px'}} value={p.role} onChange={e=>{const n=[...platforms];n[i]={...n[i],role:e.target.value};setPlatforms(n);}} placeholder="Role"/><input className="input" style={{fontSize:'12px'}} value={p.url||''} onChange={e=>{const n=[...platforms];n[i]={...n[i],url:e.target.value};setPlatforms(n);}} placeholder="URL (optional)"/></div><button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>setPlatforms(p=>p.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setPlatforms(p=>[...p,{name:'',role:'',url:''}])}><Icons.plus size={13}/> Add Platform</button>
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Monthly Costs</div>
+      {costs.map((c,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'center'}}><input className="input" style={{flex:2,fontSize:'12px'}} value={c.name} onChange={e=>{const n=[...costs];n[i]={...n[i],name:e.target.value};setCosts(n);}} placeholder="Service"/><input className="input" style={{flex:1,fontSize:'12px'}} type="number" value={c.amount} onChange={e=>{const n=[...costs];n[i]={...n[i],amount:e.target.value};setCosts(n);}} placeholder="Amount"/><select className="input" style={{flex:1,fontSize:'12px'}} value={c.currency||'USD'} onChange={e=>{const n=[...costs];n[i]={...n[i],currency:e.target.value};setCosts(n);}}><option>USD</option><option>JMD</option></select><button className="icon-btn danger-btn" onClick={()=>setCosts(c=>c.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCosts(c=>[...c,{name:'',amount:'',currency:'USD'}])}><Icons.plus size={13}/> Add Cost</button>
+      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Credentials</div>
+      {creds.map((c,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}><div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}><input className="input" style={{fontSize:'12px'}} value={c.service} onChange={e=>{const n=[...creds];n[i]={...n[i],service:e.target.value};setCreds(n);}} placeholder="Service name"/><textarea className="input" style={{fontSize:'12px',minHeight:'48px',resize:'vertical'}} value={c.details} onChange={e=>{const n=[...creds];n[i]={...n[i],details:e.target.value};setCreds(n);}} placeholder="Login details, API keys..."/></div><button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>setCreds(c=>c.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCreds(c=>[...c,{service:'',details:''}])}><Icons.plus size={13}/> Add Credential</button>
+      <ModalFoot onClose={onClose} onSave={()=>onSave({type,description:desc,techStack:stack,platforms,monthlyCosts:costs,credentials:creds})}/>
+    </Modal>
+  );
+}
+
+// ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
+function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
+  const [tab,setTab]=useState('queue');
+  const pending=queue.filter(q=>q.status==='pending').sort((a,b)=>({high:0,medium:1,low:2}[a.priority]||1)-({high:0,medium:1,low:2}[b.priority]||1));
+  const approved=queue.filter(q=>q.status==='approved');
+  const executed=queue.filter(q=>q.status==='executed');
+  const todayBriefing=briefings.find(b=>b.date===todayStr);
+  const latestLog=logs[0];
+  const AL={ADD_LEAD:'Add Lead',UPDATE_LEAD:'Update Lead',MARK_LEAD_DEAD:'Mark Dead',ADD_FINANCE_ENTRY:'Log Transaction',ADD_TODO:'Add Task'};
+  const PS={high:{color:'#ff6040',border:'rgba(255,96,64,0.3)',bg:'rgba(255,96,64,0.07)'},medium:{color:'#f0c060',border:'rgba(240,192,96,0.3)',bg:'rgba(240,192,96,0.07)'},low:{color:'#3a4860',border:'rgba(58,72,96,0.3)',bg:'rgba(58,72,96,0.07)'}};
+  return (
+    <div className="section">
+      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(0,24,36,0.95),rgba(0,61,92,0.3),rgba(26,16,53,0.4) 100%)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.5rem 1.25rem'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(0,136,200,0.5),rgba(0,212,255,0.8),rgba(64,232,255,0.4),transparent)'}}/>
+        <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>JAXON Intelligence</div>
+        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',color:'var(--bolt-white)',textShadow:'0 0 30px rgba(0,212,255,0.3)'}}>Second Brain</div>
+        <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
+          {[{label:'Pending',value:pending.length,color:'var(--bolt)',glow:'rgba(0,212,255,0.5)'},{label:'Approved',value:approved.length,color:'var(--valley)',glow:'rgba(26,219,138,0.4)'},{label:'Executed',value:executed.length,color:'var(--steel)',glow:'rgba(68,136,204,0.4)'}].map(s=>(<div key={s.label}><div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,color:s.color,lineHeight:1,textShadow:`0 0 16px ${s.glow}`}}>{s.value}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginTop:2}}>{s.label}</div></div>))}
+        </div>
+      </div>
+      {todayBriefing&&(<div className="fade-in" style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,rgba(0,95,138,0.12),rgba(0,24,36,0.8))',border:'1px solid rgba(0,170,238,0.2)',borderLeft:'3px solid var(--bolt)',borderRadius:10,padding:'1.125rem'}}><div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',boxShadow:'0 0 8px rgba(0,212,255,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/><span style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.25em',textTransform:'uppercase',color:'var(--bolt-lt)',opacity:0.8}}>Morning Briefing — {todayStr}</span></div><div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line',fontWeight:300}}>{todayBriefing.content}</div></div>)}
+      <div style={{display:'flex',gap:'2px',background:'rgba(0,24,36,0.6)',border:'1px solid rgba(0,212,255,0.08)',borderRadius:8,padding:3}}>
+        {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(0,136,200,0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(0,212,255,0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(0,212,255,0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
+      </div>
+      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(0,24,36,0.5)',border:'1px solid rgba(0,212,255,0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(0,212,255,0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
+        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(7,13,24,0.85)',border:'1px solid rgba(0,212,255,0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(0,95,138,0.1)',borderLeft:'2px solid rgba(0,136,200,0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(0,95,138,0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,96,64,0.2)',background:'rgba(255,96,64,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff6040'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
+      ))}
+      {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(0,95,138,0.07)',border:'1px solid rgba(0,136,200,0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
+      {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,136,200,0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(0,212,255,0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff6040',g:'rgba(255,96,64,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(0,212,255,0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
+      {tab==='research'&&<ResearchLauncher/>}
+    </div>
+  );
+}
+
+function ResearchLauncher() {
+  const [topic,setTopic]=useState('');
+  const [goal,setGoal]=useState('');
+  const [hours,setHours]=useState(24);
+  const [launched,setLaunched]=useState(false);
+  const [loading,setLoading]=useState(false);
+  const launch=async()=>{
+    if(!topic.trim())return;
+    setLoading(true);
+    try{
+      const endTime=new Date(Date.now()+hours*3600000);
+      const res=await fetch('https://jaxon-rctv.onrender.com/research',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,goal,hours,endTime:endTime.toISOString()})});
+      if(res.ok)setLaunched(true);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  };
+  if(launched)return(<div style={{textAlign:'center',padding:'1rem'}}><div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(0,212,255,0.6))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Research Active</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>JAXON hunting every hour for {hours}h</div></div>);
+  return(
+    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem',background:'linear-gradient(135deg,rgba(0,24,36,0.95),rgba(26,16,53,0.4))',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.125rem'}}>
+      <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,color:'var(--mist-0)',marginBottom:'0.25rem'}}>Intelligence Hunter</div>
+      <Field label="Research Topic"><input className="input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="e.g. WhatsApp Business adoption among Jamaican restaurants"/></Field>
+      <Field label="Research Goal"><textarea className="input" style={{minHeight:'52px',resize:'vertical'}} value={goal} onChange={e=>setGoal(e.target.value)} placeholder="What specific intelligence do we need?"/></Field>
+      <div>
+        <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',display:'block',marginBottom:6}}>Research Period</label>
+        <div style={{display:'flex',gap:'0.375rem'}}>{[6,12,24,48,72].map(h=>(<button key={h} className={`pill ${hours===h?'active':''}`} style={{padding:'0.28rem 0.6rem'}} onClick={()=>setHours(h)}>{h}h</button>))}</div>
+      </div>
+      <button className="btn-primary" style={{justifyContent:'center',opacity:loading?0.7:1}} onClick={launch} disabled={loading||!topic.trim()}>{loading?'Launching...':'⚡ Launch Research'}</button>
+    </div>
+  );
+}
+
+// ─── JAXON FLOATING CHAT ──────────────────────────────────────────────────────
+function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,totalExpenses,profit,xp,level,todayStr,paidLeads,openLeads}) {
+  const [open,setOpen]=useState(false);
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState('');
+  const [loading,setLoading]=useState(false);
+  const bottomRef=useRef(null);
+  const quickPrompts=['What should I focus on today?','Which lead should I call first?','How is my business doing?','Draft a WhatsApp message for my hottest lead'];
+
+  useEffect(()=>{
+    window._openJaxonChat=(msg)=>{setOpen(true);setTimeout(()=>setInput(msg),100);};
+    return()=>{delete window._openJaxonChat;};
+  },[]);
+
+  useEffect(()=>{
+    if(open&&bottomRef.current)bottomRef.current.scrollIntoView({behavior:'smooth'});
+  },[messages,open]);
+
+  const send=async(text)=>{
+    const msg=text||input.trim();
+    if(!msg||loading)return;
+    setInput('');
+    setMessages(m=>[...m,{role:'user',content:msg}]);
+    setLoading(true);
+    try{
+      const res=await fetch('https://jaxon-rctv.onrender.com/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[...messages,{role:'user',content:msg}]})});
+      const d=await res.json();
+      setMessages(m=>[...m,{role:'assistant',content:d.reply||'Sorry, I had trouble responding.'}]);
+    }catch(e){setMessages(m=>[...m,{role:'assistant',content:'Connection error. Is JAXON online?'}]);}
+    setLoading(false);
+  };
+
+  return(<>
+    <button className={`fab ${open?'fab-open':''}`} onClick={()=>setOpen(o=>!o)} style={{color:open?'var(--mist-2)':'var(--bolt)'}}>
+      {open?<Icons.close size={20}/>:<Icons.bolt size={20}/>}
+      {!open&&messages.length===0&&<div className="fab-pip"/>}
+    </button>
+    {open&&(
+      <div className="chat-panel">
+        <div className="chat-head">
+          <div className="chat-avatar"><Icons.bolt size={14}/></div>
+          <div><div className="chat-name">JAXON</div><div className="chat-status"><div className="chat-dot"/><span>AI Business Agent</span></div></div>
+          <button style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--mist-3)'}} onClick={()=>setOpen(false)}><Icons.close size={15}/></button>
+        </div>
+        <div className="chat-msgs">
+          {messages.length===0&&(<div style={{padding:'1rem 0'}}><div style={{fontFamily:'var(--fe)',fontSize:'15px',color:'var(--bolt-lt)',marginBottom:'0.5rem'}}>How can I help?</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.6}}>Ask me anything about your business, leads, finances or strategy.</div></div>)}
+          {messages.map((m,i)=>(<div key={i} className={`chat-msg ${m.role}`}>{m.role==='assistant'&&<div className="chat-msg-av"><Icons.bolt size={9}/></div>}<div className={`chat-bubble ${m.role}`}>{m.content}</div></div>))}
+          {loading&&<div className="chat-msg assistant"><div className="chat-msg-av"><Icons.bolt size={9}/></div><div className="chat-bubble assistant"><div className="chat-typing"><span/><span/><span/></div></div></div>}
+          <div ref={bottomRef}/>
+        </div>
+        {messages.length===0&&(<div className="chat-quick">{quickPrompts.map((p,i)=>(<button key={i} className="quick-btn" onClick={()=>send(p)}>{p}</button>))}</div>)}
+        <div className="chat-input-row">
+          <input className="chat-input" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="Ask JAXON..." disabled={loading}/>
+          <button className="chat-send" onClick={()=>send()} disabled={loading||!input.trim()}><Icons.send size={14}/></button>
+        </div>
+      </div>
+    )}
+  </>);
+}
+
+// ─── INVOICE GENERATOR ────────────────────────────────────────────────────────
+function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
+  const nextNum=()=>{const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt(f.invoiceNumber?.replace(/\D/g,'')||0));const mx=ex.length>0?Math.max(...ex):1;return `INV-2026-${String(mx+1).padStart(3,'0')}`;};
+  const [inv,setInv]=useState({invoiceNumber:nextNum(),date:localDateStr(),dueDate:'',status:'PAYMENT DUE',clientName:initialData?.clientName||'',clientLocation:initialData?.clientLocation||'Kingston, Jamaica',services:initialData?.services||[{desc:'',amount:''}],notes:'',paymentMethod:'Bank Transfer: Name: Jadan Spencer, Acc#: 504813584, Bank: NCB Perth Mandeville',...initialData});
+  const s=(k,v)=>setInv(p=>({...p,[k]:v}));
+  const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
+  const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
+  const generatePDF=()=>{
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Helvetica,Arial,sans-serif;color:#1a1a2e;background:#fff;padding:40px;}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #0d9488;}.company h1{font-size:28px;font-weight:900;color:#0d9488;}.invoice-title{font-size:36px;font-weight:900;color:#1a1a2e;letter-spacing:-0.04em;margin-bottom:8px;}.badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;background:#fef3c7;color:#d97706;}.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0;}table{width:100%;border-collapse:collapse;margin-bottom:32px;}th{background:#f8fafc;padding:12px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#999;font-weight:700;}td{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-size:14px;}td:last-child,th:last-child{text-align:right;}.total-row td{font-weight:800;font-size:16px;border-top:2px solid #0d9488;border-bottom:none;color:#0d9488;}.footer{margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;}.payment{background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:20px;}.thank-you{text-align:center;font-size:13px;color:#666;margin-top:24px;}</style></head><body><div class="header"><div><strong style="font-size:20px;color:#0d9488;">JCommerce & Tech</strong><br><small>Mandeville, Jamaica · (876) 817-0095</small></div><div class="company"><h1>${inv.invoiceNumber}</h1></div></div><div class="invoice-title">INVOICE</div><span class="badge">${inv.status}</span><div class="meta-grid"><div><strong>Billed To</strong><br>${inv.clientName}<br>${inv.clientLocation}</div><div><strong>Date:</strong> ${inv.date}<br><strong>Due:</strong> ${inv.dueDate||'Upon Receipt'}</div></div><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${inv.services.map(sv=>`<tr><td>${sv.desc||'Service'}</td><td>JMD ${Number(sv.amount||0).toLocaleString()}.00</td></tr>`).join('')}</tbody><tfoot><tr class="total-row"><td>TOTAL DUE</td><td>JMD ${total.toLocaleString()}.00</td></tr></tfoot></table><div class="footer"><div class="payment"><strong>Payment:</strong> ${inv.paymentMethod}</div>${inv.notes?`<div class="payment"><strong>Notes:</strong> ${inv.notes}</div>`:''}<div class="thank-you">Thank you for your business! Contact Jadan Spencer: (876) 817-0095</div></div></body></html>`;
+    const blob=new Blob([html],{type:'text/html'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`JCommerce-${inv.invoiceNumber}.html`;a.click();URL.revokeObjectURL(url);
+  };
+  return(
+    <Modal title="Invoice Generator" onClose={onClose}>
+      <>
+      <div className="grid-2"><Field label="Invoice #"><input className="input" value={inv.invoiceNumber} onChange={e=>s('invoiceNumber',e.target.value)}/></Field><Field label="Status"><select className="input" value={inv.status} onChange={e=>s('status',e.target.value)}><option>PAYMENT DUE</option><option>DEPOSIT DUE</option><option>PAID</option></select></Field></div>
+      <div className="grid-2"><Field label="Date"><input className="input" type="date" value={inv.date} onChange={e=>s('date',e.target.value)}/></Field><Field label="Due Date"><input className="input" type="date" value={inv.dueDate} onChange={e=>s('dueDate',e.target.value)}/></Field></div>
+      <Field label="Client Name"><input className="input" value={inv.clientName} onChange={e=>s('clientName',e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
+      <Field label="Client Location"><input className="input" value={inv.clientLocation} onChange={e=>s('clientLocation',e.target.value)}/></Field>
+      <div>
+        <div className="card-label">Services</div>
+        {inv.services.map((sv,idx)=>(
+          <div key={idx} style={{display:'flex',gap:'0.5rem',alignItems:'center',marginBottom:'0.5rem'}}>
+            <input className="input" style={{flex:2}} value={sv.desc} onChange={e=>setService(idx,'desc',e.target.value)} placeholder="Description"/>
+            <input className="input" style={{flex:1}} type="number" value={sv.amount} onChange={e=>setService(idx,'amount',e.target.value)} placeholder="Amount"/>
+            {inv.services.length>1&&<button className="icon-btn danger-btn" onClick={()=>setInv(p=>({...p,services:p.services.filter((_,k)=>k!==idx)}))}><Icons.close size={12}/></button>}
+          </div>
+        ))}
+        <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={()=>setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}))}><Icons.plus size={13}/> Add Line</button>
+      </div>
+      <div style={{background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
+      <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
+      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 Download Invoice</button>
+      <ModalFoot onClose={onClose}/>
+      </>
+    </Modal>
+  );
+}
+
+// ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
+function Modal({title,onClose,children}) {
+  return(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e=>e.stopPropagation()}>
+        <div className="modal-handle"/>
+        <div className="modal-head">
+          <div style={{fontFamily:'var(--fe)',fontSize:'17px',fontWeight:600,letterSpacing:'0.01em'}}>{title}</div>
+          <button className="icon-btn" onClick={onClose}><Icons.close size={14}/></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({label,children}) {
+  return(
+    <div>
+      <label style={{display:'block',fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:500,textTransform:'uppercase',letterSpacing:'0.14em',color:'var(--mist-3)',marginBottom:'0.375rem'}}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function ModalFoot({onClose,onSave}) {
+  return(
+    <div style={{display:'flex',gap:'0.5rem',paddingTop:'0.25rem'}}>
+      <button className="btn-ghost" style={{flex:1,justifyContent:'center'}} onClick={onClose}>Cancel</button>
+      {onSave&&<button className="btn-primary" style={{flex:1,justifyContent:'center'}} onClick={onSave}>Save</button>}
+    </div>
+  );
+}
+
+function Empty({text}) {
+  return <div className="empty">{text}</div>;
+}
