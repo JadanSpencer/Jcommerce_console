@@ -25,6 +25,7 @@ const Icons = {
   finance:   () => <Icon d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-4H9l3-3 3 3h-2v4z" fill="currentColor" stroke="none" />,
   goals:     () => <Icon d="M18 20V10 M12 20V4 M6 20v-6" />,
   jaxon:     () => <Icon d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />,
+  bolt:      () => <Icon d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
   plus:      () => <Icon d="M12 5v14M5 12h14" />,
   trash:     () => <Icon d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" />,
   edit:      () => <Icon d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />,
@@ -1000,7 +1001,7 @@ export default function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr);
+  const xp = calcXP(habits, leads, todos, todayStr) + xpBonus;
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const todayTodos = todos.filter(t=>t.addedDate===todayStr);
   const todayDone  = todayTodos.filter(t=>t.doneOn?.[todayStr]);
@@ -1015,6 +1016,7 @@ export default function App() {
     {id:'finance',   label:'Finance',  icon:Icons.finance},
     {id:'goals',     label:'Goals',    icon:Icons.goals},
     {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon},
+    {id:'clients',   label:'Clients',  icon:Icons.briefcase},
   ];
 
   if (loading) return (
@@ -1102,7 +1104,7 @@ export default function App() {
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
-        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXp(x=>x+100)}/>}
+        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXpBonus(b=>b+100)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)}/>}
       </main>
