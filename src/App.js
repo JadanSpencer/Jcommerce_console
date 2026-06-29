@@ -2975,6 +2975,45 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
 }
 
 
+
+
+function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
+  const nextNum=()=>{const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt(f.invoiceNumber?.replace(/\D/g,'')||0));const mx=ex.length>0?Math.max(...ex):1;return `INV-2026-${String(mx+1).padStart(3,'0')}`;};
+  const [inv,setInv]=useState({invoiceNumber:nextNum(),date:localDateStr(),dueDate:'',status:'PAYMENT DUE',clientName:initialData?.clientName||'',clientLocation:initialData?.clientLocation||'Kingston, Jamaica',services:initialData?.services||[{desc:'',amount:''}],notes:'',paymentMethod:'Bank Transfer: Name: Jadan Spencer, Acc#: 504813584, Bank: NCB Perth Mandeville',...initialData});
+  const s=(k,v)=>setInv(p=>({...p,[k]:v}));
+  const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
+  const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
+  const generatePDF=()=>{
+    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Helvetica,Arial,sans-serif;color:#1a1a2e;background:#fff;padding:40px;}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #0d9488;}.company h1{font-size:28px;font-weight:900;color:#0d9488;}.invoice-title{font-size:36px;font-weight:900;color:#1a1a2e;letter-spacing:-0.04em;margin-bottom:8px;}.badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;background:#fef3c7;color:#d97706;}.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0;}table{width:100%;border-collapse:collapse;margin-bottom:32px;}th{background:#f8fafc;padding:12px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#999;font-weight:700;}td{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-size:14px;}td:last-child,th:last-child{text-align:right;}.total-row td{font-weight:800;font-size:16px;border-top:2px solid #0d9488;border-bottom:none;color:#0d9488;}.footer{margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;}.payment{background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:20px;}.thank-you{text-align:center;font-size:13px;color:#666;margin-top:24px;}</style></head><body><div class="header"><div><strong style="font-size:20px;color:#0d9488;">JCommerce & Tech</strong><br><small>Mandeville, Jamaica · (876) 817-0095</small></div><div class="company"><h1>${inv.invoiceNumber}</h1></div></div><div class="invoice-title">INVOICE</div><span class="badge">${inv.status}</span><div class="meta-grid"><div><strong>Billed To</strong><br>${inv.clientName}<br>${inv.clientLocation}</div><div><strong>Date:</strong> ${inv.date}<br><strong>Due:</strong> ${inv.dueDate||'Upon Receipt'}</div></div><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${inv.services.map(sv=>`<tr><td>${sv.desc||'Service'}</td><td>JMD ${Number(sv.amount||0).toLocaleString()}.00</td></tr>`).join('')}</tbody><tfoot><tr class="total-row"><td>TOTAL DUE</td><td>JMD ${total.toLocaleString()}.00</td></tr></tfoot></table><div class="footer"><div class="payment"><strong>Payment:</strong> ${inv.paymentMethod}</div>${inv.notes?`<div class="payment"><strong>Notes:</strong> ${inv.notes}</div>`:''}<div class="thank-you">Thank you for your business! Contact Jadan Spencer: (876) 817-0095</div></div></body></html>`;
+    const blob=new Blob([html],{type:'text/html'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`JCommerce-${inv.invoiceNumber}.html`;a.click();URL.revokeObjectURL(url);
+  };
+  return(
+    <Modal title="Invoice Generator" onClose={onClose}>
+      <>
+      <div className="grid-2"><Field label="Invoice #"><input className="input" value={inv.invoiceNumber} onChange={e=>s('invoiceNumber',e.target.value)}/></Field><Field label="Status"><select className="input" value={inv.status} onChange={e=>s('status',e.target.value)}><option>PAYMENT DUE</option><option>DEPOSIT DUE</option><option>PAID</option></select></Field></div>
+      <div className="grid-2"><Field label="Date"><input className="input" type="date" value={inv.date} onChange={e=>s('date',e.target.value)}/></Field><Field label="Due Date"><input className="input" type="date" value={inv.dueDate} onChange={e=>s('dueDate',e.target.value)}/></Field></div>
+      <Field label="Client Name"><input className="input" value={inv.clientName} onChange={e=>s('clientName',e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
+      <Field label="Client Location"><input className="input" value={inv.clientLocation} onChange={e=>s('clientLocation',e.target.value)}/></Field>
+      <div>
+        <div className="card-label">Services</div>
+        {inv.services.map((sv,idx)=>(
+          <div key={idx} style={{display:'flex',gap:'0.5rem',alignItems:'center',marginBottom:'0.5rem'}}>
+            <input className="input" style={{flex:2}} value={sv.desc} onChange={e=>setService(idx,'desc',e.target.value)} placeholder="Description"/>
+            <input className="input" style={{flex:1}} type="number" value={sv.amount} onChange={e=>setService(idx,'amount',e.target.value)} placeholder="Amount"/>
+            {inv.services.length>1&&<button className="icon-btn danger-btn" onClick={()=>setInv(p=>({...p,services:p.services.filter((_,k)=>k!==idx)}))}><Icons.close size={12}/></button>}
+          </div>
+        ))}
+        <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={()=>setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}))}><Icons.plus size={13}/> Add Line</button>
+      </div>
+      <div style={{background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
+      <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
+      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 Download Invoice</button>
+      <ModalFoot onClose={onClose}/>
+      </>
+    </Modal>
+  );
+}
+
 // ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
 function Modal({title,onClose,children}) {
   return(
