@@ -2397,8 +2397,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
                 {[
                   {l:'Profit',  v:`J$${profit.toLocaleString()}`,          c:profit>=0?'var(--bolt)':'#ff3030'},
                   {l:'MRR',     v:`J$${mrr.toLocaleString()}/mo`,          c:'var(--bolt-lt)'},
-                  {l:'Clients', v:paidLeads.length,                         c:'var(--horizon)'},
-                  {l:'Pipeline',v:openLeads.length,                         c:'var(--mist-2)'},
+                  {l:'Clients', v:leads.filter(l=>l.status==='Paid').length, c:'var(--horizon)'},
+                  {l:'Pipeline',v:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length, c:'var(--mist-2)'},
                 ].map(m=>(
                   <div key={m.l}>
                     <div style={{fontFamily:'var(--fm)',fontSize:'7px',color:'var(--mist-3)',
