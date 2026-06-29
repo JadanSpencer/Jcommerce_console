@@ -2978,14 +2978,127 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
 
 
 function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
-  const nextNum=()=>{const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt(f.invoiceNumber?.replace(/\D/g,'')||0));const mx=ex.length>0?Math.max(...ex):1;return `INV-2026-${String(mx+1).padStart(3,'0')}`;};
+  const nextNum=()=>{const yr=new Date().getFullYear();const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt((f.invoiceNumber?.split('-').pop())||0));const mx=ex.length>0?Math.max(...ex):0;return `JC-${yr}-${String(mx+1).padStart(3,'0')}`;};
   const [inv,setInv]=useState({invoiceNumber:nextNum(),date:localDateStr(),dueDate:'',status:'PAYMENT DUE',clientName:initialData?.clientName||'',clientLocation:initialData?.clientLocation||'Kingston, Jamaica',services:initialData?.services||[{desc:'',amount:''}],notes:'',paymentMethod:'Bank Transfer: Name: Jadan Spencer, Acc#: 504813584, Bank: NCB Perth Mandeville',...initialData});
   const s=(k,v)=>setInv(p=>({...p,[k]:v}));
   const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
   const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
-  const generatePDF=()=>{
-    const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:Helvetica,Arial,sans-serif;color:#1a1a2e;background:#fff;padding:40px;}.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:24px;border-bottom:3px solid #0d9488;}.company h1{font-size:28px;font-weight:900;color:#0d9488;}.invoice-title{font-size:36px;font-weight:900;color:#1a1a2e;letter-spacing:-0.04em;margin-bottom:8px;}.badge{display:inline-block;padding:4px 12px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;background:#fef3c7;color:#d97706;}.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:24px 0;}table{width:100%;border-collapse:collapse;margin-bottom:32px;}th{background:#f8fafc;padding:12px 16px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;color:#999;font-weight:700;}td{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-size:14px;}td:last-child,th:last-child{text-align:right;}.total-row td{font-weight:800;font-size:16px;border-top:2px solid #0d9488;border-bottom:none;color:#0d9488;}.footer{margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;}.payment{background:#f8fafc;border-radius:12px;padding:20px;margin-bottom:20px;}.thank-you{text-align:center;font-size:13px;color:#666;margin-top:24px;}</style></head><body><div class="header"><div><strong style="font-size:20px;color:#0d9488;">JCommerce & Tech</strong><br><small>Mandeville, Jamaica · (876) 817-0095</small></div><div class="company"><h1>${inv.invoiceNumber}</h1></div></div><div class="invoice-title">INVOICE</div><span class="badge">${inv.status}</span><div class="meta-grid"><div><strong>Billed To</strong><br>${inv.clientName}<br>${inv.clientLocation}</div><div><strong>Date:</strong> ${inv.date}<br><strong>Due:</strong> ${inv.dueDate||'Upon Receipt'}</div></div><table><thead><tr><th>Description</th><th>Amount</th></tr></thead><tbody>${inv.services.map(sv=>`<tr><td>${sv.desc||'Service'}</td><td>JMD ${Number(sv.amount||0).toLocaleString()}.00</td></tr>`).join('')}</tbody><tfoot><tr class="total-row"><td>TOTAL DUE</td><td>JMD ${total.toLocaleString()}.00</td></tr></tfoot></table><div class="footer"><div class="payment"><strong>Payment:</strong> ${inv.paymentMethod}</div>${inv.notes?`<div class="payment"><strong>Notes:</strong> ${inv.notes}</div>`:''}<div class="thank-you">Thank you for your business! Contact Jadan Spencer: (876) 817-0095</div></div></body></html>`;
-    const blob=new Blob([html],{type:'text/html'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`JCommerce-${inv.invoiceNumber}.html`;a.click();URL.revokeObjectURL(url);
+  const generatePDF = () => {
+    const statusColor = {
+      'PAYMENT DUE':'#1a7f5a','DEPOSIT DUE':'#b45309','BALANCE DUE':'#7c3aed',
+      'PAID IN FULL':'#166534','QUOTE':'#1e40af','RETAINER DUE':'#0f766e',
+    }[inv.status] || '#1a7f5a';
+
+    const serviceRows = inv.services.map(sv => {
+      const qty = Number(sv.qty)||1;
+      const amt = Number(sv.amount)||0;
+      return `<tr>
+        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;font-size:13.5px;">${sv.desc||'—'}${sv.unit?`<br><span style="font-size:11px;color:#78716c;">${sv.unit}</span>`:''}</td>
+        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:center;color:#57534e;">${qty>1?qty:'—'}</td>
+        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:right;">${fmt(amt)}</td>
+        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;">${fmt(qty*amt)}</td>
+      </tr>`;
+    }).join('');
+
+    const totalRows = `
+      <tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">Subtotal</td><td style="padding:8px 14px;text-align:right;">${fmt(subtotal)}</td></tr>
+      ${discountAmt>0?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.discountLabel}</td><td style="padding:8px 14px;text-align:right;color:#dc2626;">-${fmt(discountAmt)}</td></tr>`:''}
+      ${taxAmt>0?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.taxLabel}</td><td style="padding:8px 14px;text-align:right;">${fmt(taxAmt)}</td></tr>`:''}
+      ${inv.showDepositLine&&inv.depositPaid?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.depositLabel}</td><td style="padding:8px 14px;text-align:right;color:#16a34a;">-${fmt(inv.depositPaid)}</td></tr>`:''}
+      <tr style="background:#f8fafc;">
+        <td colspan="3" style="padding:14px;text-align:right;font-weight:800;font-size:15px;border-top:2px solid #e2e8f0;">${inv.showDepositLine?'Balance Due':'Total Due'}</td>
+        <td style="padding:14px;text-align:right;font-weight:900;font-size:16px;color:${statusColor};border-top:2px solid #e2e8f0;">${fmt(displayTotal)}</td>
+      </tr>`;
+
+    const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<title>${inv.invoiceNumber} — ${inv.clientName}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:'Inter',Helvetica,Arial,sans-serif;color:#1C1917;background:#fff;padding:48px 56px;max-width:860px;margin:0 auto;}
+  @media print{body{padding:32px 40px;}}
+  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid #e2e8f0;}
+  .brand-block{display:flex;align-items:center;gap:16px;}
+  .brand-logo{width:72px;height:72px;object-fit:contain;border-radius:8px;}
+  .brand-name{font-size:20px;font-weight:800;color:#0F1F3D;}
+  .brand-sub{font-size:11px;color:#78716c;margin-top:3px;line-height:1.5;}
+  .inv-title{font-size:36px;font-weight:900;color:#0F1F3D;letter-spacing:-0.04em;text-align:right;}
+  .badge{display:inline-block;padding:5px 14px;border-radius:99px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;border:1px solid;margin-top:8px;}
+  .gold-line{height:3px;background:linear-gradient(90deg,#1a6b5a,#C89B3C,#1a6b5a);margin:0 0 32px;}
+  .meta{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:28px 0;}
+  .meta-block h4{font-size:9px;text-transform:uppercase;letter-spacing:0.18em;color:#a8a29e;font-weight:600;margin-bottom:8px;}
+  .meta-block p{font-size:13.5px;line-height:1.7;}
+  .meta-block .strong{font-weight:700;font-size:15px;}
+  table{width:100%;border-collapse:collapse;margin:28px 0;}
+  thead{background:#0F1F3D;}
+  th{padding:11px 14px;text-align:left;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#fff;font-weight:600;}
+  th:last-child,th:nth-child(3){text-align:right;}th:nth-child(2){text-align:center;}
+  .payment-box{background:#f8fafc;border-radius:10px;padding:18px 20px;margin:24px 0;border:1px solid #e2e8f0;}
+  .payment-box h4{font-size:9px;text-transform:uppercase;letter-spacing:0.18em;color:#a8a29e;font-weight:600;margin-bottom:8px;}
+  .payment-box p{font-size:13px;line-height:1.7;white-space:pre-line;}
+  .footer{margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;text-align:center;font-size:12px;color:#a8a29e;}
+  .notes{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin:16px 0;font-size:13px;color:#78350f;line-height:1.7;}
+</style>
+</head><body>
+
+<div class="header">
+  <div class="brand-block">
+    <img class="brand-logo" src="${LOGO_B64}" alt="JCommerce Logo"/>
+    <div>
+      <div class="brand-name">${inv.providerCompany}</div>
+      <div class="brand-sub">${inv.providerName}<br>${inv.providerLocation}<br>${inv.providerPhone} · ${inv.providerEmail}</div>
+    </div>
+  </div>
+  <div style="text-align:right;">
+    <div class="inv-title">${inv.type==='quote'?'QUOTE':inv.type==='receipt'?'RECEIPT':'INVOICE'}</div>
+    <span class="badge" style="color:${statusColor};border-color:${statusColor}20;background:${statusColor}10;">${inv.status}</span>
+  </div>
+</div>
+
+<div class="gold-line"></div>
+
+<div class="meta">
+  <div class="meta-block">
+    <h4>Billed To</h4>
+    <p class="strong">${inv.clientName}${inv.clientCompany?`<br><span style="font-weight:400;font-size:13px;">${inv.clientCompany}</span>`:''}</p>
+    <p>${inv.clientLocation}${inv.clientEmail?`<br>${inv.clientEmail}`:''}${inv.clientPhone?`<br>${inv.clientPhone}`:''}</p>
+  </div>
+  <div class="meta-block" style="text-align:right;">
+    <h4>Invoice Details</h4>
+    <p><strong>${inv.invoiceNumber}</strong><br>
+    Date: ${inv.date}<br>
+    ${inv.dueDate?`Due: ${inv.dueDate}`:'Due: Upon Receipt'}
+    ${inv.poNumber?`<br>PO#: ${inv.poNumber}`:''}
+    ${inv.type==='retainer'&&inv.retainerPeriod?`<br>Period: ${inv.retainerPeriod}`:''}
+    </p>
+  </div>
+</div>
+
+<table>
+  <thead><tr><th style="width:50%;">Description</th><th style="width:10%;text-align:center;">Qty</th><th style="width:20%;text-align:right;">Unit Price</th><th style="width:20%;text-align:right;">Total</th></tr></thead>
+  <tbody>${serviceRows}</tbody>
+  <tfoot>${totalRows}</tfoot>
+</table>
+
+${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
+
+<div class="payment-box">
+  <h4>Payment Methods</h4>
+  <p>${inv.paymentMethod}</p>
+</div>
+
+<div class="footer">Thank you for your business · JCommerce & Tech · ${inv.providerPhone}</div>
+
+</body></html>`;
+
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${inv.invoiceNumber}-${(inv.clientName||'invoice').replace(/\s+/g,'-')}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
   return(
     <Modal title="Invoice Generator" onClose={onClose}>
