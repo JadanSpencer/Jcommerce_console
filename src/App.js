@@ -2442,87 +2442,173 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         );
       })()}
 
-      {/* Stats */}
+      {/* Report tabs */}
+      <div className="tab-row">
+        {['overview','projection','breakdown','invest'].map(t=>(
+          <button key={t} className={`tab-btn ${report===t?'active':''}`} onClick={()=>setReport(t)}>
+            {t==='invest'?'⚡ Invest':t.charAt(0).toUpperCase()+t.slice(1)}
+          </button>
+        ))}
+      </div>
+
+      {/* Hero stats */}
       <div className="grid-2">
-        <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}    icon={Icons.trend}   color={profit>=0?'#1adb8a':'#ff6040'} />
-        <StatCard label="Paid Clients"  value={paidLeads.length}                    icon={Icons.users}   color="var(--horizon)" />
-        <StatCard label="Open Pipeline" value={openLeads.length}                    icon={Icons.target}  color="var(--horizon)" />
-        <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--horizon)" />
+        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar} color="var(--bolt)"/>
+        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar} color="#ff6040"/>
+        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}/mo`}        icon={Icons.trend}  color="var(--bolt-lt)"/>
+        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
       </div>
 
-      {/* Today habits quick */}
-      {habits.length > 0 && (
+      {report==='overview' && (
         <div className="card fade-in">
-          <div className="card-label">Today's Habits</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-            {habits.map(h => (
-              <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleHabit(h,todayStr)} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
-                  {h.completions?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
-                </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
-                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',flexShrink:0}}>+10</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Today tasks quick */}
-      {todayTodos.length > 0 && (
-        <div className="card fade-in">
-          <div className="card-label">Tasks · {todayDone.length}/{todayTodos.length}</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-            {todayTodos.map(t => (
-              <div key={t.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
-                  {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
-                </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></span>
-                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5',flexShrink:0}}>+5</span>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Heatmap */}
-      <div className="card fade-in">
-        <div className="card-label">Consistency — 20 Weeks</div>
-        <div style={{overflowX:'auto'}}>
-          <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
-            {weeks.map((week,wi) => (
-              <div key={wi} style={{display:'flex',flexDirection:'column',gap:'3px'}}>
-                {week.map(date => {
-                  const e = habitHeatmap.find(h=>h.date===date);
-                  return <div key={date} className={`hcell lv${e?.lv||0}${date===todayStr?' today':''}`} title={date}/>;
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="heatmap-legend">
-          <span>Less</span>
-          {[0,1,2,3,4].map(l => <div key={l} className={`hcell lv${l}`}/>)}
-          <span>More</span>
-        </div>
-      </div>
-
-      {/* Pipeline chart */}
-      {leads.length > 0 && (
-        <div className="card fade-in">
-          <div className="card-label">Pipeline</div>
-          <ResponsiveContainer width="100%" height={140}>
-            <BarChart data={LEAD_STATUSES.map(s=>({name:s,count:leads.filter(l=>l.status===s).length})).filter(d=>d.count>0)} margin={{left:0,right:0,top:4,bottom:0}}>
+          <div className="card-label">Monthly Overview</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <BarChart data={monthly.slice(-6)} margin={{left:0,right:4,top:4,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="name" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} allowDecimals={false} width={22}/>
-              <Tooltip contentStyle={{background:'#0f172a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'10px',color:'#e2e8f0',fontSize:'11px'}}/>
-              <Bar dataKey="count" fill="#3b82f6" radius={[3,3,0,0]}/>
+              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
+              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
+              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`}/>
+              <Bar dataKey="income"   fill="#00d4ff" radius={[3,3,0,0]} name="Income"/>
+              <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses"/>
             </BarChart>
           </ResponsiveContainer>
         </div>
       )}
+
+      {report==='projection' && (
+        <div className="card fade-in">
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
+            <div className="card-label" style={{margin:0}}>{projMonths}-Month Projection</div>
+            <div style={{display:'flex',gap:4}}>
+              {[3,6,12].map(m=>(
+                <button key={m} onClick={()=>setProjMonths(m)}
+                  className={`pill ${projMonths===m?'active':''}`}
+                  style={{padding:'0.2rem 0.5rem',fontSize:'9px'}}>
+                  {m}M
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR.</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
+              <defs>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0088c8" stopOpacity={0.25}/><stop offset="95%" stopColor="#0088c8" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
+              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
+              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`}/>
+              <Area type="monotone" dataKey="projected" stroke="#00d4ff" fill="url(#g1)" name="Projected Income" strokeWidth={2}/>
+              <Area type="monotone" dataKey="profit"    stroke="#0088c8" fill="url(#g2)" name="Profit" strokeWidth={2}/>
+              <Area type="monotone" dataKey="expenses"  stroke="#ff6040" fill="url(#g3)" name="Expenses" strokeWidth={1.5}/>
+              <Area type="monotone" dataKey="minimum"   stroke="rgba(0,212,255,0.3)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3"/>
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {report==='breakdown' && (() => {
+        const expCats=(()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
+        return (
+          <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            <div className="card fade-in">
+              <div className="card-label">Income by Category</div>
+              {cats.length===0?<Empty text="No income yet."/>:cats.map(c=>{
+                const pct=totalIncome>0?(c.value/totalIncome)*100:0;
+                return(<div key={c.name} style={{marginBottom:'0.75rem'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
+                  </div>
+                  <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),var(--bolt))',borderRadius:99}}/>
+                  </div>
+                </div>);
+              })}
+            </div>
+            <div className="card fade-in">
+              <div className="card-label">Expenses by Category</div>
+              {expCats.length===0?<Empty text="No expenses yet."/>:expCats.map(c=>{
+                const pct=totalExpenses>0?(c.value/totalExpenses)*100:0;
+                return(<div key={c.name} style={{marginBottom:'0.75rem'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                    <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
+                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#ff6040'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
+                  </div>
+                  <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#c02000,#ff6040)',borderRadius:99}}/>
+                  </div>
+                </div>);
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {report==='invest' && (
+        <InvestAdvisor
+          profit={profit} mrr={mrr} totalIncome={totalIncome} totalExpenses={totalExpenses}
+          level={level} paidClients={leads.filter(l=>l.status==='Paid').length}
+          openLeads={leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length}
+          finances={finances}
+          advice={investAdvice} loading={investLoading}
+          onFetch={async()=>{
+            setInvestLoading(true);
+            try{
+              const r=await fetch('https://jaxon-rctv.onrender.com/invest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profit,mrr,totalIncome,totalExpenses,level,paidClients:leads.filter(l=>l.status==='Paid').length,openLeads:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length,recentFinances:finances.slice(-20).map(f=>({type:f.type,amount:f.amount,category:f.category,date:f.date}))})});
+              const d=await r.json();setInvestAdvice(d);
+            }catch(e){console.error(e);}
+            setInvestLoading(false);
+          }}
+        />
+      )}
+
+      {/* Transaction filter + list */}
+      <div style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
+        <div className="tab-row" style={{flex:1}}>
+          {['all','income','expense'].map(t=>(
+            <button key={t} className={`tab-btn ${filter===t?'active':''}`} onClick={()=>{setFilter(t);setFinPage(0);}}>
+              {t==='all'?'All':t==='income'?'Income':'Expenses'}
+            </button>
+          ))}
+        </div>
+        <button className="btn-primary icon-only" onClick={()=>setForm({})}><Icons.plus size={15}/></button>
+      </div>
+
+      {filtered.length===0?<Empty text="No transactions yet."/>:(
+        <>
+          <div className="list">
+            {finPaged.map(f=>(
+              <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
+                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'var(--bolt)':'#ff6040'}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:500,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
+                  <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}</div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
+                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
+                  <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+          {finPageCount>1&&(
+            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'0.4rem'}}>
+              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.max(0,p-1))} disabled={finPage===0}>←</button>
+              {Array.from({length:finPageCount},(_,i)=>(
+                <button key={i} className={`pill ${finPage===i?'active':''}`} style={{minWidth:28,justifyContent:'center',padding:'0.2rem 0.5rem'}} onClick={()=>setFinPage(i)}>{i+1}</button>
+              ))}
+              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.min(finPageCount-1,p+1))} disabled={finPage===finPageCount-1}>→</button>
+            </div>
+          )}
+        </>
+      )}
+
+      {form!==null&&<FinanceModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
     </div>
   );
 }
