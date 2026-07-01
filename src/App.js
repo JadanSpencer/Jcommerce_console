@@ -3264,10 +3264,10 @@ See below — generated specifically for this client's service.
             </div>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {prebuilt && !customBlock && (
+            {prebuilt && (
               <button className="btn-ghost" style={{ fontSize: '10px', padding: '0.2rem 0.6rem', color: 'var(--bolt)', borderColor: 'rgba(0,212,255,0.3)' }}
                 onClick={() => { setCustomBlock(prebuilt); setEditMode(false); onUpdate({ managementBlock: prebuilt }); }}>
-                ⚡ Load Template
+                ⚡ Load D&D Template
               </button>
             )}
             <button className="icon-btn" onClick={() => setEditMode(e => !e)}>
