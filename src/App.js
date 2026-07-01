@@ -3087,6 +3087,113 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
 // ─── README TAB ───────────────────────────────────────────────────────────────
 // Pre-built management blocks for known clients
 const MANAGEMENT_TEMPLATES = {
+  'D&D wholesale': `# D&D Wholesale — Custom Management Block
+
+## Service Overview
+WhatsApp AI Chatbot — Auto-replies to customer messages 24/7 using Groq AI (llama-3.3-70b-versatile). Hosted on Render (free tier). Connected via Meta WhatsApp Business API.
+
+---
+
+## Live Details
+- WhatsApp Business Number: +1 876-856-4587
+- Phone Number ID: 1248296008356493
+- WhatsApp Business Account ID: 1736906550828615
+- Meta App ID: 1692577325283934 (D&D_WHOLESALE)
+- Render URL: https://whatsapp-bot-n0gl.onrender.com
+- GitHub Repo: https://github.com/JadanSpencer/WhatsappChatbot
+
+---
+
+## Stack
+- Runtime: Node.js 18+
+- AI: Groq API (llama-3.3-70b-versatile) — FREE tier
+- WhatsApp: Meta Cloud API
+- Hosting: Render free tier (upgrade to Starter $7/mo for always-on)
+- Env: dotenvx
+
+---
+
+## Render Environment Variables
+Set at: dashboard.render.com > whatsapp-bot > Environment
+
+  WHATSAPP_TOKEN   = permanent system user token (never expires)
+  PHONE_NUMBER_ID  = 1248296008356493
+  VERIFY_TOKEN     = mystore2024
+  GROQ_API_KEY     = from console.groq.com
+  STORE_NAME       = D&D Wholesale
+
+---
+
+## Permanent Token (never expires)
+business.facebook.com/settings/system-users
+→ bot-admin (ID: 61591024406409)
+→ Generate token → D&D_WHOLESALE → Never
+→ Permissions: whatsapp_business_messaging + whatsapp_business_management
+→ Copy → paste into Render WHATSAPP_TOKEN → Save
+
+---
+
+## Webhook
+URL: https://whatsapp-bot-n0gl.onrender.com/webhook
+Verify Token: mystore2024
+Subscribed fields: messages
+Reconfigure at: developers.facebook.com/apps/1692577325283934 → WhatsApp → Configuration
+
+---
+
+## Updating Store Info
+Open index.js → find STORE_INFO → update hours/products/location
+→ git add . && git commit -m "update" && git push
+→ Render auto-redeploys
+
+---
+
+## Common Issues
+
+ERROR 400 — Wrong PHONE_NUMBER_ID
+Fix: Confirm 1248296008356493 in Render environment
+
+ERROR 403 — Token expired
+Fix: Regenerate permanent token (see above) → update WHATSAPP_TOKEN in Render
+
+No messages reaching bot — Webhook subscription dropped
+Fix: developers.facebook.com → app → WhatsApp → Configuration
+→ re-verify webhook AND subscribe messages field under phone number
+
+50s delay on first message — Render sleeping
+Fix: Upgrade to Render Starter $7/mo OR keep UptimeRobot active
+UptimeRobot: https://whatsapp-bot-n0gl.onrender.com → ping every 5 min
+
+---
+
+## Monthly Checklist
+- Send retainer invoice (JMD $9,000/mo)
+- Check Render logs for error patterns
+- Check Groq usage: console.groq.com
+- Check Meta billing: business.facebook.com/billing_hub (1,000 conversations free/mo)
+
+---
+
+## Meta Billing
+Payment card on file: Visa 4086 (temporary — replace with client card)
+Portal: business.facebook.com → D&D Wholesale → Billing & payments
+
+---
+
+## WhatsApp Profile
+Manage at: business.facebook.com/latest/whatsapp_manager/phone_numbers
+→ +1 876-856-4587 → Profile
+Update: logo, description, email, website
+
+---
+
+## Contracts & Invoices
+JC-2026-001  Setup fee (JMD $45,000 — deposit)
+JC-2026-005  Receipt — full setup paid + first retainer (JMD $54,000)
+JC-2026-004  Bot update (JMD $5,000)
+Amendment    Retainer JMD $7k → JMD $9k/mo
+JC-2026-006B Review & Ratings App (JMD $35,000 setup + JMD $2k/mo added)
+JC-2026-007B Instagram AI Chatbot (JMD $38,000 setup + JMD $3k/mo added)`,
   'D&D Wholesale': `# D&D Wholesale — Custom Management Block
 
 ## Service Overview
@@ -3199,7 +3306,12 @@ JC-2026-007B Instagram AI Chatbot (JMD $38,000 setup + JMD $3k/mo added)`,
 function ReadmeTab({ client, onUpdate }) {
   const [editMode, setEditMode] = useState(false);
   const [customBlock, setCustomBlock] = useState(client.managementBlock || '');
-  const prebuilt = MANAGEMENT_TEMPLATES[client.businessName];
+  // Case-insensitive match so 'D&D wholesale' finds 'D&D wholesale' key
+  const prebuilt = (() => {
+    const name = (client.businessName || '').toLowerCase();
+    const key = Object.keys(MANAGEMENT_TEMPLATES).find(k => k.toLowerCase() === name);
+    return key ? MANAGEMENT_TEMPLATES[key] : null;
+  })();
   const readme = client.product;
 
   const TEMPLATE = `# ${client.businessName} — Management README
