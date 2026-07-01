@@ -131,32 +131,33 @@ function calcEmotionLevel(finances, leads, xp, level) {
 
   if (!hasData && paidClients === 0) return 2;
 
-  // ── PROFIT IS THE MASTER SIGNAL ──────────────────────────────────────────
-  // Negative profit = cannot be Thriving or Good, no matter what else is true
-  // The score bands are designed so profit alone determines the floor/ceiling
+  // ── LEVEL-GATED PROFIT REQUIREMENT ───────────────────────────────────────
+  // Min profit doubles every level: Level 1 = J$5k, Level 2 = J$10k, etc.
+  // Not meeting minimum HARD-CAPS the score — cannot be Good or Thriving
+  const minProfit = minProfitForLevel(level);
+  const profitRatio = minProfit > 0 ? profit / minProfit : 1; // 1.0 = exactly at minimum
 
   let score = 50;
 
-  // Profit — dominates the score (±40 pts possible)
-  if      (profit > 200000) score += 40;
-  else if (profit > 100000) score += 32;
-  else if (profit > 50000)  score += 25;
-  else if (profit > 20000)  score += 18;
-  else if (profit > 5000)   score += 10;
-  else if (profit > 0)      score += 4;
-  else if (profit === 0)    score += 0;
-  else if (profit > -5000)  score -= 15;   // slightly negative
-  else if (profit > -20000) score -= 25;   // meaningfully negative
-  else if (profit > -50000) score -= 35;   // bad
-  else                      score -= 45;   // critical
+  // Profit vs level requirement (dominant signal, ±45 pts)
+  if      (profitRatio >= 4.0)  score += 45; // 4× minimum = exceptional
+  else if (profitRatio >= 2.0)  score += 35; // 2× minimum = great
+  else if (profitRatio >= 1.5)  score += 25; // 1.5× minimum = solid
+  else if (profitRatio >= 1.0)  score += 15; // meets minimum exactly
+  else if (profitRatio >= 0.75) score += 5;  // 75% of minimum — close
+  else if (profitRatio >= 0.5)  score -= 10; // half of minimum
+  else if (profitRatio >= 0.25) score -= 25; // barely a quarter
+  else if (profit > 0)          score -= 35; // positive but way below minimum
+  else if (profit === 0)        score -= 40; // broke even
+  else                          score -= 50; // losing money
 
-  // MRR — stability bonus (max +12)
-  if      (mrr > 50000) score += 12;
-  else if (mrr > 20000) score += 8;
-  else if (mrr > 7000)  score += 5;
-  else if (mrr > 0)     score += 2;
+  // MRR stability bonus (max +10) — recurring revenue = future safety
+  if      (mrr >= minProfit * 1.5) score += 10; // MRR alone covers level target
+  else if (mrr >= minProfit)       score += 7;
+  else if (mrr >= minProfit * 0.5) score += 4;
+  else if (mrr > 0)                score += 2;
 
-  // Clients — proof bonus (max +8)
+  // Clients (max +8)
   if      (paidClients >= 5) score += 8;
   else if (paidClients >= 3) score += 5;
   else if (paidClients >= 1) score += 3;
@@ -168,7 +169,7 @@ function calcEmotionLevel(finances, leads, xp, level) {
   else if (openLeads >= 1)  score += 1;
   else                      score -= 3;
 
-  // Expense ratio (max ±5)
+  // Expense efficiency (max ±5)
   if (hasData && totalIncome > 0) {
     const er = totalExpenses / totalIncome;
     if      (er < 0.3) score += 5;
@@ -178,12 +179,11 @@ function calcEmotionLevel(finances, leads, xp, level) {
 
   score = Math.max(0, Math.min(100, score));
 
-  // Proportional bands — each 20 points = one emoji step
-  if (score >= 80) return 0; // 😎 Thriving
-  if (score >= 60) return 1; // 😊 Good
-  if (score >= 40) return 2; // 😐 Watch Out
-  if (score >= 20) return 3; // 😟 Struggling
-  return 4;                  // 🚨 Danger
+  if (score >= 80) return 0; // Thriving
+  if (score >= 60) return 1; // Good
+  if (score >= 40) return 2; // Watch Out
+  if (score >= 20) return 3; // Struggling
+  return 4;                  // Danger
 }
 
 
@@ -266,6 +266,12 @@ function calcXP(habits, leads, todos, todayStr) {
 
 function xpToLevel(xp) {
   return { level: Math.floor(xp/500)+1, progress: (xp%500)/500, xpInLevel: xp%500 };
+}
+
+// Min monthly profit required at each level: J$5,000 × 2^(level-1)
+// Level 1 = J$5k, Level 2 = J$10k, Level 3 = J$20k, Level 4 = J$40k ...
+function minProfitForLevel(level) {
+  return 5000 * Math.pow(2, level - 1);
 }
 
 // ─── USEANIMATION HOOK ────────────────────────────────────────────────────────
@@ -1107,7 +1113,7 @@ export default function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
         {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXpBonus(b=>b+100)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
-        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)}/>}
+        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)} onAdd={add} todayStr={todayStr}/>}
       </main>
 
       <nav className="bottom-nav">
@@ -2304,7 +2310,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
   const mrr = leads.filter(l=>l.status==='Paid'&&l.retainerAmount).reduce((s,l)=>s+(Number(l.retainerAmount)||0),0);
   const emotionIdx = calcEmotionLevel(finances,leads,xp,level);
   const emotion = EMOTION_LEVELS[emotionIdx];
-  const minTarget = level * 5000;
+  const minTarget = minProfitForLevel(level); // doubles each level: L1=J$5k, L2=J$10k...
 
   const monthly = useMemo(()=>{
     const map={};
@@ -2371,19 +2377,19 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
                   </div>
                 </div>
 
-                {/* Signal bars */}
+                {/* WiFi-style signal bars — single emotion color */}
                 <div style={{display:'flex',alignItems:'flex-end',gap:3,flexShrink:0,height:36}}>
-                  {EMOTION_LEVELS.map((e,i) => {
+                  {EMOTION_LEVELS.map((_,i) => {
                     const active = i <= (4 - emotionIdx);
                     const h = 8 + i * 7;
                     return (
                       <div key={i} style={{
                         width:5, height:h,
                         borderRadius:2,
-                        background:active ? e.color : 'rgba(255,255,255,0.07)',
-                        boxShadow:active ? `0 0 6px ${e.color}80` : 'none',
-                        transition:'all 0.4s ease',
-                        alignSelf:'flex-end',
+                        background: active ? emotion.color : 'rgba(255,255,255,0.07)',
+                        boxShadow:  active ? `0 0 8px ${emotion.color}90` : 'none',
+                        transition: 'all 0.5s ease',
+                        alignSelf:  'flex-end',
                       }}/>
                     );
                   })}
@@ -2760,94 +2766,436 @@ function GoalModal({data,onSave,onClose}) {
 }
 
 // ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
-function ClientManagement({leads,finances,onUpdateLead}) {
-  const paidClients=leads.filter(l=>l.status==='Paid');
-  const [sel,setSel]=useState(paidClients[0]?.id||null);
-  const [editProduct,setEditProduct]=useState(false);
-  const client=paidClients.find(c=>c.id===sel);
-  const clientFinances=finances.filter(f=>f.pipelineLeadId===sel);
-  const totalReceived=clientFinances.reduce((s,f)=>s+(Number(f.amount)||0),0);
-  if(paidClients.length===0) return(
+// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
+function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
+  const paidClients = leads.filter(l => l.status === 'Paid');
+  const [sel, setSel]           = useState(paidClients[0]?.id || null);
+  const [clientTab, setClientTab] = useState('overview'); // overview | readme | retainer
+  const [editProduct, setEditProduct] = useState(false);
+  const [editReadme, setEditReadme]   = useState(false);
+
+  const client        = paidClients.find(c => c.id === sel);
+  const clientFin     = finances.filter(f => f.pipelineLeadId === sel);
+  const totalReceived = clientFin.reduce((s, f) => s + (Number(f.amount) || 0), 0);
+
+  // ── RETAINER TOGGLE ───────────────────────────────────────────────────────
+  // Tracks which months retainer was collected: { "2026-06": true, ... }
+  const retainerLog   = client?.retainerLog || {};
+  const thisMonth     = todayStr?.slice(0, 7); // "2026-06"
+  const collectedThis = !!retainerLog[thisMonth];
+
+  const toggleRetainer = async () => {
+    const newLog = { ...retainerLog, [thisMonth]: !collectedThis };
+    const updated = { ...client, retainerLog: newLog };
+    onUpdateLead(client.id, updated);
+    // If marking collected, also log it as a finance entry
+    if (!collectedThis && client.retainerAmount) {
+      onAdd('finances', {
+        type: 'income',
+        description: `${client.businessName} — Monthly Retainer ${thisMonth}`,
+        amount: Number(client.retainerAmount),
+        category: 'Monthly Retainer',
+        date: todayStr,
+        pipelineLeadId: client.id,
+        paymentStage: 'Monthly Retainer',
+      });
+    }
+  };
+
+  if (paidClients.length === 0) return (
     <div className="section">
-      <div className="hero"><div className="hero-eye">Client Management</div><div className="hero-big">No Clients Yet</div><div className="hero-sub">Paid clients appear here for full product management.</div></div>
+      <div className="hero">
+        <div className="hero-eye">Client Management</div>
+        <div className="hero-big">No Clients Yet</div>
+        <div className="hero-sub">Close a deal in Pipeline — it will appear here.</div>
+      </div>
     </div>
   );
+
   return (
     <div className="section">
       <div className="hero">
         <div className="hero-eye">Client Management</div>
-        <div className="hero-big" style={{fontSize:'26px'}}>{client?.businessName||'Select Client'}</div>
-        <div className="hero-sub">{paidClients.length} active client{paidClients.length!==1?'s':''}</div>
+        <div className="hero-big" style={{ fontSize: '24px' }}>
+          {client?.businessName || 'Select Client'}
+        </div>
+        <div className="hero-sub">{paidClients.length} active client{paidClients.length !== 1 ? 's' : ''}</div>
       </div>
-      {paidClients.length>1&&<div className="pill-row">{paidClients.map(c=><button key={c.id} className={`pill ${sel===c.id?'active':''}`} onClick={()=>setSel(c.id)}>{c.businessName}</button>)}</div>}
-      {client&&(<>
-        <div className="grid-2">
-          {[{l:'Monthly Retainer',v:`J$${Number(client.retainerAmount||0).toLocaleString()}/mo`,c:'var(--bolt)'},{l:'Total Received',v:`J$${totalReceived.toLocaleString()}`,c:'#1adb8a'},{l:'Setup Value',v:`J$${Number(client.value||0).toLocaleString()}`,c:'var(--horizon)'},{l:'Balance',v:`J$${Math.max(0,Number(client.value||0)-totalReceived).toLocaleString()} due`,c:totalReceived>=Number(client.value||0)?'#1adb8a':'#ff6040'}].map(s=>(<div key={s.l} className="stat-card"><div className="stat-label">{s.l}</div><div className="stat-value" style={{color:s.c,fontSize:'18px'}}>{s.v}</div></div>))}
+
+      {/* Client selector */}
+      {paidClients.length > 1 && (
+        <div className="pill-row">
+          {paidClients.map(c => (
+            <button key={c.id}
+              className={`pill ${sel === c.id ? 'active' : ''}`}
+              onClick={() => { setSel(c.id); setClientTab('overview'); }}>
+              {c.businessName}
+            </button>
+          ))}
         </div>
-        <div className="card">
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.875rem'}}>
-            <div className="card-label" style={{margin:0}}>Product Built</div>
-            <button className="icon-btn" onClick={()=>setEditProduct(true)}><Icons.edit size={12}/></button>
+      )}
+
+      {client && (<>
+        {/* ── RETAINER BANNER ── */}
+        {client.retainerAmount > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            background: collectedThis ? 'rgba(26,219,138,0.07)' : 'rgba(255,96,64,0.07)',
+            border: `1px solid ${collectedThis ? 'rgba(26,219,138,0.25)' : 'rgba(255,96,64,0.25)'}`,
+            borderLeft: `3px solid ${collectedThis ? '#1adb8a' : '#ff6040'}`,
+            borderRadius: 10, padding: '0.875rem 1rem',
+          }}>
+            <div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: '8px', letterSpacing: '0.2em',
+                textTransform: 'uppercase', color: collectedThis ? '#1adb8a' : '#ff6040', marginBottom: 3 }}>
+                Retainer · {thisMonth}
+              </div>
+              <div style={{ fontFamily: 'var(--fe)', fontSize: '18px', fontWeight: 700,
+                color: collectedThis ? '#1adb8a' : 'var(--mist-0)' }}>
+                {collectedThis ? '✓ Collected' : `J$${Number(client.retainerAmount).toLocaleString()} due`}
+              </div>
+              <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 2 }}>
+                {collectedThis ? 'Logged to finances' : 'Mark collected to log income'}
+              </div>
+            </div>
+            <button
+              onClick={toggleRetainer}
+              style={{
+                padding: '0.6rem 1rem', borderRadius: 8, cursor: 'pointer', fontWeight: 700,
+                fontSize: '12px', fontFamily: 'var(--fm)',
+                background: collectedThis ? 'rgba(255,96,64,0.1)' : 'rgba(26,219,138,0.12)',
+                color: collectedThis ? '#ff6040' : '#1adb8a',
+                border: `1px solid ${collectedThis ? 'rgba(255,96,64,0.3)' : 'rgba(26,219,138,0.3)'}`,
+              }}>
+              {collectedThis ? 'Unmark' : '✓ Mark Collected'}
+            </button>
           </div>
-          {client.product?(<div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-            <div><div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:4}}>Product Type</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--mist-0)'}}>{client.product.type||'—'}</div></div>
-            {client.product.description&&<div style={{fontSize:'13px',color:'var(--mist-1)',lineHeight:1.6,fontWeight:300}}>{client.product.description}</div>}
-          </div>):<div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No product details yet. Tap edit to add.</div>}
+        )}
+
+        {/* ── STATS ── */}
+        <div className="grid-2">
+          {[
+            { l: 'Monthly Retainer', v: `J$${Number(client.retainerAmount||0).toLocaleString()}/mo`, c: 'var(--bolt)' },
+            { l: 'Total Received',   v: `J$${totalReceived.toLocaleString()}`,                      c: '#1adb8a' },
+            { l: 'Setup Value',      v: `J$${Number(client.value||0).toLocaleString()}`,            c: 'var(--horizon)' },
+            { l: 'Balance Due',      v: `J$${Math.max(0, Number(client.value||0) - totalReceived).toLocaleString()}`, c: totalReceived >= Number(client.value||0) ? '#1adb8a' : '#ff6040' },
+          ].map(s => (
+            <div key={s.l} className="stat-card">
+              <div className="stat-label">{s.l}</div>
+              <div className="stat-value" style={{ color: s.c, fontSize: '18px' }}>{s.v}</div>
+            </div>
+          ))}
         </div>
-        {client.product?.techStack&&(<div className="card">
-          <div className="card-label">Tech Stack & Links</div>
-          {[{l:'Framework',v:client.product.techStack.framework},{l:'Hosting',v:client.product.techStack.hosting},{l:'Database',v:client.product.techStack.database},{l:'APIs',v:client.product.techStack.apis},{l:'Live URL',v:client.product.techStack.liveUrl,link:true},{l:'GitHub Repo',v:client.product.techStack.repoUrl,link:true},{l:'Admin Panel',v:client.product.techStack.adminUrl,link:true}].filter(r=>r.v).map(row=>(<div key={row.l} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}>
-            <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em',textTransform:'uppercase',flexShrink:0,marginRight:'1rem'}}>{row.l}</span>
-            {row.link?<a href={row.v} target="_blank" rel="noopener noreferrer" style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)',textDecoration:'none',wordBreak:'break-all',textAlign:'right'}}>{row.v}</a>:<span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',textAlign:'right'}}>{row.v}</span>}
-          </div>))}
-        </div>)}
-        {client.product?.platforms?.length>0&&(<div className="card"><div className="card-label">Online Platforms</div><div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>{client.product.platforms.map((p,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'rgba(0,212,255,0.04)',border:'1px solid rgba(0,212,255,0.08)',borderRadius:6,padding:'0.625rem 0.875rem'}}><div><div style={{fontSize:'13px',fontWeight:500,color:'var(--mist-0)'}}>{p.name}</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:2}}>{p.role}</div></div>{p.url&&<a href={p.url} target="_blank" rel="noopener noreferrer" style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--bolt)',textDecoration:'none'}}>Open ↗</a>}</div>))}</div></div>)}
-        {client.product?.monthlyCosts?.length>0&&(<div className="card"><div className="card-label">Monthly Running Costs</div>{client.product.monthlyCosts.map((c,i)=>(<div key={i} style={{display:'flex',justifyContent:'space-between',padding:'0.5rem 0',borderBottom:'1px solid rgba(255,255,255,0.04)'}}><span style={{fontSize:'13px',color:'var(--mist-1)'}}>{c.name}</span><span style={{fontFamily:'var(--fm)',fontSize:'12px',color:'#ff6040',fontWeight:500}}>{c.currency==='USD'?'$':'J$'}{Number(c.amount).toLocaleString()}/mo</span></div>))}<div style={{display:'flex',justifyContent:'space-between',marginTop:'0.625rem',paddingTop:'0.5rem',borderTop:'1px solid rgba(0,212,255,0.1)'}}><span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase'}}>Total Monthly</span><span style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'#ff6040'}}>J${client.product.monthlyCosts.reduce((s,c)=>s+(Number(c.amount)||0),0).toLocaleString()}/mo</span></div></div>)}
-        {client.product?.credentials?.length>0&&(<div className="card"><div className="card-label">Credentials & Access</div><div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>{client.product.credentials.map((c,i)=>(<div key={i} style={{background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,212,255,0.1)',borderLeft:'2px solid var(--bolt-3)',borderRadius:6,padding:'0.625rem 0.875rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:3}}>{c.service}</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)',lineHeight:1.6}}>{c.details}</div></div>))}</div></div>)}
-        <div className="card"><div className="card-label">Payment History</div>{clientFinances.length===0?<div style={{fontSize:'13px',color:'var(--mist-3)',fontStyle:'italic'}}>No payments logged.</div>:clientFinances.map(f=>(<div key={f.id} style={{display:'flex',justifyContent:'space-between',padding:'0.5rem 0',borderBottom:'1px solid rgba(0,212,255,0.05)'}}><div><div style={{fontSize:'13px',color:'var(--mist-1)'}}>{f.paymentStage||f.description}</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',marginTop:1}}>{f.date}</div></div><div style={{fontFamily:'var(--fm)',fontSize:'13px',fontWeight:600,color:'#1adb8a'}}>+J${Number(f.amount).toLocaleString()}</div></div>))}</div>
+
+        {/* ── TABS ── */}
+        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,24,36,0.6)',
+          border: '1px solid rgba(0,212,255,0.08)', borderRadius: 8, padding: 3 }}>
+          {[
+            { id: 'overview', label: '📋 Overview' },
+            { id: 'readme',   label: '📄 README'   },
+            { id: 'retainer', label: '💳 Retainers' },
+          ].map(t => (
+            <button key={t.id} onClick={() => setClientTab(t.id)} style={{
+              flex: 1, padding: '0.4rem 0.5rem', border: 'none', borderRadius: 5, cursor: 'pointer',
+              fontFamily: 'var(--fm)', fontSize: '10px', letterSpacing: '0.05em',
+              background: clientTab === t.id ? 'rgba(0,136,200,0.15)' : 'none',
+              color: clientTab === t.id ? 'var(--bolt-lt)' : 'var(--mist-3)',
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {/* ── OVERVIEW TAB ── */}
+        {clientTab === 'overview' && (<>
+          {/* Tech Stack */}
+          {client.product?.techStack && (
+            <div className="card">
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+                <div className="card-label" style={{ margin: 0 }}>Tech Stack & Links</div>
+                <button className="icon-btn" onClick={() => setEditProduct(true)}><Icons.edit size={12}/></button>
+              </div>
+              {[
+                { l: 'Product Type',   v: client.product?.type },
+                { l: 'Framework',      v: client.product.techStack.framework },
+                { l: 'Hosting',        v: client.product.techStack.hosting },
+                { l: 'Render Service', v: client.product.techStack.renderService },
+                { l: 'Database',       v: client.product.techStack.database },
+                { l: 'Domain',         v: client.product.techStack.domain },
+                { l: 'Domain Cost',    v: client.product.techStack.domainCost },
+                { l: 'APIs Used',      v: client.product.techStack.apis },
+                { l: 'Live URL',       v: client.product.techStack.liveUrl, link: true },
+                { l: 'GitHub Repo',    v: client.product.techStack.repoUrl, link: true },
+                { l: 'Admin Panel',    v: client.product.techStack.adminUrl, link: true },
+              ].filter(r => r.v).map(row => (
+                <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
+                    letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0, marginRight: '1rem' }}>
+                    {row.l}
+                  </span>
+                  {row.link
+                    ? <a href={row.v} target="_blank" rel="noopener noreferrer"
+                        style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--bolt)',
+                          textDecoration: 'none', wordBreak: 'break-all', textAlign: 'right' }}>{row.v}</a>
+                    : <span style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
+                        textAlign: 'right' }}>{row.v}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          {!client.product?.techStack && (
+            <div className="card" style={{ textAlign: 'center', padding: '1.5rem' }}>
+              <div style={{ color: 'var(--mist-3)', marginBottom: '0.75rem', fontSize: '13px' }}>
+                No product details yet
+              </div>
+              <button className="btn-primary" onClick={() => setEditProduct(true)}>
+                <Icons.plus size={14}/> Add Product Details
+              </button>
+            </div>
+          )}
+
+          {/* Platforms */}
+          {client.product?.platforms?.length > 0 && (
+            <div className="card">
+              <div className="card-label">Online Platforms</div>
+              {client.product.platforms.map((p, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', background: 'rgba(0,212,255,0.04)',
+                  border: '1px solid rgba(0,212,255,0.08)', borderRadius: 6,
+                  padding: '0.625rem 0.875rem', marginBottom: '0.375rem' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{p.name}</div>
+                    <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 2 }}>{p.role}</div>
+                  </div>
+                  {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer"
+                    style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--bolt)', textDecoration: 'none' }}>
+                    Open ↗
+                  </a>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Monthly Costs */}
+          {client.product?.monthlyCosts?.length > 0 && (
+            <div className="card">
+              <div className="card-label">Monthly Running Costs</div>
+              {client.product.monthlyCosts.map((c, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
+                  padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <span style={{ fontSize: '13px', color: 'var(--mist-1)' }}>{c.name}</span>
+                  <span style={{ fontFamily: 'var(--fm)', fontSize: '12px', color: '#ff6040', fontWeight: 500 }}>
+                    {c.currency === 'USD' ? '$' : 'J$'}{Number(c.amount).toLocaleString()}/mo
+                  </span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.625rem',
+                paddingTop: '0.5rem', borderTop: '1px solid rgba(0,212,255,0.1)' }}>
+                <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
+                  letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Monthly</span>
+                <span style={{ fontFamily: 'var(--fe)', fontSize: '18px', fontWeight: 600, color: '#ff6040' }}>
+                  J${client.product.monthlyCosts.reduce((s, c) => s + (Number(c.amount) || 0), 0).toLocaleString()}/mo
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Credentials */}
+          {client.product?.credentials?.length > 0 && (
+            <div className="card">
+              <div className="card-label">Credentials & Access</div>
+              {client.product.credentials.map((c, i) => (
+                <div key={i} style={{ background: 'rgba(0,24,36,0.7)',
+                  border: '1px solid rgba(0,212,255,0.1)', borderLeft: '2px solid var(--bolt-3)',
+                  borderRadius: 6, padding: '0.625rem 0.875rem', marginBottom: '0.375rem' }}>
+                  <div style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--bolt)',
+                    letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 3 }}>{c.service}</div>
+                  <div style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
+                    lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{c.details}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Payment History */}
+          <div className="card">
+            <div className="card-label">Payment History</div>
+            {clientFin.length === 0
+              ? <div style={{ fontSize: '13px', color: 'var(--mist-3)', fontStyle: 'italic' }}>No payments logged.</div>
+              : clientFin.map(f => (
+                <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between',
+                  padding: '0.5rem 0', borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
+                  <div>
+                    <div style={{ fontSize: '13px', color: 'var(--mist-1)' }}>{f.paymentStage || f.description}</div>
+                    <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 1 }}>{f.date}</div>
+                  </div>
+                  <div style={{ fontFamily: 'var(--fm)', fontSize: '13px', fontWeight: 600, color: '#1adb8a' }}>
+                    +J${Number(f.amount).toLocaleString()}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </>)}
+
+        {/* ── README TAB ── */}
+        {clientTab === 'readme' && (
+          <ReadmeTab client={client} onUpdate={d => onUpdateLead(client.id, { ...client, ...d })} />
+        )}
+
+        {/* ── RETAINER HISTORY TAB ── */}
+        {clientTab === 'retainer' && (
+          <div className="card">
+            <div className="card-label">Retainer Collection Log</div>
+            {!client.retainerAmount
+              ? <div style={{ fontSize: '13px', color: 'var(--mist-3)' }}>No retainer set for this client.</div>
+              : (<>
+                  <div style={{ fontSize: '12px', color: 'var(--mist-2)', marginBottom: '0.75rem' }}>
+                    J${Number(client.retainerAmount).toLocaleString()}/mo retainer
+                  </div>
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const d = new Date();
+                    d.setMonth(d.getMonth() - i);
+                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+                    const collected = retainerLog[key];
+                    return (
+                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between',
+                        alignItems: 'center', padding: '0.5rem 0',
+                        borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: '12px', color: 'var(--mist-2)' }}>
+                          {key}
+                        </span>
+                        <span style={{ fontFamily: 'var(--fm)', fontSize: '11px', fontWeight: 600,
+                          color: collected ? '#1adb8a' : 'var(--mist-4)' }}>
+                          {collected ? '✓ Collected' : '— Not logged'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </>)}
+          </div>
+        )}
       </>)}
-      {editProduct&&client&&<ProductModal client={client} onSave={d=>{onUpdateLead(client.id,{...client,product:d});setEditProduct(false);}} onClose={()=>setEditProduct(false)}/>}
+
+      {editProduct && client && (
+        <ProductModal client={client}
+          onSave={d => { onUpdateLead(client.id, { ...client, product: d }); setEditProduct(false); }}
+          onClose={() => setEditProduct(false)} />
+      )}
     </div>
   );
 }
 
-function ProductModal({client,onSave,onClose}) {
-  const p0=client.product||{};
-  const [type,setType]=useState(p0.type||'WhatsApp AI Chatbot');
-  const [desc,setDesc]=useState(p0.description||'');
-  const [stack,setStack]=useState(p0.techStack||{framework:'',hosting:'Render',database:'Firebase',apis:'',liveUrl:'',repoUrl:'',adminUrl:''});
-  const [platforms,setPlatforms]=useState(p0.platforms||[]);
-  const [costs,setCosts]=useState(p0.monthlyCosts||[]);
-  const [creds,setCreds]=useState(p0.credentials||[]);
-  const ss=(k,v)=>setStack(s=>({...s,[k]:v}));
-  const TYPES=['WhatsApp AI Chatbot','Business Website','Online Ordering System','Admin Dashboard','Delivery Tracker','E-commerce Store','Other'];
+// ─── README TAB ───────────────────────────────────────────────────────────────
+function ReadmeTab({ client, onUpdate }) {
+  const [editMode, setEditMode] = useState(false);
+  const [customBlock, setCustomBlock] = useState(client.managementBlock || '');
+  const readme = client.product;
+
+  const TEMPLATE = `# ${client.businessName} — Management README
+
+## Product
+${readme?.type || 'Service type not set'}
+
+## Description
+${readme?.description || 'No description.'}
+
+## Tech Stack
+- Framework: ${readme?.techStack?.framework || '—'}
+- Hosting: ${readme?.techStack?.hosting || '—'} ${readme?.techStack?.renderService ? `(Service: ${readme.techStack.renderService})` : ''}
+- Database: ${readme?.techStack?.database || '—'}
+- APIs: ${readme?.techStack?.apis || '—'}
+- Domain: ${readme?.techStack?.domain || '—'} ${readme?.techStack?.domainCost ? `(${readme.techStack.domainCost})` : ''}
+
+## Links
+- Live: ${readme?.techStack?.liveUrl || '—'}
+- GitHub: ${readme?.techStack?.repoUrl || '—'}
+- Admin: ${readme?.techStack?.adminUrl || '—'}
+
+## Platforms
+    "${(readme?.platforms || []).map(p => '- ' + p.name + ': ' + p.role + (p.url ? ' (' + p.url + ')' : '')).join('\n') || '— None set'}\n"
+
+## Monthly Costs
+    "${(readme?.monthlyCosts || []).map(c => '- ' + c.name + ': ' + (c.currency === 'USD' ? '$' : 'J$') + c.amount + '/mo').join('\n') || '— None set'}\n"
+
+## Access & Credentials
+    "${(readme?.credentials || []).map(c => '### ' + c.service + '\\n' + c.details).join('\\n\\n') || '— None set'}\n"
+
+## Custom Management Block
+See below — generated specifically for this client's service.
+`;
+
   return (
-    <Modal title={`Product — ${client.businessName}`} onClose={onClose}>
-      <Field label="Product Type"><select className="input" value={type} onChange={e=>setType(e.target.value)}>{TYPES.map(t=><option key={t}>{t}</option>)}</select></Field>
-      <Field label="Description"><textarea className="input" style={{minHeight:'60px',resize:'vertical'}} value={desc} onChange={e=>setDesc(e.target.value)}/></Field>
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Tech Stack</div>
-      <div className="grid-2">
-        <Field label="Framework"><input className="input" value={stack.framework} onChange={e=>ss('framework',e.target.value)} placeholder="Node.js, React..."/></Field>
-        <Field label="Hosting"><input className="input" value={stack.hosting} onChange={e=>ss('hosting',e.target.value)} placeholder="Render, Vercel..."/></Field>
-        <Field label="Database"><input className="input" value={stack.database} onChange={e=>ss('database',e.target.value)} placeholder="Firebase..."/></Field>
-        <Field label="APIs"><input className="input" value={stack.apis} onChange={e=>ss('apis',e.target.value)} placeholder="Claude AI, Twilio..."/></Field>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+      {/* Auto-generated README */}
+      <div className="card" style={{ background: 'rgba(0,12,20,0.9)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
+          <div className="card-label" style={{ margin: 0 }}>📄 Auto-Generated README</div>
+          <button className="btn-ghost" style={{ fontSize: '10px', padding: '0.2rem 0.5rem' }}
+            onClick={() => { navigator.clipboard?.writeText(TEMPLATE); }}>
+            Copy
+          </button>
+        </div>
+        <pre style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-1)',
+          lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+          background: 'rgba(0,0,0,0.3)', padding: '0.875rem', borderRadius: 6,
+          border: '1px solid rgba(0,212,255,0.08)', maxHeight: 360, overflowY: 'auto' }}>
+          {TEMPLATE}
+        </pre>
       </div>
-      <Field label="Live URL"><input className="input" value={stack.liveUrl} onChange={e=>ss('liveUrl',e.target.value)} placeholder="https://..."/></Field>
-      <Field label="GitHub Repo"><input className="input" value={stack.repoUrl} onChange={e=>ss('repoUrl',e.target.value)} placeholder="https://github.com/..."/></Field>
-      <Field label="Admin URL"><input className="input" value={stack.adminUrl} onChange={e=>ss('adminUrl',e.target.value)} placeholder="https://..."/></Field>
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Platforms</div>
-      {platforms.map((p,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}><div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}><input className="input" style={{fontSize:'12px'}} value={p.name} onChange={e=>{const n=[...platforms];n[i]={...n[i],name:e.target.value};setPlatforms(n);}} placeholder="Platform name"/><input className="input" style={{fontSize:'12px'}} value={p.role} onChange={e=>{const n=[...platforms];n[i]={...n[i],role:e.target.value};setPlatforms(n);}} placeholder="Role"/><input className="input" style={{fontSize:'12px'}} value={p.url||''} onChange={e=>{const n=[...platforms];n[i]={...n[i],url:e.target.value};setPlatforms(n);}} placeholder="URL (optional)"/></div><button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>setPlatforms(p=>p.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setPlatforms(p=>[...p,{name:'',role:'',url:''}])}><Icons.plus size={13}/> Add Platform</button>
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Monthly Costs</div>
-      {costs.map((c,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'center'}}><input className="input" style={{flex:2,fontSize:'12px'}} value={c.name} onChange={e=>{const n=[...costs];n[i]={...n[i],name:e.target.value};setCosts(n);}} placeholder="Service"/><input className="input" style={{flex:1,fontSize:'12px'}} type="number" value={c.amount} onChange={e=>{const n=[...costs];n[i]={...n[i],amount:e.target.value};setCosts(n);}} placeholder="Amount"/><select className="input" style={{flex:1,fontSize:'12px'}} value={c.currency||'USD'} onChange={e=>{const n=[...costs];n[i]={...n[i],currency:e.target.value};setCosts(n);}}><option>USD</option><option>JMD</option></select><button className="icon-btn danger-btn" onClick={()=>setCosts(c=>c.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCosts(c=>[...c,{name:'',amount:'',currency:'USD'}])}><Icons.plus size={13}/> Add Cost</button>
-      <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)',letterSpacing:'0.2em',textTransform:'uppercase'}}>Credentials</div>
-      {creds.map((c,i)=>(<div key={i} style={{display:'flex',gap:'0.375rem',alignItems:'flex-start'}}><div style={{flex:1,display:'flex',flexDirection:'column',gap:'0.375rem'}}><input className="input" style={{fontSize:'12px'}} value={c.service} onChange={e=>{const n=[...creds];n[i]={...n[i],service:e.target.value};setCreds(n);}} placeholder="Service name"/><textarea className="input" style={{fontSize:'12px',minHeight:'48px',resize:'vertical'}} value={c.details} onChange={e=>{const n=[...creds];n[i]={...n[i],details:e.target.value};setCreds(n);}} placeholder="Login details, API keys..."/></div><button className="icon-btn danger-btn" style={{flexShrink:0,marginTop:4}} onClick={()=>setCreds(c=>c.filter((_,j)=>j!==i))}><Icons.trash size={11}/></button></div>))}
-      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCreds(c=>[...c,{service:'',details:''}])}><Icons.plus size={13}/> Add Credential</button>
-      <ModalFoot onClose={onClose} onSave={()=>onSave({type,description:desc,techStack:stack,platforms,monthlyCosts:costs,credentials:creds})}/>
-    </Modal>
+
+      {/* Custom Management Block */}
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
+          <div>
+            <div className="card-label" style={{ margin: 0 }}>⚡ Custom Management Block</div>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)', marginTop: 3 }}>
+              Write code, scripts, or instructions specific to this client's service
+            </div>
+          </div>
+          <button className="icon-btn" onClick={() => setEditMode(e => !e)}>
+            {editMode ? <Icons.check size={13}/> : <Icons.edit size={12}/>}
+          </button>
+        </div>
+
+        {editMode ? (
+          <>
+            <textarea
+              className="input"
+              style={{ minHeight: 240, resize: 'vertical', fontFamily: 'var(--fm)',
+                fontSize: '11px', lineHeight: 1.7 }}
+              value={customBlock}
+              onChange={e => setCustomBlock(e.target.value)}
+              placeholder={`Write custom management code/instructions for ${client.businessName}...
+
+Examples:
+- How to restart the WhatsApp bot
+- How to add menu items to the chatbot
+- Deployment commands: git push render main
+- How to update Firebase rules
+- Client-specific quirks or custom scripts`}
+            />
+            <button className="btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center', width: '100%' }}
+              onClick={() => { onUpdate({ managementBlock: customBlock }); setEditMode(false); }}>
+              Save Management Block
+            </button>
+          </>
+        ) : (
+          customBlock
+            ? <pre style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
+                lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                background: 'rgba(0,0,0,0.3)', padding: '0.875rem', borderRadius: 6,
+                border: '1px solid rgba(0,212,255,0.08)', maxHeight: 320, overflowY: 'auto' }}>
+                {customBlock}
+              </pre>
+            : <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--mist-3)',
+                fontSize: '13px', fontStyle: 'italic' }}>
+                No custom block yet. Tap edit to write management code for this client.
+              </div>
+        )}
+      </div>
+    </div>
   );
 }
+
 
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
 function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
