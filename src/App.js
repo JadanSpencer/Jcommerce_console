@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, AreaChart, Area, Legend
+  CartesianGrid, AreaChart, Area, Legend, Cell
 } from 'recharts';
 
 // ─── CUSTOM SVG ICONS (no lucide — proper hand-crafted icons) ─────────────────
@@ -247,17 +247,25 @@ function getLast20Weeks() {
 
 function calcXP(habits, leads, todos, todayStr) {
   let xp = 0;
-  const yesterday = localDateStr(new Date(new Date(todayStr) - 86400000));
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
-  // Today's habits and todos have until 11:59pm — no penalty until the next day.
   habits.forEach(h => {
-    // Add XP for every completed habit on any past day
+    // +10 XP for every day the habit was completed (any day)
     xp += Object.values(h.completions||{}).filter(Boolean).length * 10;
-    // Penalty: only if habit existed yesterday AND was not completed yesterday
-    const created = h.createdAt?.toDate ? h.createdAt.toDate().toISOString().slice(0,10) : null;
-    if (created && yesterday < created) return; // habit didn't exist yet yesterday
-    if (!h.completions?.[yesterday]) xp -= 10;  // missed yesterday — deduct
-    // Note: today (todayStr) is NEVER checked here — you have until midnight
+    // Get the day the habit was created (so we don't penalise before it existed)
+    const createdRaw = h.createdAt?.toDate ? h.createdAt.toDate() : null;
+    const createdStr = createdRaw ? localDateStr(createdRaw) : todayStr;
+    // Walk every past day from creation up to (not including) today
+    // and deduct 10 XP for each day it was missed
+    // Cap at 90 days to avoid huge lookback on very old habits
+    const start = new Date(createdStr);
+    const today = new Date(todayStr);
+    const msPerDay = 86400000;
+    const daysBack = Math.min(90, Math.floor((today - start) / msPerDay));
+    for (let i = 1; i <= daysBack; i++) {
+      const d = localDateStr(new Date(today - i * msPerDay));
+      if (d < createdStr) break; // habit didn't exist yet
+      if (!h.completions?.[d]) xp -= 10; // missed that day — deduct
+    }
   });
   leads.filter(l => l.status==='Paid').forEach(() => { xp += 200; });
   xp += calcTodoXP(todos, todayStr);
@@ -357,7 +365,204 @@ function useNotifications() {
   return { permission, requestPermission, swReady, subbed };
 }
 
+// ─── SYSTEM HEALTH MONITOR ────────────────────────────────────────────────────
+// Pings JAXON and detects Anthropic credit errors from logs
+function useSystemHealth() {
+  const [health, setHealth] = useState({
+    jaxon: 'unknown',      // 'ok' | 'error' | 'unknown'
+    anthropic: 'unknown',  // 'ok' | 'out_of_credits' | 'error' | 'unknown'
+    lastChecked: null,
+    jaxonMsg: '',
+    anthropicMsg: '',
+  });
 
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      // 1. Ping JAXON server
+      let jaxon = 'unknown', jaxonMsg = '';
+      try {
+        const r = await fetch('https://jaxon-rctv.onrender.com/', { signal: AbortSignal.timeout(8000) });
+        if (r.ok) { jaxon = 'ok'; }
+        else { jaxon = 'error'; jaxonMsg = `HTTP ${r.status}`; }
+      } catch (e) {
+        jaxon = 'error';
+        jaxonMsg = e.name === 'TimeoutError' ? 'Timed out (Render may be sleeping)' : e.message;
+      }
+
+      // 2. Check Anthropic via a minimal API call
+      let anthropic = 'unknown', anthropicMsg = '';
+      try {
+        const r = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model:'claude-haiku-4-5', max_tokens:1, messages:[{role:'user',content:'ping'}] }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const d = await r.json();
+        if (r.ok) { anthropic = 'ok'; }
+        else if (d?.error?.type === 'authentication_error') { anthropic = 'error'; anthropicMsg = 'Invalid API key'; }
+        else if (d?.error?.message?.toLowerCase().includes('credit') ||
+                 d?.error?.message?.toLowerCase().includes('billing') ||
+                 r.status === 529) {
+          anthropic = 'out_of_credits';
+          anthropicMsg = d?.error?.message || 'Out of credits / billing issue';
+        } else {
+          anthropic = 'error'; anthropicMsg = d?.error?.message || `HTTP ${r.status}`;
+        }
+      } catch (e) {
+        anthropic = 'error';
+        anthropicMsg = e.name === 'TimeoutError' ? 'API timed out' : e.message;
+      }
+
+      if (!cancelled) {
+        setHealth({ jaxon, jaxonMsg, anthropic, anthropicMsg, lastChecked: new Date() });
+      }
+    };
+
+    check();
+    const interval = setInterval(check, 5 * 60 * 1000); // every 5 mins
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  return health;
+}
+
+// System alert banner (shown in header area)
+function SystemAlertBanner({ health }) {
+  const [dismissed, setDismissed] = useState(new Set());
+  const alerts = [];
+
+  if (health.anthropic === 'out_of_credits' && !dismissed.has('anthropic_credits')) {
+    alerts.push({
+      id: 'anthropic_credits',
+      color: '#ff6040',
+      icon: '⚠',
+      title: 'Anthropic out of credits',
+      body: 'JAXON and the chat will not work until you top up at console.anthropic.com → Billing',
+    });
+  }
+  if (health.anthropic === 'error' && !dismissed.has('anthropic_error')) {
+    alerts.push({
+      id: 'anthropic_error',
+      color: '#f0c060',
+      icon: '⚡',
+      title: 'Anthropic API error',
+      body: health.anthropicMsg || 'Could not reach Anthropic. Check API key.',
+    });
+  }
+  if (health.jaxon === 'error' && !dismissed.has('jaxon_error')) {
+    alerts.push({
+      id: 'jaxon_error',
+      color: '#f0c060',
+      icon: '🤖',
+      title: 'JAXON is offline',
+      body: health.jaxonMsg || 'Cannot reach the JAXON server. It may still be waking up.',
+    });
+  }
+
+  if (!alerts.length) return null;
+
+  return (
+    <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:9990 }}>
+      {alerts.map(a => (
+        <div key={a.id} style={{
+          display:'flex', alignItems:'flex-start', gap:'0.75rem',
+          background:'rgba(10,5,5,0.97)', borderBottom:`2px solid ${a.color}`,
+          padding:'0.625rem 1rem', boxShadow:`0 4px 20px ${a.color}20`,
+        }}>
+          <span style={{ fontSize:'14px', flexShrink:0, marginTop:1 }}>{a.icon}</span>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontFamily:'var(--fm)', fontSize:'11px', fontWeight:700,
+              color:a.color, marginBottom:2 }}>{a.title}</div>
+            <div style={{ fontSize:'11px', color:'var(--mist-2)', lineHeight:1.5 }}>{a.body}</div>
+          </div>
+          <button onClick={() => setDismissed(s => new Set([...s, a.id]))} style={{
+            background:'none', border:'none', cursor:'pointer',
+            color:'var(--mist-3)', fontSize:'16px', flexShrink:0, lineHeight:1,
+          }}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
+
+// ─── LEVEL UP SPLASH ─────────────────────────────────────────────────────────
+function LevelUpSplash({ level, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+
+  return (
+    <>
+    <style>{`
+      @keyframes ringBurst {
+        0%   { transform: scale(0.3); opacity: 0.8; }
+        100% { transform: scale(2.5); opacity: 0; }
+      }
+      @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+    `}</style>
+    <div onClick={onDismiss} style={{
+      position:'fixed',inset:0,zIndex:9998,
+      background:'rgba(0,5,15,0.92)',
+      display:'flex',flexDirection:'column',
+      alignItems:'center',justifyContent:'center',
+      backdropFilter:'blur(12px)',
+      animation:'fadeIn 0.4s ease',
+      cursor:'pointer',
+    }}>
+      {/* Ring burst */}
+      <div style={{
+        position:'absolute',width:260,height:260,
+        border:'2px solid rgba(0,212,255,0.3)',
+        borderRadius:'50%',
+        animation:'ringBurst 1.2s ease-out forwards',
+      }}/>
+      <div style={{
+        position:'absolute',width:200,height:200,
+        border:'1px solid rgba(240,192,96,0.25)',
+        borderRadius:'50%',
+        animation:'ringBurst 1.5s 0.2s ease-out forwards',
+      }}/>
+      <div style={{
+        width:96,height:96,borderRadius:'50%',
+        background:'linear-gradient(135deg,rgba(0,95,138,0.6),rgba(0,212,255,0.15))',
+        border:'2px solid var(--bolt)',
+        display:'flex',alignItems:'center',justifyContent:'center',
+        boxShadow:'0 0 40px rgba(0,212,255,0.5),0 0 80px rgba(0,212,255,0.2)',
+        marginBottom:'1.5rem',
+        fontSize:'36px',fontWeight:900,fontFamily:'var(--fe)',
+        color:'var(--bolt)',
+        animation:'float 2s ease-in-out infinite',
+      }}>
+        {level}
+      </div>
+      <div style={{
+        fontFamily:'var(--fm)',fontSize:'10px',color:'var(--bolt)',
+        letterSpacing:'0.4em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7,
+      }}>LEVEL UP</div>
+      <div style={{
+        fontFamily:'var(--fe)',fontSize:'36px',fontWeight:700,
+        color:'var(--mist-0)',letterSpacing:'-0.02em',lineHeight:1,
+        textShadow:'0 0 30px rgba(0,212,255,0.4)',marginBottom:'0.5rem',
+      }}>Level {level}</div>
+      <div style={{
+        fontFamily:'var(--fm)',fontSize:'12px',color:'var(--mist-2)',
+        marginBottom:'2rem',
+      }}>
+        Min profit now J${(5000*Math.pow(2,level-1)).toLocaleString()}/mo
+      </div>
+      <div style={{
+        fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
+        letterSpacing:'0.1em',
+      }}>Tap to continue</div>
+    </div>
+    </>
+  );
+}
 
 // ─── VELOCITY TRACKER (SURPRISE) ─────────────────────────────────────────────
 // Binary search to find records within a date window — O(log n) vs O(n) scan
@@ -815,6 +1020,7 @@ export default function App() {
   const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
+  const systemHealth = useSystemHealth();
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
@@ -1010,6 +1216,12 @@ export default function App() {
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
   const xp = calcXP(habits, leads, todos, todayStr) + xpBonus;
   const { level, progress, xpInLevel } = xpToLevel(xp);
+  const [prevLevel, setPrevLevel] = useState(null);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  useEffect(() => {
+    if (prevLevel !== null && level > prevLevel) setShowLevelUp(true);
+    setPrevLevel(level);
+  }, [level]);
   const todayTodos = todos.filter(t=>t.addedDate===todayStr);
   const todayDone  = todayTodos.filter(t=>t.doneOn?.[todayStr]);
   const todayBriefing = briefings.find(b=>b.date===todayStr) || null;
@@ -1095,6 +1307,10 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {showLevelUp && <LevelUpSplash level={level} onDismiss={() => setShowLevelUp(false)}/>}
+
+      <SystemAlertBanner health={systemHealth}/>
 
       {error && (
         <div className="error-toast">
@@ -1295,6 +1511,11 @@ function StatCard({label,value,icon:Icon,color}) {
 function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdatePayment}) {
   const [form,setForm]           = useState(null);
   const [payForm,setPayForm]     = useState(null);
+  const { confirm: pipeConfirm, ConfirmUI: PipeConfirmUI } = useConfirm();
+  const handleDeleteLead = async (id, name) => {
+    const ok = await pipeConfirm({ message: `Remove "${name}" from pipeline? This cannot be undone.`, label: 'Delete Lead', danger: true });
+    if (ok) onDelete(id);
+  };
   const [expanded,setExpanded]   = useState(null);
   const [showFilters,setShowFilters] = useState(false);
   const [page,setPage]           = useState(0);
@@ -1669,7 +1890,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         </button>
                         <button className="icon-btn mint-btn" onClick={()=>setPayForm(l)}><Icons.dollar size={13}/></button>
                         <button className="icon-btn" onClick={()=>setForm(l)}><Icons.edit size={13}/></button>
-                        <button className="icon-btn danger-btn" onClick={()=>onDelete(l.id)}><Icons.trash size={13}/></button>
+                        <button className="icon-btn danger-btn" onClick={()=>handleDeleteLead(l.id,l.businessName)}><Icons.trash size={13}/></button>
                       </div>
                     </div>
                   )}
@@ -1702,6 +1923,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
 
       {form!==null && <LeadModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
       {payForm!==null && <PaymentModal lead={payForm} existing={getPayments(payForm.id)} onLog={(s,a,d)=>onLogPayment(payForm,s,a,d)} onUpdateEntry={(s,a,d)=>onUpdatePayment(payForm,s,a,d)} onClose={()=>setPayForm(null)}/>}
+      {PipeConfirmUI}
     </div>
   );
 }
@@ -1813,6 +2035,12 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const [form,setForm]     = useState(null);
   const [expanded,setExpanded] = useState(null);
   const weeks = getLast20Weeks();
+  const { confirm, ConfirmUI } = useConfirm();
+
+  const handleDelete = async (id, name) => {
+    const ok = await confirm({ message: `Delete habit "${name}"? This removes all completion history.`, label: 'Delete', danger: true });
+    if (ok) onDelete(id);
+  };
 
   const streakFor = h => {
     let s = 0; const today = new Date();
@@ -1830,6 +2058,18 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
         <div className="hero-eye">Daily Habits</div>
         <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
         <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
+        {(() => {
+          const total = habits.length;
+          const done  = habits.filter(h=>h.completions?.[todayStr]).length;
+          const pct   = total > 0 ? done / total : 0;
+          const svgKey = pct >= 1 ? 'thriving' : pct >= 0.7 ? 'good' : pct >= 0.4 ? 'watchout' : pct > 0 ? 'struggling' : 'danger';
+          const color  = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
+          return total > 0 ? (
+            <div style={{ display:'flex', justifyContent:'center', marginTop:'0.5rem',
+              filter:`drop-shadow(0 0 8px ${color})`, width:56, margin:'0.5rem auto 0' }}
+              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+          ) : null;
+        })()}
       </div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <span style={{fontWeight:700,fontSize:'15px'}}>Your Habits</span>
@@ -1856,7 +2096,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                   </div>
                   <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
                     <button className="icon-btn" onClick={e=>{e.stopPropagation();setForm(h);}}><Icons.edit size={12}/></button>
-                    <button className="icon-btn danger-btn" onClick={e=>{e.stopPropagation();onDelete(h.id);}}><Icons.trash size={12}/></button>
+                    <button className="icon-btn danger-btn" onClick={e=>{e.stopPropagation();handleDelete(h.id,h.name);}}><Icons.trash size={12}/></button>
                     <span style={{color:'var(--mist-2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}><Icons.chevDown size={14}/></span>
                   </div>
                 </div>
@@ -1901,6 +2141,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           <ModalFoot onClose={()=>setForm(null)} onSave={()=>{const n=document.getElementById('hname').value.trim();if(n){form.id?onUpdate(form.id,{name:n}):onAdd({name:n});setForm(null);}}}/>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
@@ -1909,6 +2150,12 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const [form,setForm]       = useState(null);
   const [newTitle,setNewTitle] = useState('');
+  const { confirm, ConfirmUI } = useConfirm();
+
+  const handleDeleteTodo = async (id, title) => {
+    const ok = await confirm({ message: `Delete task "${title}"?`, label: 'Delete', danger: true });
+    if (ok) onDelete(id);
+  };
   const todayTasks  = todos.filter(t=>t.addedDate===todayStr);
   const olderTasks  = todos.filter(t=>t.addedDate!==todayStr);
   const doneCount   = todayTasks.filter(t=>t.doneOn?.[todayStr]).length;
@@ -1927,6 +2174,24 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
         <div className="hero-sub" style={{color:underMin?'#ff6040':'var(--mist-1)'}}>
           {underMin ? `Add ${5-taskCount} more — minimum 5 daily` : `${doneCount*5} XP earned · ${taskCount}/10 tasks`}
         </div>
+        {(() => {
+          // Full frown: no tasks OR tasks exist but none done
+          // Only smile when ≥5 tasks done (minimum met)
+          const met5 = doneCount >= 5;
+          const hasTasks = taskCount > 0;
+          const svgKey = !hasTasks ? 'danger'
+            : doneCount === 0  ? 'danger'
+            : met5 && doneCount === taskCount ? 'thriving'
+            : met5 ? 'good'
+            : doneCount >= 2   ? 'watchout'
+            : 'struggling';
+          const color = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
+          return (
+            <div style={{ display:'flex', justifyContent:'center',
+              filter:`drop-shadow(0 0 8px ${color})`, width:56, margin:'0.5rem auto 0' }}
+              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+          );
+        })()}
       </div>
 
       <div className="xp-rules">
@@ -2005,253 +2270,356 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           <ModalFoot onClose={()=>setForm(null)} onSave={()=>{const t=document.getElementById('ttitle').value.trim();const n=document.getElementById('tnote').value.trim();if(t){onUpdate(form.id,{title:t,note:n});setForm(null);}}}/>
         </Modal>
       )}
+      {ConfirmUI}
     </div>
   );
 }
 
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
-function Schedule({schedule,onAdd,onUpdate,onDelete}) {
-  const [form,setForm]       = useState(null);
-  const [viewMode,setViewMode] = useState('pills'); // 'pills' | 'grid'
-  const [weekOffset,setWeekOffset] = useState(0);   // 0=this week, -1=last, +1=next
-  const today = new Date();
-  const [sel,setSel] = useState(DAYS[today.getDay()===0?6:today.getDay()-1]);
 
-  // Week label
-  const weekLabel = weekOffset===0 ? 'This Week'
-    : weekOffset===-1 ? 'Last Week'
-    : weekOffset===1  ? 'Next Week'
-    : weekOffset < 0  ? `${Math.abs(weekOffset)} Weeks Ago`
+function Schedule({schedule,onAdd,onUpdate,onDelete}) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [form, setForm]             = useState(null);
+  const [viewMode, setViewMode]     = useState('list'); // list | grid | merged
+  const [activeSched, setActiveSched] = useState('Work'); // Work | School | Personal
+  const [weekOffset, setWeekOffset] = useState(0);
+  const today = new Date();
+  const todayStr = localDateStr(today);
+  const todayDayName = DAYS[today.getDay() === 0 ? 6 : today.getDay() - 1];
+  const [sel, setSel] = useState(todayDayName);
+
+  const SCHED_TYPES = ['Work','School','Personal'];
+  const SCHED_COLORS = { Work:'#00d4ff', School:'#7b6cf5', Personal:'#1adb8a' };
+
+  const weekLabel = weekOffset === 0 ? 'This Week'
+    : weekOffset === -1 ? 'Last Week'
+    : weekOffset === 1  ? 'Next Week'
+    : weekOffset < 0 ? `${Math.abs(weekOffset)} Weeks Ago`
     : `${weekOffset} Weeks Ahead`;
 
-  const todayDayName = DAYS[today.getDay()===0?6:today.getDay()-1];
+  const timeToMin = t => {
+    if (!t) return 0;
+    const [h, m] = t.split(':').map(Number);
+    return h * 60 + m;
+  };
 
-  const blocks = schedule.filter(s=>s.day===sel).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+  // Get the actual calendar date for a given day name in the current week offset
+  const getDateForDay = (dayName) => {
+    const dow = today.getDay(); // 0=Sun
+    const mondayOffset = dow === 0 ? -6 : 1 - dow;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + mondayOffset + weekOffset * 7);
+    const idx = DAYS.indexOf(dayName);
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + idx);
+    return localDateStr(d);
+  };
 
-  // For grid — hours 6am–10pm
-  const HOURS = Array.from({length:17},(_,i)=>i+6); // 6..22
+  // Check if a block should appear in a given week offset + day
+  const blockAppliesToWeek = (b, dayName) => {
+    const targetDate = getDateForDay(dayName);
+    const startDate  = b.startDate || '2000-01-01';
+    const endDate    = b.endDate   || '2099-12-31';
+    if (targetDate < startDate || targetDate > endDate) return false;
 
-  const timeToMin = t => { if(!t)return 0; const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
+    switch (b.recurrence) {
+      case 'weekly':    return true; // every week, same day
+      case 'biweekly': {
+        // Biweekly: count weeks from startDate
+        const start = new Date(startDate);
+        const target = new Date(targetDate);
+        const weekDiff = Math.round((target - start) / (7 * 86400000));
+        return weekDiff >= 0 && weekDiff % 2 === 0;
+      }
+      case 'once':
+        // One-off: only on the exact startDate week
+        return targetDate === startDate || b.day === dayName;
+      case 'period':
+        // Runs every week within startDate→endDate
+        return true;
+      default:          return true;
+    }
+  };
 
-  const dayBlocks = day => schedule.filter(s=>s.day===day).sort((a,b)=>timeToMin(a.start)-timeToMin(b.start));
+  // Urgency glow: how close is the block to its date?
+  const getUrgencyGlow = (b, dayName) => {
+    if (!b.startDate || b.acknowledged) return 0;
+    const targetDate = getDateForDay(dayName);
+    const daysUntil  = Math.ceil((new Date(targetDate) - new Date(todayStr)) / 86400000);
+    if (daysUntil < 0)  return 0;   // past
+    if (daysUntil === 0) return 1;  // today — max glow
+    if (daysUntil <= 2) return 0.7;
+    if (daysUntil <= 7) return 0.4;
+    return 0.1;
+  };
 
-  // Clash detection
-  const findClashes = (day) => {
-    const db = dayBlocks(day);
+  const getBlocks = (dayName, schedType) => {
+    return schedule
+      .filter(b => b.day === dayName && (b.scheduleType || 'Work') === schedType && blockAppliesToWeek(b, dayName))
+      .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  };
+
+  const getAllBlocks = (dayName) => {
+    return schedule
+      .filter(b => b.day === dayName && blockAppliesToWeek(b, dayName))
+      .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
+  };
+
+  const findClashesInList = (blocks) => {
     const clashes = new Set();
-    for(let i=0;i<db.length;i++) {
-      for(let j=i+1;j<db.length;j++) {
-        const aS=timeToMin(db[i].start),aE=timeToMin(db[i].end);
-        const bS=timeToMin(db[j].start),bE=timeToMin(db[j].end);
-        if(aS<bE&&bS<aE){ clashes.add(db[i].id); clashes.add(db[j].id); }
+    for (let i = 0; i < blocks.length; i++) {
+      for (let j = i + 1; j < blocks.length; j++) {
+        const aS = timeToMin(blocks[i].start), aE = timeToMin(blocks[i].end);
+        const bS = timeToMin(blocks[j].start), bE = timeToMin(blocks[j].end);
+        if (aS < bE && bS < aE) { clashes.add(blocks[i].id); clashes.add(blocks[j].id); }
       }
     }
     return clashes;
   };
 
+  const handleDelete = async (id, title) => {
+    const ok = await confirm({ message: `Remove "${title}" from schedule?`, label: 'Remove', danger: true });
+    if (ok) onDelete(id);
+  };
+
+  const BlockCard = ({ b, showType = false }) => {
+    const baseColor = BLOCK_COLORS[b.type] || '#3a4860';
+    const schedColor = SCHED_COLORS[b.scheduleType || 'Work'];
+    const urgency   = getUrgencyGlow(b, b.day);
+    const glowColor = urgency > 0 ? schedColor : baseColor;
+
+    return (
+      <div className="card fade-in" style={{
+        borderLeft: `3px solid ${baseColor}`,
+        boxShadow: urgency > 0 ? `0 0 ${Math.round(urgency * 16)}px ${glowColor}${Math.round(urgency * 100).toString(16).padStart(2,'0')}` : 'none',
+        transition: 'box-shadow 0.4s',
+      }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'0.5rem' }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.375rem', marginBottom:2, flexWrap:'wrap' }}>
+              <div style={{ fontWeight:500, fontSize:'14px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{b.title}</div>
+              {showType && (
+                <span style={{ fontFamily:'var(--fm)', fontSize:'8px', padding:'1px 6px', borderRadius:99,
+                  background:`${schedColor}18`, color:schedColor, border:`1px solid ${schedColor}30`, flexShrink:0 }}>
+                  {b.scheduleType || 'Work'}
+                </span>
+              )}
+              {b.recurrence && b.recurrence !== 'once' && (
+                <span style={{ fontFamily:'var(--fm)', fontSize:'8px', color:'var(--mist-3)', flexShrink:0 }}>
+                  {b.recurrence === 'weekly' ? '↻' : b.recurrence === 'biweekly' ? '↻2w' : b.recurrence === 'period' ? `📅` : ''}
+                </span>
+              )}
+            </div>
+            <div style={{ fontFamily:'var(--fm)', fontSize:'11px', color: baseColor, marginTop:2, fontWeight:300 }}>
+              {b.start} – {b.end} · {b.type}
+              {b.startDate && b.recurrence === 'period' && b.endDate && (
+                <span style={{ color:'var(--mist-3)', marginLeft:6 }}>until {b.endDate}</span>
+              )}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:'0.35rem', flexShrink:0 }}>
+            {urgency > 0 && !b.acknowledged && (
+              <button className="btn-ghost" style={{ fontSize:'9px', padding:'0.2rem 0.5rem', color: schedColor, borderColor: `${schedColor}40` }}
+                onClick={() => onUpdate(b.id, { ...b, acknowledged: true })}>
+                ✓ Ack
+              </button>
+            )}
+            <button className="icon-btn" onClick={() => setForm(b)}><Icons.edit size={12}/></button>
+            <button className="icon-btn danger-btn" onClick={() => handleDelete(b.id, b.title)}><Icons.trash size={12}/></button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const currentBlocks = viewMode === 'merged' ? getAllBlocks(sel) : getBlocks(sel, activeSched);
+  const clashSet = findClashesInList(viewMode === 'merged' ? getAllBlocks(sel) : currentBlocks);
+
   return (
     <div className="section">
       <div className="hero">
-        <div className="hero-eye">Weekly Schedule</div>
-        <div className="hero-big">Plan Your Time</div>
+        <div className="hero-eye">Schedule</div>
+        <div className="hero-big" style={{ fontSize:'22px' }}>
+          {viewMode === 'merged' ? 'Full Life View' : activeSched}
+        </div>
         <div className="hero-sub">Structure creates freedom</div>
       </div>
 
-      {/* Week nav + view toggle */}
-      <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-        <button className="icon-btn" onClick={()=>setWeekOffset(w=>w-1)}>←</button>
-        <div style={{flex:1,textAlign:'center',fontFamily:'var(--fm)',fontSize:'10px',
-          fontWeight:400,color:weekOffset===0?'var(--bolt)':'var(--mist-2)',
-          letterSpacing:'0.1em',textTransform:'uppercase'}}>
-          {weekLabel}
-        </div>
-        <button className="icon-btn" onClick={()=>setWeekOffset(w=>w+1)}>→</button>
-        <button className="icon-btn" onClick={()=>setWeekOffset(0)}
-          style={{fontSize:'9px',fontFamily:'var(--fm)',width:36}}>NOW</button>
-        <div style={{display:'flex',background:'rgba(0,24,36,0.6)',
-          border:'1px solid rgba(0,212,255,0.08)',borderRadius:6,padding:2,gap:2}}>
-          {['pills','grid'].map(v=>(
-            <button key={v} onClick={()=>setViewMode(v)}
-              style={{
-                padding:'0.3rem 0.5rem',border:'none',borderRadius:4,cursor:'pointer',
-                fontFamily:'var(--fm)',fontSize:'9px',letterSpacing:'0.06em',
-                background:viewMode===v?'rgba(0,136,200,0.15)':'none',
-                color:viewMode===v?'var(--bolt-lt)':'var(--mist-3)',
-              }}>
-              {v==='pills'?'LIST':'GRID'}
-            </button>
-          ))}
-        </div>
-        <button className="btn-primary icon-only" onClick={()=>setForm({day:sel})}><Icons.plus size={14}/></button>
+      {/* Schedule type tabs */}
+      <div style={{ display:'flex', gap:2, background:'rgba(0,24,36,0.6)',
+        border:'1px solid rgba(0,212,255,0.08)', borderRadius:8, padding:3 }}>
+        {SCHED_TYPES.map(t => (
+          <button key={t} onClick={() => { setActiveSched(t); if (viewMode === 'merged') setViewMode('list'); }}
+            style={{
+              flex:1, padding:'0.4rem 0.5rem', border:'none', borderRadius:5, cursor:'pointer',
+              fontFamily:'var(--fm)', fontSize:'10px', letterSpacing:'0.05em',
+              background: activeSched === t && viewMode !== 'merged' ? `${SCHED_COLORS[t]}20` : 'none',
+              color: activeSched === t && viewMode !== 'merged' ? SCHED_COLORS[t] : 'var(--mist-3)',
+              borderBottom: activeSched === t && viewMode !== 'merged' ? `2px solid ${SCHED_COLORS[t]}` : '2px solid transparent',
+            }}>{t}</button>
+        ))}
+        <button onClick={() => setViewMode(v => v === 'merged' ? 'list' : 'merged')}
+          style={{
+            flex:1, padding:'0.4rem 0.5rem', border:'none', borderRadius:5, cursor:'pointer',
+            fontFamily:'var(--fm)', fontSize:'10px', letterSpacing:'0.05em',
+            background: viewMode === 'merged' ? 'rgba(240,192,96,0.15)' : 'none',
+            color: viewMode === 'merged' ? 'var(--horizon)' : 'var(--mist-3)',
+            borderBottom: viewMode === 'merged' ? '2px solid var(--horizon)' : '2px solid transparent',
+          }}>⊕ Merged</button>
       </div>
 
-      {/* DAY PILLS — shown in both views */}
+      {/* Week nav + view toggle */}
+      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
+        <button className="icon-btn" onClick={() => setWeekOffset(w => w - 1)}>←</button>
+        <div style={{ flex:1, textAlign:'center', fontFamily:'var(--fm)', fontSize:'10px',
+          color: weekOffset === 0 ? 'var(--bolt)' : 'var(--mist-2)',
+          letterSpacing:'0.1em', textTransform:'uppercase' }}>
+          {weekLabel}
+        </div>
+        <button className="icon-btn" onClick={() => setWeekOffset(w => w + 1)}>→</button>
+        <button className="icon-btn" onClick={() => setWeekOffset(0)} style={{ fontSize:'9px', fontFamily:'var(--fm)', width:36 }}>NOW</button>
+        <div style={{ display:'flex', background:'rgba(0,24,36,0.6)',
+          border:'1px solid rgba(0,212,255,0.08)', borderRadius:6, padding:2, gap:2 }}>
+          {['list','grid'].map(v => (
+            <button key={v} onClick={() => setViewMode(v === viewMode ? v : v)}
+              style={{
+                padding:'0.3rem 0.5rem', border:'none', borderRadius:4, cursor:'pointer',
+                fontFamily:'var(--fm)', fontSize:'9px',
+                background: viewMode === v ? 'rgba(0,136,200,0.15)' : 'none',
+                color: viewMode === v ? 'var(--bolt-lt)' : 'var(--mist-3)',
+              }}>{v === 'list' ? 'LIST' : 'GRID'}</button>
+          ))}
+        </div>
+        <button className="btn-primary icon-only" onClick={() => setForm({ day: sel, scheduleType: activeSched === 'Work' || viewMode !== 'merged' ? activeSched : 'Work' })}>
+          <Icons.plus size={14}/>
+        </button>
+      </div>
+
+      {/* Day pills */}
       <div className="pill-row">
         {DAYS.map(d => (
-          <button key={d}
-            className={`pill ${sel===d?'active':''}`}
-            onClick={()=>setSel(d)}
-            style={d===todayDayName&&weekOffset===0?{borderColor:'rgba(240,192,96,0.4)',color:'var(--horizon)'}:{}}>
+          <button key={d} className={`pill ${sel === d ? 'active' : ''}`}
+            onClick={() => setSel(d)}
+            style={d === todayDayName && weekOffset === 0 ? { borderColor:'rgba(240,192,96,0.4)', color:'var(--horizon)' } : {}}>
             {d}
           </button>
         ))}
       </div>
 
-      {/* ─── PILLS VIEW ───────────────────────────────────── */}
-      {viewMode==='pills' && (
+      {/* ─── LIST VIEW ─── */}
+      {(viewMode === 'list' || viewMode === 'merged') && (
         <>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--mist-0)'}}>{sel}</span>
-            {weekOffset!==0 && (
-              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
-                letterSpacing:'0.08em',textTransform:'uppercase'}}>
-                {weekLabel}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontFamily:'var(--fe)', fontSize:'16px', fontWeight:600, color:'var(--mist-0)' }}>
+              {sel} {viewMode === 'merged' && <span style={{ fontSize:'11px', color:'var(--horizon)', fontFamily:'var(--fm)' }}>— All schedules</span>}
+            </span>
+            {clashSet.size > 0 && (
+              <span style={{ fontFamily:'var(--fm)', fontSize:'9px', color:'#ff6040',
+                border:'1px solid rgba(255,96,64,0.3)', borderRadius:4, padding:'2px 6px' }}>
+                ⚠ {clashSet.size} clash{clashSet.size > 1 ? 'es' : ''}
               </span>
             )}
           </div>
-          {blocks.length===0 ? <Empty text={`Nothing on ${sel}${weekOffset!==0?` — ${weekLabel}`:''}.`}/> : (
-            <div className="list">
-              {blocks.map(b => {
-                const clashes = findClashes(b.day);
-                return (
-                  <div key={b.id} className="card fade-in"
-                    style={{borderLeft:`3px solid ${clashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860'}`}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:'0.5rem'}}>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{display:'flex',alignItems:'center',gap:'0.375rem',marginBottom:2}}>
-                          <div style={{fontWeight:500,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{b.title}</div>
-                          {clashes.has(b.id) && (
-                            <span style={{fontFamily:'var(--fm)',fontSize:'8px',color:'#ff6040',
-                              border:'1px solid rgba(255,96,64,0.3)',borderRadius:3,padding:'0 4px',flexShrink:0}}>
-                              CLASH
-                            </span>
-                          )}
-                        </div>
-                        <div style={{fontFamily:'var(--fm)',fontSize:'11px',
-                          color:BLOCK_COLORS[b.type]||'var(--mist-2)',marginTop:2,fontWeight:300}}>
-                          {b.start} – {b.end} · {b.type}
-                        </div>
-                      </div>
-                      <div style={{display:'flex',gap:'0.35rem',flexShrink:0}}>
-                        <button className="icon-btn" onClick={()=>setForm(b)}><Icons.edit size={12}/></button>
-                        <button className="icon-btn danger-btn" onClick={()=>onDelete(b.id)}><Icons.trash size={12}/></button>
-                      </div>
-                    </div>
+          {currentBlocks.length === 0
+            ? <Empty text={`Nothing on ${sel}${weekOffset !== 0 ? ` — ${weekLabel}` : ''}.`}/>
+            : <div className="list">
+                {currentBlocks.map(b => (
+                  <div key={b.id} style={{ outline: clashSet.has(b.id) ? '1px solid rgba(255,96,64,0.5)' : 'none', borderRadius:10 }}>
+                    <BlockCard b={b} showType={viewMode === 'merged'}/>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                ))}
+              </div>
+          }
         </>
       )}
 
-      {/* ─── GRID / TIMETABLE VIEW ─────────────────────────── */}
-      {viewMode==='grid' && (() => {
+      {/* ─── GRID VIEW ─── */}
+      {viewMode === 'grid' && (() => {
         const gridH = 640;
-        const timeToMin = t => { if(!t)return 0; const [h,m]=(t||'00:00').split(':').map(Number); return h*60+m; };
-        const startMin = 6*60; const endMin = 22*60; const totalMins = endMin-startMin;
-        const topPct = t => ((timeToMin(t)-startMin)/totalMins)*gridH;
-        const heightPct = (s,e) => ((timeToMin(e)-timeToMin(s))/totalMins)*gridH;
-        const HOURS_G = Array.from({length:17},(_,i)=>i+6);
-        const findClashesAll = () => {
+        const startMin = 6 * 60, endMin = 22 * 60, totalMins = endMin - startMin;
+        const topPct    = t => ((timeToMin(t) - startMin) / totalMins) * gridH;
+        const heightPct = (s, e) => Math.max(18, ((timeToMin(e) - timeToMin(s)) / totalMins) * gridH);
+        const HOURS_G = Array.from({ length: 17 }, (_, i) => i + 6);
+
+        const allClashes = (() => {
           const clashes = new Set();
           DAYS.forEach(d => {
-            const db = schedule.filter(b=>b.day===d).sort((a,b)=>timeToMin(a.start)-timeToMin(b.start));
-            for(let i=0;i<db.length;i++) for(let j=i+1;j<db.length;j++) {
-              if(timeToMin(db[i].start)<timeToMin(db[j].end)&&timeToMin(db[j].start)<timeToMin(db[i].end)) {
+            const db = getBlocks(d, activeSched);
+            for (let i = 0; i < db.length; i++) for (let j = i + 1; j < db.length; j++) {
+              if (timeToMin(db[i].start) < timeToMin(db[j].end) && timeToMin(db[j].start) < timeToMin(db[i].end)) {
                 clashes.add(db[i].id); clashes.add(db[j].id);
               }
             }
           });
           return clashes;
-        };
-        const allClashes = findClashesAll();
+        })();
+
         return (
-          <div className="card" style={{padding:'0.75rem 0.5rem',overflowX:'auto'}}>
-            <div style={{minWidth:520,userSelect:'none'}}>
-              {/* Day headers */}
-              <div style={{display:'grid',gridTemplateColumns:'40px repeat(7,1fr)',gap:1,marginBottom:4}}>
+          <div className="card" style={{ padding:'0.75rem 0.5rem', overflowX:'auto' }}>
+            <div style={{ minWidth:520, userSelect:'none' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'40px repeat(7,1fr)', gap:1, marginBottom:4 }}>
                 <div/>
-                {DAYS.map(d=>(
-                  <div key={d} style={{fontFamily:'var(--fm)',fontSize:'8.5px',letterSpacing:'0.12em',
-                    textTransform:'uppercase',textAlign:'center',padding:'0.375rem 0',
-                    color:d===todayDayName&&weekOffset===0?'var(--bolt-lt)':'var(--mist-3)',
-                    borderBottom:`1px solid ${d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.4)':'rgba(255,255,255,0.04)'}`,
+                {DAYS.map(d => (
+                  <div key={d} style={{ fontFamily:'var(--fm)', fontSize:'8.5px', letterSpacing:'0.12em',
+                    textTransform:'uppercase', textAlign:'center', padding:'0.375rem 0',
+                    color: d === todayDayName && weekOffset === 0 ? 'var(--bolt-lt)' : 'var(--mist-3)',
+                    borderBottom: `1px solid ${d === todayDayName && weekOffset === 0 ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.04)'}`,
                   }}>{d}</div>
                 ))}
               </div>
-              {/* Grid body */}
-              <div style={{display:'grid',gridTemplateColumns:'40px repeat(7,1fr)',gap:1}}>
-                {/* Time column */}
-                <div style={{position:'relative',height:gridH}}>
-                  {HOURS_G.map(h=>(
-                    <div key={h} style={{
-                      position:'absolute',top:`${((h-6)/16)*gridH}px`,
-                      right:4,fontFamily:'var(--fm)',fontSize:'8px',
-                      color:'var(--mist-4)',lineHeight:1,transform:'translateY(-50%)',
-                    }}>{h.toString().padStart(2,'0')}</div>
-                  ))}
-                  {/* Hour lines */}
-                  {HOURS_G.map(h=>(
-                    <div key={`l${h}`} style={{
-                      position:'absolute',top:`${((h-6)/16)*gridH}px`,
-                      left:0,right:0,height:1,
-                      background:'rgba(0,212,255,0.04)',
-                    }}/>
+              <div style={{ display:'grid', gridTemplateColumns:'40px repeat(7,1fr)', gap:1 }}>
+                <div style={{ position:'relative', height:gridH }}>
+                  {HOURS_G.map(h => (
+                    <div key={h} style={{ position:'absolute', top:`${((h-6)/16)*gridH}px`, right:4,
+                      fontFamily:'var(--fm)', fontSize:'8px', color:'var(--mist-4)', lineHeight:1, transform:'translateY(-50%)' }}>
+                      {h.toString().padStart(2,'0')}
+                    </div>
                   ))}
                 </div>
-                {/* Day columns */}
-                {DAYS.map(d=>{
-                  const dayB = schedule.filter(b=>b.day===d);
+                {DAYS.map(d => {
+                  const dayB = getBlocks(d, activeSched);
+                  const targetDate = getDateForDay(d);
+                  const isToday = targetDate === todayStr;
                   return (
                     <div key={d} style={{
-                      position:'relative',height:gridH,
-                      background:d===todayDayName&&weekOffset===0?'rgba(0,212,255,0.015)':'transparent',
-                      borderLeft:'1px solid rgba(255,255,255,0.03)',
-                      cursor:'pointer',
+                      position:'relative', height:gridH,
+                      background: isToday ? 'rgba(0,212,255,0.015)' : 'transparent',
+                      borderLeft:'1px solid rgba(255,255,255,0.03)', cursor:'pointer',
                     }}
-                    onClick={e=>{
-                      const rect=e.currentTarget.getBoundingClientRect();
-                      const clickY=e.clientY-rect.top;
-                      const mins=Math.floor((clickY/gridH)*totalMins/30)*30+startMin;
-                      const hh=Math.floor(mins/60).toString().padStart(2,'0');
-                      const mm=(mins%60).toString().padStart(2,'0');
-                      const eh=Math.floor((mins+60)/60).toString().padStart(2,'0');
-                      const em=((mins+60)%60).toString().padStart(2,'0');
-                      setSel(d); setForm({day:d,start:`${hh}:${mm}`,end:`${eh}:${em}`});
+                    onClick={e => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const mins = Math.floor(((e.clientY - rect.top) / gridH) * totalMins / 30) * 30 + startMin;
+                      const hh = Math.floor(mins / 60).toString().padStart(2,'0');
+                      const mm = (mins % 60).toString().padStart(2,'0');
+                      const eh = Math.floor((mins + 60) / 60).toString().padStart(2,'0');
+                      const em = ((mins + 60) % 60).toString().padStart(2,'0');
+                      setSel(d); setForm({ day:d, start:`${hh}:${mm}`, end:`${eh}:${em}`, scheduleType: activeSched });
                     }}>
-                      {/* Hour gridlines */}
-                      {HOURS_G.map(h=>(
-                        <div key={h} style={{
-                          position:'absolute',top:`${((h-6)/16)*gridH}px`,
-                          left:0,right:0,height:1,
-                          background:h%2===0?'rgba(0,212,255,0.05)':'rgba(255,255,255,0.02)',
-                        }}/>
+                      {HOURS_G.map(h => (
+                        <div key={h} style={{ position:'absolute', top:`${((h-6)/16)*gridH}px`,
+                          left:0, right:0, height:1,
+                          background: h % 2 === 0 ? 'rgba(0,212,255,0.05)' : 'rgba(255,255,255,0.02)' }}/>
                       ))}
-                      {/* Blocks */}
-                      {dayB.map(b=>{
-                        const t=topPct(b.start);
-                        const h=Math.max(18,heightPct(b.start,b.end));
-                        const c=allClashes.has(b.id)?'#ff6040':BLOCK_COLORS[b.type]||'#3a4860';
+                      {dayB.map(b => {
+                        const t = topPct(b.start), h = heightPct(b.start, b.end);
+                        const c = allClashes.has(b.id) ? '#ff6040' : BLOCK_COLORS[b.type] || '#3a4860';
+                        const urgency = getUrgencyGlow(b, d);
                         return (
-                          <div key={b.id}
-                            onClick={e=>{e.stopPropagation();setForm(b);}}
+                          <div key={b.id} onClick={e => { e.stopPropagation(); setForm(b); }}
                             style={{
-                              position:'absolute',top:`${t}px`,left:2,right:2,
-                              height:`${h}px`,minHeight:18,
-                              background:`${c}20`,
-                              border:`1px solid ${c}60`,borderLeft:`3px solid ${c}`,
-                              borderRadius:4,overflow:'hidden',cursor:'pointer',zIndex:2,
-                              boxShadow:`0 0 8px ${c}20`,
+                              position:'absolute', top:`${t}px`, left:2, right:2,
+                              height:`${h}px`, minHeight:18,
+                              background:`${c}20`, border:`1px solid ${c}60`,
+                              borderLeft:`3px solid ${c}`, borderRadius:4, overflow:'hidden',
+                              cursor:'pointer', zIndex:2,
+                              boxShadow: urgency > 0 ? `0 0 ${Math.round(urgency*14)}px ${c}${Math.round(urgency*180).toString(16)}` : `0 0 8px ${c}20`,
                               transition:'all 0.15s',
                             }}>
-                            <div style={{
-                              fontFamily:'var(--fm)',fontSize:'8px',fontWeight:500,
-                              color:c,padding:'3px 4px',lineHeight:1.3,
-                              overflow:'hidden',textShadow:`0 0 6px ${c}80`,
-                            }}>
+                            <div style={{ fontFamily:'var(--fm)', fontSize:'8px', fontWeight:500,
+                              color:c, padding:'3px 4px', lineHeight:1.3, overflow:'hidden',
+                              textShadow:`0 0 6px ${c}80` }}>
                               {b.title}
-                              {h>28&&<span style={{display:'block',opacity:0.7,fontSize:'7px'}}>{b.start}–{b.end}</span>}
+                              {h > 28 && <span style={{ display:'block', opacity:0.7, fontSize:'7px' }}>{b.start}–{b.end}</span>}
                             </div>
                           </div>
                         );
@@ -2260,8 +2628,8 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
                   );
                 })}
               </div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
-                marginTop:'0.5rem',textAlign:'center',letterSpacing:'0.08em'}}>
+              <div style={{ fontFamily:'var(--fm)', fontSize:'9px', color:'var(--mist-4)',
+                marginTop:'0.5rem', textAlign:'center', letterSpacing:'0.08em' }}>
                 TAP ANY SLOT TO ADD · TAP BLOCK TO EDIT · RED = CLASH
               </div>
             </div>
@@ -2269,29 +2637,96 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
         );
       })()}
 
-      {form!==null && <SchedModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+      {form !== null && (
+        <SchedModal data={form} activeSched={activeSched}
+          onSave={d => { d.id ? onUpdate(d.id, d) : onAdd(d); setForm(null); }}
+          onClose={() => setForm(null)}/>
+      )}
+      {ConfirmUI}
     </div>
   );
 }
 
-function SchedModal({data,onSave,onClose}) {
-  const [f,setF] = useState({day:'Mon',start:'09:00',end:'10:00',title:'',type:'Work',...data});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+function SchedModal({data, activeSched, onSave, onClose}) {
+  const [f, setF] = useState({
+    day:'Mon', start:'09:00', end:'10:00', title:'', type:'Work',
+    scheduleType: activeSched || 'Work',
+    recurrence: 'weekly',     // weekly | biweekly | once | period
+    startDate: localDateStr(), // first occurrence / start of period
+    endDate: '',               // end of period (for 'period' recurrence)
+    acknowledged: false,
+    ...data,
+  });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const RECURRENCE_OPTS = [
+    { id:'weekly',   label:'Every Week'    },
+    { id:'biweekly', label:'Bi-Weekly'     },
+    { id:'once',     label:'One Time'      },
+    { id:'period',   label:'Date Range'    },
+  ];
+
   return (
-    <Modal title={data.id?'Edit Block':'New Block'} onClose={onClose}>
-      <Field label="Title"><input className="input" value={f.title} onChange={e=>s('title',e.target.value)} placeholder="e.g. Client work, Gym"/></Field>
+    <Modal title={data.id ? 'Edit Event' : 'New Event'} onClose={onClose}>
+      <Field label="Title">
+        <input className="input" value={f.title} onChange={e => s('title', e.target.value)} placeholder="e.g. Church, Gym, Client meeting"/>
+      </Field>
       <div className="grid-2">
-        <Field label="Day"><select className="input" value={f.day} onChange={e=>s('day',e.target.value)}>{DAYS.map(d=><option key={d}>{d}</option>)}</select></Field>
-        <Field label="Type"><select className="input" value={f.type} onChange={e=>s('type',e.target.value)}>{Object.keys(BLOCK_COLORS).map(t=><option key={t}>{t}</option>)}</select></Field>
+        <Field label="Day">
+          <select className="input" value={f.day} onChange={e => s('day', e.target.value)}>
+            {DAYS.map(d => <option key={d}>{d}</option>)}
+          </select>
+        </Field>
+        <Field label="Schedule">
+          <select className="input" value={f.scheduleType} onChange={e => s('scheduleType', e.target.value)}>
+            <option value="Work">Work</option>
+            <option value="School">School</option>
+            <option value="Personal">Personal</option>
+          </select>
+        </Field>
       </div>
       <div className="grid-2">
-        <Field label="Start"><input className="input" type="time" value={f.start} onChange={e=>s('start',e.target.value)}/></Field>
-        <Field label="End"><input className="input" type="time" value={f.end} onChange={e=>s('end',e.target.value)}/></Field>
+        <Field label="Start"><input className="input" type="time" value={f.start} onChange={e => s('start', e.target.value)}/></Field>
+        <Field label="End"><input className="input" type="time" value={f.end} onChange={e => s('end', e.target.value)}/></Field>
       </div>
-      <ModalFoot onClose={onClose} onSave={()=>f.title.trim()&&onSave(f)}/>
+      <Field label="Block Type">
+        <select className="input" value={f.type} onChange={e => s('type', e.target.value)}>
+          {Object.keys(BLOCK_COLORS).map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+
+      <div>
+        <label style={{ display:'block', fontFamily:'var(--fm)', fontSize:'8.5px', fontWeight:500,
+          textTransform:'uppercase', letterSpacing:'0.14em', color:'var(--mist-3)', marginBottom:'0.375rem' }}>
+          Recurrence
+        </label>
+        <div className="pill-row">
+          {RECURRENCE_OPTS.map(r => (
+            <button key={r.id} className={`pill ${f.recurrence === r.id ? 'active' : ''}`}
+              style={{ fontSize:'10px', padding:'0.28rem 0.6rem' }}
+              onClick={() => s('recurrence', r.id)}>
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid-2">
+        <Field label={f.recurrence === 'once' ? 'Date' : f.recurrence === 'period' ? 'Start Date' : 'From Date'}>
+          <input className="input" type="date" value={f.startDate} onChange={e => s('startDate', e.target.value)}/>
+        </Field>
+        {(f.recurrence === 'period') && (
+          <Field label="End Date">
+            <input className="input" type="date" value={f.endDate} onChange={e => s('endDate', e.target.value)}/>
+          </Field>
+        )}
+      </div>
+
+      <ModalFoot onClose={onClose} onSave={() => f.title.trim() && onSave(f)}/>
     </Modal>
   );
 }
+
 
 // ─── FINANCE ──────────────────────────────────────────────────────────────────
 function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd,onUpdate,onDelete}) {
@@ -2312,6 +2747,67 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
   const emotion = EMOTION_LEVELS[emotionIdx];
   const minTarget = minProfitForLevel(level); // doubles each level: L1=J$5k, L2=J$10k...
 
+  // ── TIME RANGE TOGGLE ──────────────────────────────────────────
+  const [timeRange, setTimeRange] = useState('weekly'); // daily | weekly | biweekly | monthly
+
+  // ── BUILD CHART DATA for selected time range ────────────────────
+  const chartData = useMemo(() => {
+    if (!finances.length) return [];
+    const sorted = [...finances].sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    const earliest = sorted[0]?.date || localDateStr();
+    const latest   = localDateStr();
+    const map = {};
+
+    const bucketKey = (dateStr) => {
+      const d = new Date(dateStr);
+      if (timeRange === 'daily') return dateStr;
+      if (timeRange === 'monthly') return dateStr.slice(0,7);
+      if (timeRange === 'weekly') {
+        // ISO week start (Monday)
+        const day = d.getDay() || 7;
+        const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
+        return localDateStr(mon);
+      }
+      if (timeRange === 'biweekly') {
+        // 2-week buckets from Jan 1 of the year
+        const jan1 = new Date(d.getFullYear(), 0, 1);
+        const week = Math.floor((d - jan1) / (7 * 86400000));
+        const biweek = Math.floor(week / 2);
+        const bwStart = new Date(jan1);
+        bwStart.setDate(jan1.getDate() + biweek * 14);
+        return localDateStr(bwStart);
+      }
+      return dateStr.slice(0,7);
+    };
+
+    sorted.forEach(f => {
+      if (!f.date) return;
+      const k = bucketKey(f.date);
+      if (!map[k]) map[k] = { label: k, income: 0, expenses: 0, profit: 0 };
+      if (f.type === 'income')  map[k].income   += Number(f.amount) || 0;
+      else                      map[k].expenses += Number(f.amount) || 0;
+    });
+    const result = Object.values(map)
+      .sort((a,b) => a.label.localeCompare(b.label))
+      .map(m => ({ ...m, profit: m.income - m.expenses }));
+
+    // For daily/weekly: limit to last 30 / last 12 buckets to avoid clutter
+    if (timeRange === 'daily')    return result.slice(-30);
+    if (timeRange === 'weekly')   return result.slice(-12);
+    if (timeRange === 'biweekly') return result.slice(-12);
+    return result; // monthly — show all
+  }, [finances, timeRange]);
+
+  // ── RUNNING BALANCE (cumulative) for area chart ─────────────────
+  const runningBalance = useMemo(() => {
+    let running = 0;
+    return chartData.map(d => {
+      running += d.profit;
+      return { ...d, balance: running };
+    });
+  }, [chartData]);
+
+  // Monthly aggregates (for projection — always monthly)
   const monthly = useMemo(()=>{
     const map={};
     finances.forEach(f=>{const d=f.date?f.date.slice(0,7):new Date().toISOString().slice(0,7);if(!map[d])map[d]={month:d,income:0,expenses:0,profit:0};if(f.type==='income')map[d].income+=Number(f.amount)||0;else map[d].expenses+=Number(f.amount)||0;});
@@ -2331,7 +2827,33 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
     return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
   },[finances]);
 
+  // Shorten axis label based on time range
+  const fmtLabel = (label) => {
+    if (timeRange === 'daily')    return label.slice(5);        // MM-DD
+    if (timeRange === 'weekly')   return label.slice(5);        // MM-DD (week start)
+    if (timeRange === 'biweekly') return label.slice(5);        // MM-DD
+    return label.slice(0,7);                                    // YYYY-MM
+  };
+
   const tt={background:'#0f172a',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'10px',color:'#e2e8f0',fontSize:'11px'};
+
+  // ── TIME RANGE PICKER (shared between overview and breakdown) ───
+  const TimeRangePicker = () => (
+    <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
+      {[
+        {id:'daily',    label:'Daily'},
+        {id:'weekly',   label:'Weekly'},
+        {id:'biweekly', label:'Bi-Weekly'},
+        {id:'monthly',  label:'Monthly'},
+      ].map(r => (
+        <button key={r.id} className={`pill ${timeRange===r.id?'active':''}`}
+          style={{fontSize:'9px',padding:'0.2rem 0.55rem'}}
+          onClick={() => setTimeRange(r.id)}>
+          {r.label}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="section">
@@ -2466,18 +2988,62 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
       </div>
 
       {report==='overview' && (
-        <div className="card fade-in">
-          <div className="card-label">Monthly Overview</div>
-          <ResponsiveContainer width="100%" height={160}>
-            <BarChart data={monthly.slice(-6)} margin={{left:0,right:4,top:4,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
-              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`}/>
-              <Bar dataKey="income"   fill="#00d4ff" radius={[3,3,0,0]} name="Income"/>
-              <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses"/>
-            </BarChart>
-          </ResponsiveContainer>
+        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+          {/* Time range + view controls */}
+          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
+              <span className="card-label" style={{margin:0}}>Income vs Expenses</span>
+              <TimeRangePicker/>
+            </div>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}} barGap={2}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
+                <Bar dataKey="income"   fill="#00d4ff" radius={[3,3,0,0]} name="Income"   maxBarSize={28}/>
+                <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses" maxBarSize={28}/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Running balance area chart */}
+          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
+              <span className="card-label" style={{margin:0}}>Running Balance</span>
+              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)'}}>Cumulative profit over time</span>
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <AreaChart data={runningBalance} margin={{left:0,right:4,top:4,bottom:0}}>
+                <defs>
+                  <linearGradient id="gb1" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#00d4ff" stopOpacity={0.35}/>
+                    <stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
+                <Area type="monotone" dataKey="balance" stroke="#00d4ff" fill="url(#gb1)" strokeWidth={2} name="Balance" dot={chartData.length<=14}/>
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Profit per period bars */}
+          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
+            <div className="card-label" style={{marginBottom:'0.5rem'}}>Net Profit per Period</div>
+            <ResponsiveContainer width="100%" height={130}>
+              <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
+                <Bar dataKey="profit" radius={[3,3,0,0]} name="Profit" maxBarSize={28}
+                  fill="#1adb8a"/>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       )}
 
@@ -2520,6 +3086,27 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         const expCats=(()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
         return (
           <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+            {/* Income vs Expenses trend for breakdown period */}
+            <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
+                <span className="card-label" style={{margin:0}}>Spending Trend</span>
+                <TimeRangePicker/>
+              </div>
+              <ResponsiveContainer width="100%" height={150}>
+                <AreaChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
+                  <defs>
+                    <linearGradient id="gbd1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.25}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="gbd2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
+                  <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
+                  <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                  <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
+                  <Area type="monotone" dataKey="income"   stroke="#00d4ff" fill="url(#gbd1)" strokeWidth={2} name="Income"/>
+                  <Area type="monotone" dataKey="expenses" stroke="#ff6040" fill="url(#gbd2)" strokeWidth={1.5} name="Expenses"/>
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
             <div className="card fade-in">
               <div className="card-label">Income by Category</div>
               {cats.length===0?<Empty text="No income yet."/>:cats.map(c=>{
@@ -2597,7 +3184,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
                   <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
                   <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={()=>onDelete(f.id)}><Icons.trash size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={async()=>{if(window.confirm('Delete this transaction?'))onDelete(f.id);}}><Icons.trash size={12}/></button>
                 </div>
               </div>
             ))}
@@ -2691,6 +3278,11 @@ function FinanceModal({data,onSave,onClose}) {
 // ─── GOALS ──────────────────────────────────────────────────────────────────────
 function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
   const [form,setForm]=useState(null);
+  const { confirm, ConfirmUI } = useConfirm();
+  const handleDeleteGoal = async (id, title) => {
+    const ok = await confirm({ message: `Delete goal "${title}"?`, label: 'Delete', danger: true });
+    if (ok) onDelete(id);
+  };
   return (
     <div className="section">
       <div className="hero">
@@ -2732,7 +3324,7 @@ function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
                       <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#1adb8a',padding:'0.2rem 0.5rem',border:'1px solid rgba(26,219,138,0.3)',borderRadius:4,background:'rgba(26,219,138,0.07)'}}>DONE</span>
                     )}
                     <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
-                    <button className="icon-btn danger-btn" onClick={()=>onDelete(g.id)}><Icons.trash size={12}/></button>
+                    <button className="icon-btn danger-btn" onClick={()=>handleDeleteGoal(g.id,g.title)}><Icons.trash size={12}/></button>
                   </div>
                 </div>
               </div>
@@ -2741,6 +3333,7 @@ function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
         </div>
       )}
       {form!==null&&<GoalModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+      {ConfirmUI}
     </div>
   );
 }
@@ -3708,6 +4301,62 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
 }
 
 // ─── SHARED COMPONENTS ────────────────────────────────────────────────────────
+
+// Inline confirm hook — returns { confirm, ConfirmUI }
+// Usage: const { confirm, ConfirmUI } = useConfirm();
+//        await confirm({ message:'Delete this?', label:'Delete' }) → true/false
+function useConfirm() {
+  const [state, setState] = useState(null); // { message, label, resolve }
+
+  const confirm = (opts) => new Promise(resolve => {
+    setState({ message: opts.message || 'Are you sure?', label: opts.label || 'Confirm', danger: opts.danger !== false, resolve });
+  });
+
+  const handleYes = () => { const r = state.resolve; setState(null); r(true); };
+  const handleNo  = () => { const r = state.resolve; setState(null); r(false); };
+
+  const ConfirmUI = state ? (
+    <div style={{
+      position:'fixed',inset:0,background:'rgba(0,0,0,0.7)',
+      display:'flex',alignItems:'center',justifyContent:'center',
+      zIndex:9999,backdropFilter:'blur(4px)',padding:'1rem',
+    }}>
+      <div style={{
+        background:'rgba(8,15,26,0.98)',
+        border:'1px solid rgba(255,255,255,0.1)',
+        borderRadius:14,padding:'1.5rem',maxWidth:320,width:'100%',
+        boxShadow:'0 20px 60px rgba(0,0,0,0.8)',
+      }}>
+        <div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,
+          color:'var(--mist-0)',marginBottom:'0.5rem',lineHeight:1.3}}>
+          Are you sure?
+        </div>
+        <div style={{fontSize:'13px',color:'var(--mist-2)',lineHeight:1.6,marginBottom:'1.25rem'}}>
+          {state.message}
+        </div>
+        <div style={{display:'flex',gap:'0.5rem'}}>
+          <button onClick={handleNo} style={{
+            flex:1,padding:'0.6rem',borderRadius:8,cursor:'pointer',
+            fontFamily:'var(--fm)',fontSize:'12px',fontWeight:600,
+            background:'rgba(255,255,255,0.06)',
+            border:'1px solid rgba(255,255,255,0.1)',
+            color:'var(--mist-1)',
+          }}>Cancel</button>
+          <button onClick={handleYes} style={{
+            flex:1,padding:'0.6rem',borderRadius:8,cursor:'pointer',
+            fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700,
+            background: state.danger ? 'rgba(255,96,64,0.15)' : 'rgba(0,212,255,0.12)',
+            border: `1px solid ${state.danger ? 'rgba(255,96,64,0.4)' : 'rgba(0,212,255,0.35)'}`,
+            color: state.danger ? '#ff6040' : 'var(--bolt)',
+          }}>{state.label}</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  return { confirm, ConfirmUI };
+}
+
 function Modal({title,onClose,children}) {
   return(
     <div className="modal-overlay" onClick={onClose}>
