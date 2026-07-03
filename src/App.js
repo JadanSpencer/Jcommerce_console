@@ -4169,7 +4169,46 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
 
 function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
   const nextNum=()=>{const yr=new Date().getFullYear();const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt((f.invoiceNumber?.split('-').pop())||0));const mx=ex.length>0?Math.max(...ex):0;return `JC-${yr}-${String(mx+1).padStart(3,'0')}`;};
-  const [inv,setInv]=useState({invoiceNumber:nextNum(),date:localDateStr(),dueDate:'',status:'PAYMENT DUE',clientName:initialData?.clientName||'',clientLocation:initialData?.clientLocation||'Kingston, Jamaica',services:initialData?.services||[{desc:'',amount:''}],notes:'',paymentMethod:'Bank Transfer: Name: Jadan Spencer, Acc#: 504813584, Bank: NCB Perth Mandeville',...initialData});
+  const [inv,setInv]=useState({
+    invoiceNumber: nextNum(),
+    date: localDateStr(),
+    dueDate: '',
+    status: 'PAYMENT DUE',
+    currency: 'JMD',
+    // Provider (your details — pre-filled)
+    providerName:     'Jadan Spencer',
+    providerCompany:  'JCommerce & Tech',
+    providerLocation: 'Mandeville, Jamaica',
+    providerPhone:    '(876) 817-0095',
+    providerEmail:    'jcommerceandtech@gmail.com',
+    // Client
+    clientName:     initialData?.clientName     || '',
+    clientCompany:  '',
+    clientLocation: initialData?.clientLocation || 'Kingston, Jamaica',
+    clientPhone:    '',
+    clientEmail:    '',
+    // Services
+    services: initialData?.services || [{desc:'',qty:1,unit:'',amount:''}],
+    // Adjustments
+    discount:       '',
+    discountLabel:  'Discount',
+    taxRate:        '',
+    taxLabel:       'GCT (15%)',
+    depositPaid:    '',
+    depositLabel:   'Deposit Paid',
+    showDepositLine: false,
+    // Retainer
+    retainerDay:    '',
+    retainerPeriod: '',
+    // Notes & payment
+    notes: '',
+    paymentMethod: 'Bank Transfer\nName: Jadan Spencer\nAcc#: 504813584\nBank: NCB Perth Mandeville',
+    // Reference
+    referenceInvoice: '',
+    poNumber: '',
+    type: 'standard',
+    ...initialData,
+  });
   const s=(k,v)=>setInv(p=>({...p,[k]:v}));
   const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
   const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
