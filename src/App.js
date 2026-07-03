@@ -2054,10 +2054,8 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 
   return (
     <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Daily Habits</div>
-        <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
-        <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
+      <div className="hero" style={{position:'relative'}}>
+        {/* Emotion face — right side of hero */}
         {(() => {
           const total = habits.length;
           const done  = habits.filter(h=>h.completions?.[todayStr]).length;
@@ -2065,11 +2063,18 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           const svgKey = pct >= 1 ? 'thriving' : pct >= 0.7 ? 'good' : pct >= 0.4 ? 'watchout' : pct > 0 ? 'struggling' : 'danger';
           const color  = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
           return total > 0 ? (
-            <div style={{ display:'flex', justifyContent:'center', marginTop:'0.5rem',
-              filter:`drop-shadow(0 0 8px ${color})`, width:56, margin:'0.5rem auto 0' }}
+            <div style={{
+              position:'absolute', top:'50%', right:'1rem',
+              transform:'translateY(-50%)',
+              width:52, height:52, flexShrink:0,
+              filter:`drop-shadow(0 0 8px ${color})`,
+            }}
               dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
           ) : null;
         })()}
+        <div className="hero-eye">Daily Habits</div>
+        <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
+        <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
       </div>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <span style={{fontWeight:700,fontSize:'15px'}}>Your Habits</span>
@@ -2168,15 +2173,9 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 
   return (
     <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Daily Tasks</div>
-        <div className="hero-big">{doneCount}/{taskCount}</div>
-        <div className="hero-sub" style={{color:underMin?'#ff6040':'var(--mist-1)'}}>
-          {underMin ? `Add ${5-taskCount} more — minimum 5 daily` : `${doneCount*5} XP earned · ${taskCount}/10 tasks`}
-        </div>
+      <div className="hero" style={{position:'relative'}}>
+        {/* Emotion face — right side of hero container */}
         {(() => {
-          // Full frown: no tasks OR tasks exist but none done
-          // Only smile when ≥5 tasks done (minimum met)
           const met5 = doneCount >= 5;
           const hasTasks = taskCount > 0;
           const svgKey = !hasTasks ? 'danger'
@@ -2187,11 +2186,20 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
             : 'struggling';
           const color = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
           return (
-            <div style={{ display:'flex', justifyContent:'center',
-              filter:`drop-shadow(0 0 8px ${color})`, width:56, margin:'0.5rem auto 0' }}
+            <div style={{
+              position:'absolute', top:'50%', right:'1rem',
+              transform:'translateY(-50%)',
+              width:52, height:52, flexShrink:0,
+              filter:`drop-shadow(0 0 8px ${color})`,
+            }}
               dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
           );
         })()}
+        <div className="hero-eye">Daily Tasks</div>
+        <div className="hero-big">{doneCount}/{taskCount}</div>
+        <div className="hero-sub" style={{color:underMin?'#ff6040':'var(--mist-1)'}}>
+          {underMin ? `Add ${5-taskCount} more — minimum 5 daily` : `${doneCount*5} XP earned · ${taskCount}/10 tasks`}
+        </div>
       </div>
 
       <div className="xp-rules">
@@ -3377,12 +3385,19 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
   const thisMonth     = todayStr?.slice(0, 7); // "2026-06"
   const collectedThis = !!retainerLog[thisMonth];
 
+  // Check if retainer already logged in finances for this month
+  const retainerAlreadyLogged = finances.some(f =>
+    f.pipelineLeadId === client?.id &&
+    f.paymentStage === 'Monthly Retainer' &&
+    (f.date || '').startsWith(thisMonth)
+  );
+
   const toggleRetainer = async () => {
     const newLog = { ...retainerLog, [thisMonth]: !collectedThis };
     const updated = { ...client, retainerLog: newLog };
     onUpdateLead(client.id, updated);
-    // If marking collected, also log it as a finance entry
-    if (!collectedThis && client.retainerAmount) {
+    // Only log finance entry when marking collected AND not already logged
+    if (!collectedThis && client.retainerAmount && !retainerAlreadyLogged) {
       onAdd('finances', {
         type: 'income',
         description: `${client.businessName} — Monthly Retainer ${thisMonth}`,
@@ -3448,7 +3463,9 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
                 {collectedThis ? '✓ Collected' : `J$${Number(client.retainerAmount).toLocaleString()} due`}
               </div>
               <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 2 }}>
-                {collectedThis ? 'Logged to finances' : 'Mark collected to log income'}
+                {collectedThis
+                  ? retainerAlreadyLogged ? '✓ Income logged to Finance' : 'Toggle only — add manually if needed'
+                  : retainerAlreadyLogged ? 'Already in finances — toggle to mark collected' : 'Mark collected to log income automatically'}
               </div>
             </div>
             <button
@@ -4156,6 +4173,17 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
   const s=(k,v)=>setInv(p=>({...p,[k]:v}));
   const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
   const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
+
+  // Financial calculations (used in PDF generation)
+  const subtotal    = inv.services.reduce((s,sv) => s + (Number(sv.amount)||0) * (Number(sv.qty)||1), 0);
+  const discountAmt = Number(inv.discount) || 0;
+  const afterDisc   = subtotal - discountAmt;
+  const taxAmt      = inv.taxRate ? Math.round((afterDisc * Number(inv.taxRate)) / 100) : 0;
+  const grandTotal  = afterDisc + taxAmt;
+  const displayTotal= inv.showDepositLine ? grandTotal - (Number(inv.depositPaid)||0) : grandTotal;
+  const cur         = (inv.currency === 'USD') ? 'USD $' : 'J$';
+  const fmt         = n => `${cur}${Number(n).toLocaleString()}`;
+
   const generatePDF = () => {
     const statusColor = {
       'PAYMENT DUE':'#1a7f5a','DEPOSIT DUE':'#b45309','BALANCE DUE':'#7c3aed',
