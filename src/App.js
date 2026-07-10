@@ -825,7 +825,11 @@ function AlertBanner({ alerts }) {
   );
 }
 
-// ─── CIRCUIT BOARD BACKGROUND ────────────────────────────────────────────────
+// ─── DEEP WATER BACKGROUND ────────────────────────────────────────────────
+// Bioluminescent plankton drifting on slow currents, quiet bubbles rising
+// from the trench, and the occasional soft caustic band of light moving
+// across the water — replaces the old circuit-board grid with something
+// that actually belongs to the ocean theme.
 function Particles() {
   const canvasRef = useRef(null);
   useEffect(() => {
@@ -836,71 +840,61 @@ function Particles() {
 
     const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; init(); };
 
-    // Blue shade palette
-    const BLUES = ['#001824','#003d5c','#005f8a','#0088c8','#00aaee','#00d4ff','#40e8ff'];
+    // Bioluminescent palette — teal current, a rarer violet glow, a trace of amber
+    const GLOWS = ['#0e6058', '#1cab97', '#3fd1b8', '#7bf4e0', '#6d7ef2', '#d3a855'];
 
-    // Circuit nodes
-    let nodes = [];
-    // Active pulses travelling along edges
-    let pulses = [];
+    let motes = [];   // slow-drifting bioluminescent plankton
+    let bubbles = []; // quietly rising bubbles
+    let caustics = []; // soft moving light bands
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
 
     function init() {
-      nodes = [];
-      pulses = [];
-      const cols = Math.floor(canvas.width / 80);
-      const rows = Math.floor(canvas.height / 80);
-      // Create grid nodes with slight jitter
-      for (let r = 0; r <= rows; r++) {
-        for (let c = 0; c <= cols; c++) {
-          nodes.push({
-            x: c * 80 + (Math.random() - 0.5) * 28,
-            y: r * 80 + (Math.random() - 0.5) * 28,
-            active: Math.random() < 0.18,
-            size: Math.random() * 1.5 + 0.5,
-            blink: Math.random() * Math.PI * 2,
-            blinkSpeed: Math.random() * 0.025 + 0.008,
-            shade: BLUES[Math.floor(Math.random() * BLUES.length)],
-          });
-        }
+      motes = [];
+      bubbles = [];
+      caustics = [];
+
+      const moteCount = Math.max(28, Math.floor((canvas.width * canvas.height) / 26000));
+      for (let i = 0; i < moteCount; i++) {
+        motes.push({
+          x: rand(0, canvas.width),
+          y: rand(0, canvas.height),
+          r: rand(0.6, 2.2),
+          drift: rand(-0.12, 0.12),
+          rise: rand(0.03, 0.1),
+          blink: rand(0, Math.PI * 2),
+          blinkSpeed: rand(0.008, 0.02),
+          shade: GLOWS[Math.floor(Math.random() * GLOWS.length)],
+          sway: rand(0.2, 0.6),
+          swaySpeed: rand(0.004, 0.01),
+        });
       }
-      // Spawn initial pulses
-      for (let i = 0; i < 12; i++) spawnPulse();
+
+      const bubbleCount = Math.max(10, Math.floor(canvas.width / 60));
+      for (let i = 0; i < bubbleCount; i++) bubbles.push(spawnBubble(true));
+
+      for (let i = 0; i < 3; i++) {
+        caustics.push({
+          y: rand(0, canvas.height),
+          speed: rand(0.05, 0.15),
+          width: rand(120, 260),
+          alpha: rand(0.02, 0.045),
+          phase: rand(0, Math.PI * 2),
+        });
+      }
     }
 
-    function spawnPulse() {
-      if (nodes.length < 2) return;
-      const from = nodes[Math.floor(Math.random() * nodes.length)];
-      // Pick nearby node as target
-      const nearby = nodes.filter(n => {
-        const dx = n.x - from.x; const dy = n.y - from.y;
-        const d = Math.sqrt(dx*dx+dy*dy);
-        return d > 20 && d < 180;
-      });
-      if (nearby.length === 0) return;
-      const to = nearby[Math.floor(Math.random() * nearby.length)];
-      const shadeIdx = Math.floor(Math.random() * BLUES.length);
-      pulses.push({
-        from, to,
-        t: 0,
-        speed: Math.random() * 0.008 + 0.003,
-        shade: BLUES[shadeIdx],
-        bright: Math.random() < 0.25,
-        width: Math.random() * 0.8 + 0.3,
-        trail: [], // stores last positions for trail
-      });
-    }
-
-    function drawEdge(a, b, alpha, shade, w) {
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      // L-shaped routing — horizontal then vertical (circuit style)
-      const mx = b.x;
-      const my = a.y;
-      ctx.lineTo(mx, my);
-      ctx.lineTo(b.x, b.y);
-      ctx.strokeStyle = shade.replace(')', `,${alpha})`).replace('rgb', 'rgba').replace('#', 'rgba(').replace(/^rgba\(([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2}),/, (m,r,g,b) => `rgba(${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)},`);
-      ctx.lineWidth = w;
-      ctx.stroke();
+    function spawnBubble(randomHeight) {
+      return {
+        x: rand(0, canvas.width),
+        y: randomHeight ? rand(0, canvas.height) : canvas.height + rand(10, 60),
+        r: rand(1, 3.4),
+        speed: rand(0.15, 0.45),
+        wobble: rand(0, Math.PI * 2),
+        wobbleSpeed: rand(0.02, 0.045),
+        wobbleAmt: rand(4, 14),
+        alpha: rand(0.08, 0.22),
+      };
     }
 
     function hexToRgba(hex, alpha) {
@@ -910,81 +904,66 @@ function Particles() {
       return `rgba(${r},${g},${b},${alpha})`;
     }
 
-    function drawCircuitLine(x1,y1,x2,y2, alpha, shade, w=0.5) {
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y1);  // horizontal
-      ctx.lineTo(x2, y2);  // vertical
-      ctx.strokeStyle = hexToRgba(shade, alpha);
-      ctx.lineWidth = w;
-      ctx.stroke();
-    }
-
-    function lerp(a, b, t) { return a + (b-a)*t; }
-
     function loop() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw static grid edges between nearby nodes
-      for (let i = 0; i < nodes.length; i++) {
-        const a = nodes[i];
-        for (let j = i+1; j < nodes.length; j++) {
-          const b = nodes[j];
-          const dx = b.x-a.x; const dy = b.y-a.y;
-          const d = Math.sqrt(dx*dx+dy*dy);
-          if (d < 130) {
-            const alpha = (1 - d/130) * 0.07;
-            drawCircuitLine(a.x, a.y, b.x, b.y, alpha, '#003d5c', 0.5);
-          }
-        }
-      }
-
-      // Draw pulses
-      pulses.forEach((p, idx) => {
-        p.t += p.speed;
-        const cx = lerp(p.from.x, p.to.x, p.t);
-        const cy = lerp(p.from.y, p.to.y, p.t);
-
-        // Trail
-        p.trail.push({x: cx, y: cy});
-        if (p.trail.length > 18) p.trail.shift();
-
-        // Draw trail
-        p.trail.forEach((pt, ti) => {
-          const ta = (ti / p.trail.length) * 0.6 * (p.bright ? 1.4 : 1);
-          const r2 = p.width * (0.5 + (ti / p.trail.length) * 1.5);
-          const grd = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, r2 * 3);
-          grd.addColorStop(0, hexToRgba('#e0faff', ta * 0.9));
-          grd.addColorStop(0.4, hexToRgba(p.shade, ta * 0.7));
-          grd.addColorStop(1, hexToRgba(p.shade, 0));
-          ctx.beginPath();
-          ctx.arc(pt.x, pt.y, r2 * 3, 0, Math.PI * 2);
-          ctx.fillStyle = grd;
-          ctx.fill();
-        });
-
-        // Draw path the pulse travels along
-        drawCircuitLine(p.from.x, p.from.y, p.to.x, p.to.y, 0.25 * (p.bright ? 1.8 : 1), p.shade, p.width * 0.8);
-
-        if (p.t >= 1) {
-          pulses.splice(idx, 1);
-          spawnPulse();
-        }
+      // Soft caustic light bands drifting slowly downward
+      caustics.forEach(c => {
+        c.y += c.speed;
+        c.phase += 0.004;
+        if (c.y - c.width > canvas.height) c.y = -c.width;
+        const sway = Math.sin(c.phase) * 30;
+        const grd = ctx.createLinearGradient(0, c.y - c.width, 0, c.y + c.width);
+        grd.addColorStop(0, 'rgba(28,171,151,0)');
+        grd.addColorStop(0.5, hexToRgba('#1cab97', c.alpha));
+        grd.addColorStop(1, 'rgba(28,171,151,0)');
+        ctx.save();
+        ctx.translate(sway, 0);
+        ctx.fillStyle = grd;
+        ctx.fillRect(-40, c.y - c.width, canvas.width + 80, c.width * 2);
+        ctx.restore();
       });
 
-      // Draw nodes
-      nodes.forEach(n => {
-        n.blink += n.blinkSpeed;
-        const alpha = n.active ? 0.55 + Math.sin(n.blink) * 0.35 : 0.08 + Math.sin(n.blink) * 0.04;
-        const glow = n.active ? n.size * 5 : n.size * 1.5;
-        const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glow);
-        grd.addColorStop(0, hexToRgba('#e0faff', alpha));
-        grd.addColorStop(0.4, hexToRgba(n.shade, alpha * 0.6));
-        grd.addColorStop(1, hexToRgba(n.shade, 0));
+      // Bioluminescent plankton — gentle upward drift with a soft sideways sway
+      motes.forEach(m => {
+        m.blink += m.blinkSpeed;
+        m.y -= m.rise;
+        m.x += m.drift + Math.sin(m.blink * m.swaySpeed * 10) * 0.05;
+        if (m.y < -10) { m.y = canvas.height + 10; m.x = rand(0, canvas.width); }
+        if (m.x < -10) m.x = canvas.width + 10;
+        if (m.x > canvas.width + 10) m.x = -10;
+
+        const alpha = 0.25 + Math.sin(m.blink) * 0.2;
+        const glow = m.r * 5;
+        const grd = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, glow);
+        grd.addColorStop(0, hexToRgba('#eefffb', alpha));
+        grd.addColorStop(0.4, hexToRgba(m.shade, alpha * 0.65));
+        grd.addColorStop(1, hexToRgba(m.shade, 0));
         ctx.beginPath();
-        ctx.arc(n.x, n.y, glow, 0, Math.PI * 2);
+        ctx.arc(m.x, m.y, glow, 0, Math.PI * 2);
         ctx.fillStyle = grd;
         ctx.fill();
+      });
+
+      // Bubbles quietly rising from below
+      bubbles.forEach((b, idx) => {
+        b.y -= b.speed;
+        b.wobble += b.wobbleSpeed;
+        const bx = b.x + Math.sin(b.wobble) * b.wobbleAmt;
+
+        ctx.beginPath();
+        ctx.arc(bx, b.y, b.r, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba('#7bf4e0', b.alpha);
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
+        // faint inner highlight
+        ctx.beginPath();
+        ctx.arc(bx - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.3, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#eefffb', b.alpha * 0.8);
+        ctx.fill();
+
+        if (b.y < -10) bubbles[idx] = spawnBubble(false);
       });
 
       raf = requestAnimationFrame(loop);
@@ -999,7 +978,7 @@ function Particles() {
   return (
     <canvas ref={canvasRef} style={{
       position:'fixed', inset:0, width:'100%', height:'100%',
-      pointerEvents:'none', zIndex:0, opacity:0.45,
+      pointerEvents:'none', zIndex:0, opacity:0.5,
     }}/>
   );
 }
@@ -2063,13 +2042,10 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           const svgKey = pct >= 1 ? 'thriving' : pct >= 0.7 ? 'good' : pct >= 0.4 ? 'watchout' : pct > 0 ? 'struggling' : 'danger';
           const color  = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
           return total > 0 ? (
-            <div style={{
-              position:'absolute', top:'50%', right:'1rem',
-              transform:'translateY(-50%)',
-              width:52, height:52, flexShrink:0,
-              filter:`drop-shadow(0 0 8px ${color})`,
-            }}
-              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+            <div style={{ position:'absolute', top:'50%', right:'1rem', transform:'translateY(-50%)', width:52, height:52 }}>
+              <div className={`emotion-face lv-${svgKey}`} style={{ width:52, height:52, color }}
+                dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+            </div>
           ) : null;
         })()}
         <div className="hero-eye">Daily Habits</div>
@@ -2186,13 +2162,10 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
             : 'struggling';
           const color = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
           return (
-            <div style={{
-              position:'absolute', top:'50%', right:'1rem',
-              transform:'translateY(-50%)',
-              width:52, height:52, flexShrink:0,
-              filter:`drop-shadow(0 0 8px ${color})`,
-            }}
-              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+            <div style={{ position:'absolute', top:'50%', right:'1rem', transform:'translateY(-50%)', width:52, height:52 }}>
+              <div className={`emotion-face lv-${svgKey}`} style={{ width:52, height:52, color }}
+                dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
+            </div>
           );
         })()}
         <div className="hero-eye">Daily Tasks</div>
@@ -2883,11 +2856,10 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
 
             <div style={{padding:'1rem 1.125rem',position:'relative'}}>
               <div style={{display:'flex',alignItems:'center',gap:'1rem'}}>
-                {/* Hollow SVG face — neon glow */}
-                <div style={{
-                  width:64, height:64, flexShrink:0,
-                  filter:`drop-shadow(0 0 8px ${emotion.color}) drop-shadow(0 0 16px ${emotion.color}60)`,
-                  animation:'float 3s ease-in-out infinite',
+                {/* Hollow SVG face — glows brighter the better things are going,
+                    throbs faster and harder the worse they get */}
+                <div className={`emotion-face lv-${emotion.svgKey}`} style={{
+                  width:64, height:64, flexShrink:0, color: emotion.color,
                 }} dangerouslySetInnerHTML={{__html:svgStr}}/>
 
                 <div style={{flex:1,minWidth:0}}>
