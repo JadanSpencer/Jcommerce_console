@@ -175,7 +175,7 @@ body {
 .xp-name,
 .splash-j,
 .splash-c {
-  color: var(--ink-0);
+  color: var(--teal-100);
   -webkit-text-stroke: 1.4px currentColor;
   -webkit-text-fill-color: transparent;
   text-shadow: 0 0 14px currentColor;
@@ -561,7 +561,7 @@ input::placeholder, textarea::placeholder {
 
 .xp-name {
   font-family: var(--fe); font-size: 18px; font-weight: 600;
-  letter-spacing: 0.005em; color: var(--ink-0);
+  letter-spacing: 0.005em;
   margin-bottom: 2px;
 }
 

@@ -996,6 +996,7 @@ export default function App() {
   const [queue, setQueue]       = useState([]);
   const [logs, setLogs]         = useState([]);
   const [briefings, setBriefings] = useState([]);
+  const [journal, setJournal]   = useState([]);
   const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -1096,6 +1097,7 @@ export default function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
+      ['journal',setJournal],
     ];
 
     // Track which collections have fired at least once
@@ -1177,6 +1179,20 @@ export default function App() {
   const remove = async (col, id) => { try { await deleteDoc(doc(db,col,id)); } catch { setError('Failed to delete.'); } };
   const toggleHabit = async (habit, date) => { await update('habits', habit.id, { completions: {...(habit.completions||{}), [date]: !habit.completions?.[date]} }); };
   const toggleTodo  = async (todo) => { await update('todos', todo.id, { doneOn: {...(todo.doneOn||{}), [todayStr]: !todo.doneOn?.[todayStr]} }); };
+
+  // ── TIDE LOG — a one-line-each nightly check-in that ties the business
+  // and personal sides of the day together. First entry of a given day
+  // earns a small XP bonus; editing that same day's entry afterward does not
+  // double-dip. ──────────────────────────────────────────────────────────
+  const todayJournal = journal.find(j => j.date === todayStr) || null;
+  const saveJournal = async (data) => {
+    if (todayJournal) {
+      await update('journal', todayJournal.id, data);
+    } else {
+      await add('journal', { ...data, date: todayStr });
+      setXpBonus(b => b + 15);
+    }
+  };
 
   const logPayment = async (lead, stage, amount, date) => {
     if (finances.some(f => f.pipelineLeadId===lead.id && f.paymentStage===stage)) return;
@@ -1300,7 +1316,7 @@ export default function App() {
       )}
 
       <main className="main">
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} habitsToday={habitsToday} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} paidLeads={paidLeads} openLeads={openLeads} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} todayTodos={todayTodos} todayDone={todayDone}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} habitsToday={habitsToday} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} paidLeads={paidLeads} openLeads={openLeads} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} todayTodos={todayTodos} todayDone={todayDone} journal={journal} onSaveJournal={saveJournal}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
@@ -1358,7 +1374,130 @@ export default function App() {
 }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
-function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone }) {
+// ─── TIDE LOG ─────────────────────────────────────────────────────────────────
+// A one-line-each nightly check-in: one business win, one personal win, one
+// thing to hit tomorrow. Ties the business side of the app to the personal
+// side without asking for more than thirty seconds of anyone's evening.
+function TideLog({ journal, todayStr, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [biz, setBiz]   = useState('');
+  const [life, setLife] = useState('');
+  const [next, setNext] = useState('');
+
+  const sorted = useMemo(() => [...journal].sort((a,b) => (b.date||'').localeCompare(a.date||'')), [journal]);
+  const today  = sorted.find(j => j.date === todayStr) || null;
+  const recent = sorted.filter(j => j.date !== todayStr).slice(0, 4);
+
+  // Tide streak — consecutive days (counting back from today) with an entry
+  const streak = useMemo(() => {
+    const dates = new Set(journal.map(j => j.date));
+    const dateMinus = (dateStr, days) => {
+      const dt = new Date(dateStr + 'T12:00:00');
+      dt.setDate(dt.getDate() - days);
+      return dt.toISOString().slice(0,10);
+    };
+    const streakFrom = (startDate) => {
+      let count = 0;
+      let cur = startDate;
+      while (dates.has(cur)) { count++; cur = dateMinus(cur, 1); }
+      return count;
+    };
+    if (!dates.has(todayStr)) {
+      const y = dateMinus(todayStr, 1);
+      return dates.has(y) ? streakFrom(y) : 0;
+    }
+    return streakFrom(todayStr);
+  }, [journal, todayStr]);
+
+  const startEdit = () => {
+    setBiz(today?.biz || ''); setLife(today?.life || ''); setNext(today?.next || '');
+    setEditing(true);
+  };
+
+  const save = async () => {
+    if (!biz.trim() && !life.trim() && !next.trim()) return;
+    await onSave({ biz: biz.trim(), life: life.trim(), next: next.trim() });
+    setEditing(false);
+  };
+
+  return (
+    <div className="card fade-in">
+      <div className="row-between" style={{ marginBottom: today || editing ? '0.75rem' : 0 }}>
+        <span className="card-label" style={{ margin: 0 }}>Tide Log</span>
+        {streak > 0 && (
+          <span style={{ display:'flex', alignItems:'center', gap:4, fontFamily:'var(--fm)', fontSize:'10px', color:'var(--horizon)' }}>
+            <Icons.flame size={11}/> {streak} day{streak===1?'':'s'}
+          </span>
+        )}
+      </div>
+
+      {!editing && !today && (
+        <button className="btn-ghost" style={{ width:'100%', justifyContent:'center' }} onClick={startEdit}>
+          What came in with today's tide?
+        </button>
+      )}
+
+      {!editing && today && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+          <TideRow tag="BIZ"  color="var(--bolt)"    text={today.biz}/>
+          <TideRow tag="LIFE" color="var(--lume-400, #8b98f5)" text={today.life}/>
+          <TideRow tag="NEXT" color="var(--horizon)" text={today.next}/>
+          <button className="btn-ghost" style={{ alignSelf:'flex-start', marginTop:'0.125rem', fontSize:'11px', padding:'0.35rem 0.75rem' }} onClick={startEdit}>
+            Edit today's entry
+          </button>
+        </div>
+      )}
+
+      {editing && (
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+          <input className="input" style={{ fontSize:'13px', padding:'0.55rem 0.75rem' }}
+            placeholder="One business win today…" value={biz} onChange={e=>setBiz(e.target.value)} maxLength={140}/>
+          <input className="input" style={{ fontSize:'13px', padding:'0.55rem 0.75rem' }}
+            placeholder="One personal win today…" value={life} onChange={e=>setLife(e.target.value)} maxLength={140}/>
+          <input className="input" style={{ fontSize:'13px', padding:'0.55rem 0.75rem' }}
+            placeholder="One thing to hit tomorrow…" value={next} onChange={e=>setNext(e.target.value)} maxLength={140}/>
+          <div style={{ display:'flex', gap:'0.5rem', marginTop:'0.125rem' }}>
+            <button className="btn-primary" style={{ flex:1, justifyContent:'center' }} onClick={save}>Save</button>
+            <button className="btn-ghost" onClick={()=>setEditing(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <div style={{ marginTop:'0.875rem', paddingTop:'0.75rem', borderTop:'1px solid rgba(255,255,255,0.06)', display:'flex', flexDirection:'column', gap:'0.625rem' }}>
+          {recent.map(j => (
+            <div key={j.id}>
+              <div style={{ fontFamily:'var(--fm)', fontSize:'8.5px', color:'var(--mist-3)', letterSpacing:'0.1em', marginBottom:3 }}>
+                {j.date}
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+                {j.biz  && <TideRow tag="BIZ"  color="var(--bolt)"    text={j.biz}  compact/>}
+                {j.life && <TideRow tag="LIFE" color="var(--lume-400, #8b98f5)" text={j.life} compact/>}
+                {j.next && <TideRow tag="NEXT" color="var(--horizon)" text={j.next} compact/>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TideRow({ tag, color, text, compact }) {
+  if (!text) return null;
+  return (
+    <div style={{ display:'flex', alignItems:'flex-start', gap:'0.5rem' }}>
+      <span style={{
+        fontFamily:'var(--fm)', fontSize: compact ? '7.5px' : '8px', fontWeight:600,
+        color, letterSpacing:'0.08em', flexShrink:0, width: compact ? 28 : 32,
+        marginTop: compact ? 2 : 1,
+      }}>{tag}</span>
+      <span style={{ fontSize: compact ? '11.5px' : '13px', color: 'var(--mist-1)', lineHeight:1.4, flex:1, minWidth:0, wordBreak:'break-word' }}>{text}</span>
+    </div>
+  );
+}
+
+function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone, journal, onSaveJournal }) {
   const weeks = getLast20Weeks();
   const allDates = weeks.flat();
   const habitHeatmap = allDates.map(date => {
@@ -1431,6 +1570,9 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
         </div>
       )}
 
+      {/* Tide Log — one line each for business, personal, tomorrow */}
+      <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
+
       {/* Heatmap */}
       <div className="card fade-in">
         <div className="card-label">Consistency — 20 Weeks</div>
@@ -1459,11 +1601,17 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
           <div className="card-label">Pipeline</div>
           <ResponsiveContainer width="100%" height={140}>
             <BarChart data={LEAD_STATUSES.map(s=>({name:s,count:leads.filter(l=>l.status===s).length})).filter(d=>d.count>0)} margin={{left:0,right:0,top:4,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="name" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} allowDecimals={false} width={22}/>
-              <Tooltip contentStyle={{background:'#0f172a',border:'1px solid rgba(255,255,255,0.1)',borderRadius:'10px',color:'#e2e8f0',fontSize:'11px'}}/>
-              <Bar dataKey="count" fill="#3b82f6" radius={[3,3,0,0]}/>
+              <defs>
+                <linearGradient id="pipelineFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%"  stopColor="#7bf4e0" stopOpacity={0.95}/>
+                  <stop offset="100%" stopColor="#0e6058" stopOpacity={0.85}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <XAxis dataKey="name" tick={{fill:'#59697a',fontSize:9}}/>
+              <YAxis tick={{fill:'#59697a',fontSize:9}} allowDecimals={false} width={22}/>
+              <Tooltip contentStyle={{background:'rgba(6,16,26,0.96)',border:'1px solid rgba(28,171,151,0.25)',borderRadius:'10px',color:'#c4d3e0',fontSize:'11px'}} cursor={{fill:'rgba(28,171,151,0.06)'}}/>
+              <Bar dataKey="count" fill="url(#pipelineFill)" radius={[3,3,0,0]} animationDuration={800} animationEasing="ease-out"/>
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -2816,7 +2964,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
     return label.slice(0,7);                                    // YYYY-MM
   };
 
-  const tt={background:'#0f172a',border:'1px solid rgba(255,255,255,0.08)',borderRadius:'10px',color:'#e2e8f0',fontSize:'11px'};
+  const tt={background:'rgba(6,16,26,0.96)',border:'1px solid rgba(28,171,151,0.25)',borderRadius:'10px',color:'#c4d3e0',fontSize:'11px'};
 
   // ── TIME RANGE PICKER (shared between overview and breakdown) ───
   const TimeRangePicker = () => (
@@ -2977,12 +3125,22 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             </div>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}} barGap={2}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
-                <Bar dataKey="income"   fill="#00d4ff" radius={[3,3,0,0]} name="Income"   maxBarSize={28}/>
-                <Bar dataKey="expenses" fill="#ff6040" radius={[3,3,0,0]} name="Expenses" maxBarSize={28}/>
+                <defs>
+                  <linearGradient id="incFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7bf4e0" stopOpacity={0.95}/>
+                    <stop offset="100%" stopColor="#0e6058" stopOpacity={0.85}/>
+                  </linearGradient>
+                  <linearGradient id="expFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#e37c62" stopOpacity={0.9}/>
+                    <stop offset="100%" stopColor="#8a3a2a" stopOpacity={0.8}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{fill:'rgba(28,171,151,0.05)'}}/>
+                <Bar dataKey="income"   fill="url(#incFill)" radius={[3,3,0,0]} name="Income"   maxBarSize={28} animationDuration={800} animationEasing="ease-out"/>
+                <Bar dataKey="expenses" fill="url(#expFill)" radius={[3,3,0,0]} name="Expenses" maxBarSize={28} animationDuration={800} animationEasing="ease-out"/>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -2997,15 +3155,15 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
               <AreaChart data={runningBalance} margin={{left:0,right:4,top:4,bottom:0}}>
                 <defs>
                   <linearGradient id="gb1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#00d4ff" stopOpacity={0.35}/>
-                    <stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/>
+                    <stop offset="5%"  stopColor="#7bf4e0" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
-                <Area type="monotone" dataKey="balance" stroke="#00d4ff" fill="url(#gb1)" strokeWidth={2} name="Balance" dot={chartData.length<=14}/>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
+                <Area type="monotone" dataKey="balance" stroke="#3fd1b8" fill="url(#gb1)" strokeWidth={2} name="Balance" dot={chartData.length<=14} animationDuration={1000} animationEasing="ease-out"/>
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -3015,12 +3173,18 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             <div className="card-label" style={{marginBottom:'0.5rem'}}>Net Profit per Period</div>
             <ResponsiveContainer width="100%" height={130}>
               <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-                <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
+                <defs>
+                  <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3ab88e" stopOpacity={0.95}/>
+                    <stop offset="100%" stopColor="#155e46" stopOpacity={0.85}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
+                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{fill:'rgba(28,171,151,0.05)'}}/>
                 <Bar dataKey="profit" radius={[3,3,0,0]} name="Profit" maxBarSize={28}
-                  fill="#1adb8a"/>
+                  fill="url(#profitFill)" animationDuration={800} animationEasing="ease-out"/>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -3045,18 +3209,18 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
           <ResponsiveContainer width="100%" height={160}>
             <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
               <defs>
-                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.3}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#0088c8" stopOpacity={0.25}/><stop offset="95%" stopColor="#0088c8" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.35}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#d3a855" stopOpacity={0.28}/><stop offset="95%" stopColor="#d3a855" stopOpacity={0}/></linearGradient>
+                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e37c62" stopOpacity={0.22}/><stop offset="95%" stopColor="#e37c62" stopOpacity={0}/></linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-              <XAxis dataKey="month" tick={{fill:'#4a5568',fontSize:9}}/>
-              <YAxis tick={{fill:'#4a5568',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
-              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`}/>
-              <Area type="monotone" dataKey="projected" stroke="#00d4ff" fill="url(#g1)" name="Projected Income" strokeWidth={2}/>
-              <Area type="monotone" dataKey="profit"    stroke="#0088c8" fill="url(#g2)" name="Profit" strokeWidth={2}/>
-              <Area type="monotone" dataKey="expenses"  stroke="#ff6040" fill="url(#g3)" name="Expenses" strokeWidth={1.5}/>
-              <Area type="monotone" dataKey="minimum"   stroke="rgba(0,212,255,0.3)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <XAxis dataKey="month" tick={{fill:'#59697a',fontSize:9}}/>
+              <YAxis tick={{fill:'#59697a',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
+              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
+              <Area type="monotone" dataKey="projected" stroke="#3fd1b8" fill="url(#g1)" name="Projected Income" strokeWidth={2} animationDuration={1000} animationEasing="ease-out"/>
+              <Area type="monotone" dataKey="profit"    stroke="#d3a855" fill="url(#g2)" name="Profit" strokeWidth={2} animationDuration={1000} animationEasing="ease-out"/>
+              <Area type="monotone" dataKey="expenses"  stroke="#e37c62" fill="url(#g3)" name="Expenses" strokeWidth={1.5} animationDuration={1000} animationEasing="ease-out"/>
+              <Area type="monotone" dataKey="minimum"   stroke="rgba(28,171,151,0.35)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3" animationDuration={1000} animationEasing="ease-out"/>
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -3075,15 +3239,15 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
               <ResponsiveContainer width="100%" height={150}>
                 <AreaChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
                   <defs>
-                    <linearGradient id="gbd1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#00d4ff" stopOpacity={0.25}/><stop offset="95%" stopColor="#00d4ff" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="gbd2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#ff6040" stopOpacity={0.2}/><stop offset="95%" stopColor="#ff6040" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="gbd1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.3}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="gbd2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e37c62" stopOpacity={0.22}/><stop offset="95%" stopColor="#e37c62" stopOpacity={0}/></linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)"/>
-                  <XAxis dataKey="label" tick={{fill:'#4a5568',fontSize:8}} tickFormatter={fmtLabel}/>
-                  <YAxis tick={{fill:'#4a5568',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                  <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel}/>
-                  <Area type="monotone" dataKey="income"   stroke="#00d4ff" fill="url(#gbd1)" strokeWidth={2} name="Income"/>
-                  <Area type="monotone" dataKey="expenses" stroke="#ff6040" fill="url(#gbd2)" strokeWidth={1.5} name="Expenses"/>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+                  <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
+                  <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
+                  <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
+                  <Area type="monotone" dataKey="income"   stroke="#3fd1b8" fill="url(#gbd1)" strokeWidth={2} name="Income" animationDuration={1000} animationEasing="ease-out"/>
+                  <Area type="monotone" dataKey="expenses" stroke="#e37c62" fill="url(#gbd2)" strokeWidth={1.5} name="Expenses" animationDuration={1000} animationEasing="ease-out"/>
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -3343,9 +3507,8 @@ function GoalModal({data,onSave,onClose}) {
 function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
   const paidClients = leads.filter(l => l.status === 'Paid');
   const [sel, setSel]           = useState(paidClients[0]?.id || null);
-  const [clientTab, setClientTab] = useState('overview'); // overview | readme | retainer
+  const [clientTab, setClientTab] = useState('overview'); // overview | retainer
   const [editProduct, setEditProduct] = useState(false);
-  const [editReadme, setEditReadme]   = useState(false);
 
   const client        = paidClients.find(c => c.id === sel);
   const clientFin     = finances.filter(f => f.pipelineLeadId === sel);
@@ -3474,7 +3637,6 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
           border: '1px solid rgba(0,212,255,0.08)', borderRadius: 8, padding: 3 }}>
           {[
             { id: 'overview', label: '📋 Overview' },
-            { id: 'readme',   label: '📄 README'   },
             { id: 'retainer', label: '💳 Retainers' },
           ].map(t => (
             <button key={t.id} onClick={() => setClientTab(t.id)} style={{
@@ -3618,11 +3780,6 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
           </div>
         </>)}
 
-        {/* ── README TAB ── */}
-        {clientTab === 'readme' && (
-          <ReadmeTab client={client} onUpdate={d => onUpdateLead(client.id, { ...client, ...d })} />
-        )}
-
         {/* ── RETAINER HISTORY TAB ── */}
         {clientTab === 'retainer' && (
           <div className="card">
@@ -3665,351 +3822,6 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
     </div>
   );
 }
-
-// ─── README TAB ───────────────────────────────────────────────────────────────
-// Pre-built management blocks for known clients
-const MANAGEMENT_TEMPLATES = {
-  'D&D wholesale': `# D&D Wholesale — Custom Management Block
-
-## Service Overview
-WhatsApp AI Chatbot — Auto-replies to customer messages 24/7 using Groq AI (llama-3.3-70b-versatile). Hosted on Render (free tier). Connected via Meta WhatsApp Business API.
-
----
-
-## Live Details
-- WhatsApp Business Number: +1 876-856-4587
-- Phone Number ID: 1248296008356493
-- WhatsApp Business Account ID: 1736906550828615
-- Meta App ID: 1692577325283934 (D&D_WHOLESALE)
-- Render URL: https://whatsapp-bot-n0gl.onrender.com
-- GitHub Repo: https://github.com/JadanSpencer/WhatsappChatbot
-
----
-
-## Stack
-- Runtime: Node.js 18+
-- AI: Groq API (llama-3.3-70b-versatile) — FREE tier
-- WhatsApp: Meta Cloud API
-- Hosting: Render free tier (upgrade to Starter $7/mo for always-on)
-- Env: dotenvx
-
----
-
-## Render Environment Variables
-Set at: dashboard.render.com > whatsapp-bot > Environment
-
-  WHATSAPP_TOKEN   = permanent system user token (never expires)
-  PHONE_NUMBER_ID  = 1248296008356493
-  VERIFY_TOKEN     = mystore2024
-  GROQ_API_KEY     = from console.groq.com
-  STORE_NAME       = D&D Wholesale
-
----
-
-## Permanent Token (never expires)
-business.facebook.com/settings/system-users
-→ bot-admin (ID: 61591024406409)
-→ Generate token → D&D_WHOLESALE → Never
-→ Permissions: whatsapp_business_messaging + whatsapp_business_management
-→ Copy → paste into Render WHATSAPP_TOKEN → Save
-
----
-
-## Webhook
-URL: https://whatsapp-bot-n0gl.onrender.com/webhook
-Verify Token: mystore2024
-Subscribed fields: messages
-Reconfigure at: developers.facebook.com/apps/1692577325283934 → WhatsApp → Configuration
-
----
-
-## Updating Store Info
-Open index.js → find STORE_INFO → update hours/products/location
-→ git add . && git commit -m "update" && git push
-→ Render auto-redeploys
-
----
-
-## Common Issues
-
-ERROR 400 — Wrong PHONE_NUMBER_ID
-Fix: Confirm 1248296008356493 in Render environment
-
-ERROR 403 — Token expired
-Fix: Regenerate permanent token (see above) → update WHATSAPP_TOKEN in Render
-
-No messages reaching bot — Webhook subscription dropped
-Fix: developers.facebook.com → app → WhatsApp → Configuration
-→ re-verify webhook AND subscribe messages field under phone number
-
-50s delay on first message — Render sleeping
-Fix: Upgrade to Render Starter $7/mo OR keep UptimeRobot active
-UptimeRobot: https://whatsapp-bot-n0gl.onrender.com → ping every 5 min
-
----
-
-## Monthly Checklist
-- Send retainer invoice (JMD $9,000/mo)
-- Check Render logs for error patterns
-- Check Groq usage: console.groq.com
-- Check Meta billing: business.facebook.com/billing_hub (1,000 conversations free/mo)
-
----
-
-## Meta Billing
-Payment card on file: Visa 4086 (temporary — replace with client card)
-Portal: business.facebook.com → D&D Wholesale → Billing & payments
-
----
-
-## WhatsApp Profile
-Manage at: business.facebook.com/latest/whatsapp_manager/phone_numbers
-→ +1 876-856-4587 → Profile
-Update: logo, description, email, website
-
----
-
-## Contracts & Invoices
-JC-2026-001  Setup fee (JMD $45,000 — deposit)
-JC-2026-005  Receipt — full setup paid + first retainer (JMD $54,000)
-JC-2026-004  Bot update (JMD $5,000)
-Amendment    Retainer JMD $7k → JMD $9k/mo
-JC-2026-006B Review & Ratings App (JMD $35,000 setup + JMD $2k/mo added)
-JC-2026-007B Instagram AI Chatbot (JMD $38,000 setup + JMD $3k/mo added)`,
-  'D&D Wholesale': `# D&D Wholesale — Custom Management Block
-
-## Service Overview
-WhatsApp AI Chatbot — Auto-replies to customer messages 24/7 using Groq AI (llama-3.3-70b-versatile). Hosted on Render (free tier). Connected via Meta WhatsApp Business API.
-
----
-
-## Live Details
-- WhatsApp Business Number: +1 876-856-4587
-- Phone Number ID: 1248296008356493
-- WhatsApp Business Account ID: 1736906550828615
-- Meta App ID: 1692577325283934 (D&D_WHOLESALE)
-- Render URL: https://whatsapp-bot-n0gl.onrender.com
-- GitHub Repo: https://github.com/JadanSpencer/WhatsappChatbot
-
----
-
-## Stack
-- Runtime: Node.js 18+
-- AI: Groq API (llama-3.3-70b-versatile) — FREE tier
-- WhatsApp: Meta Cloud API
-- Hosting: Render free tier (upgrade to Starter $7/mo for always-on)
-- Env: dotenvx
-
----
-
-## Render Environment Variables
-Set at: dashboard.render.com > whatsapp-bot > Environment
-
-  WHATSAPP_TOKEN   = permanent system user token (never expires)
-  PHONE_NUMBER_ID  = 1248296008356493
-  VERIFY_TOKEN     = mystore2024
-  GROQ_API_KEY     = from console.groq.com
-  STORE_NAME       = D&D Wholesale
-
----
-
-## Permanent Token (never expires)
-business.facebook.com/settings/system-users
-→ bot-admin (ID: 61591024406409)
-→ Generate token → D&D_WHOLESALE → Never
-→ Permissions: whatsapp_business_messaging + whatsapp_business_management
-→ Copy → paste into Render WHATSAPP_TOKEN → Save
-
----
-
-## Webhook
-URL: https://whatsapp-bot-n0gl.onrender.com/webhook
-Verify Token: mystore2024
-Subscribed fields: messages
-Reconfigure at: developers.facebook.com/apps/1692577325283934 → WhatsApp → Configuration
-
----
-
-## Updating Store Info
-Open index.js → find STORE_INFO → update hours/products/location
-→ git add . && git commit -m "update" && git push
-→ Render auto-redeploys
-
----
-
-## Common Issues
-
-ERROR 400 — Wrong PHONE_NUMBER_ID
-Fix: Confirm 1248296008356493 in Render environment
-
-ERROR 403 — Token expired
-Fix: Regenerate permanent token (see above) → update WHATSAPP_TOKEN in Render
-
-No messages reaching bot — Webhook subscription dropped
-Fix: developers.facebook.com → app → WhatsApp → Configuration
-→ re-verify webhook AND subscribe messages field under phone number
-
-50s delay on first message — Render sleeping
-Fix: Upgrade to Render Starter $7/mo OR keep UptimeRobot active
-UptimeRobot: https://whatsapp-bot-n0gl.onrender.com → ping every 5 min
-
----
-
-## Monthly Checklist
-- Send retainer invoice (JMD $9,000/mo)
-- Check Render logs for error patterns
-- Check Groq usage: console.groq.com
-- Check Meta billing: business.facebook.com/billing_hub (1,000 conversations free/mo)
-
----
-
-## Meta Billing
-Payment card on file: Visa 4086 (temporary — replace with client card)
-Portal: business.facebook.com → D&D Wholesale → Billing & payments
-
----
-
-## WhatsApp Profile
-Manage at: business.facebook.com/latest/whatsapp_manager/phone_numbers
-→ +1 876-856-4587 → Profile
-Update: logo, description, email, website
-
----
-
-## Contracts & Invoices
-JC-2026-001  Setup fee (JMD $45,000 — deposit)
-JC-2026-005  Receipt — full setup paid + first retainer (JMD $54,000)
-JC-2026-004  Bot update (JMD $5,000)
-Amendment    Retainer JMD $7k → JMD $9k/mo
-JC-2026-006B Review & Ratings App (JMD $35,000 setup + JMD $2k/mo added)
-JC-2026-007B Instagram AI Chatbot (JMD $38,000 setup + JMD $3k/mo added)`,
-};
-
-function ReadmeTab({ client, onUpdate }) {
-  const [editMode, setEditMode] = useState(false);
-  const [customBlock, setCustomBlock] = useState(client.managementBlock || '');
-  // Case-insensitive match so 'D&D wholesale' finds 'D&D wholesale' key
-  const prebuilt = (() => {
-    const name = (client.businessName || '').toLowerCase();
-    const key = Object.keys(MANAGEMENT_TEMPLATES).find(k => k.toLowerCase() === name);
-    return key ? MANAGEMENT_TEMPLATES[key] : null;
-  })();
-  const readme = client.product;
-
-  const TEMPLATE = `# ${client.businessName} — Management README
-
-## Product
-${readme?.type || 'Service type not set'}
-
-## Description
-${readme?.description || 'No description.'}
-
-## Tech Stack
-- Framework: ${readme?.techStack?.framework || '—'}
-- Hosting: ${readme?.techStack?.hosting || '—'} ${readme?.techStack?.renderService ? `(Service: ${readme.techStack.renderService})` : ''}
-- Database: ${readme?.techStack?.database || '—'}
-- APIs: ${readme?.techStack?.apis || '—'}
-- Domain: ${readme?.techStack?.domain || '—'} ${readme?.techStack?.domainCost ? `(${readme.techStack.domainCost})` : ''}
-
-## Links
-- Live: ${readme?.techStack?.liveUrl || '—'}
-- GitHub: ${readme?.techStack?.repoUrl || '—'}
-- Admin: ${readme?.techStack?.adminUrl || '—'}
-
-## Platforms
-    "${(readme?.platforms || []).map(p => '- ' + p.name + ': ' + p.role + (p.url ? ' (' + p.url + ')' : '')).join('\n') || '— None set'}\n"
-
-## Monthly Costs
-    "${(readme?.monthlyCosts || []).map(c => '- ' + c.name + ': ' + (c.currency === 'USD' ? '$' : 'J$') + c.amount + '/mo').join('\n') || '— None set'}\n"
-
-## Access & Credentials
-    "${(readme?.credentials || []).map(c => '### ' + c.service + '\\n' + c.details).join('\\n\\n') || '— None set'}\n"
-
-## Custom Management Block
-See below — generated specifically for this client's service.
-`;
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
-      {/* Auto-generated README */}
-      <div className="card" style={{ background: 'rgba(0,12,20,0.9)' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-          <div className="card-label" style={{ margin: 0 }}>📄 Auto-Generated README</div>
-          <button className="btn-ghost" style={{ fontSize: '10px', padding: '0.2rem 0.5rem' }}
-            onClick={() => { navigator.clipboard?.writeText(TEMPLATE); }}>
-            Copy
-          </button>
-        </div>
-        <pre style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-1)',
-          lineHeight: 1.8, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          background: 'rgba(0,0,0,0.3)', padding: '0.875rem', borderRadius: 6,
-          border: '1px solid rgba(0,212,255,0.08)', maxHeight: 360, overflowY: 'auto' }}>
-          {TEMPLATE}
-        </pre>
-      </div>
-
-      {/* Custom Management Block */}
-      <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.875rem' }}>
-          <div>
-            <div className="card-label" style={{ margin: 0 }}>⚡ Custom Management Block</div>
-            <div style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)', marginTop: 3 }}>
-              Code, commands, and instructions for anyone managing this client
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {prebuilt && (
-              <button className="btn-ghost" style={{ fontSize: '10px', padding: '0.2rem 0.6rem', color: 'var(--bolt)', borderColor: 'rgba(0,212,255,0.3)' }}
-                onClick={() => { setCustomBlock(prebuilt); setEditMode(false); onUpdate({ managementBlock: prebuilt }); }}>
-                ⚡ Load D&D Template
-              </button>
-            )}
-            <button className="icon-btn" onClick={() => setEditMode(e => !e)}>
-              {editMode ? <Icons.check size={13}/> : <Icons.edit size={12}/>}
-            </button>
-          </div>
-        </div>
-
-        {editMode ? (
-          <>
-            <textarea
-              className="input"
-              style={{ minHeight: 240, resize: 'vertical', fontFamily: 'var(--fm)',
-                fontSize: '11px', lineHeight: 1.7 }}
-              value={customBlock}
-              onChange={e => setCustomBlock(e.target.value)}
-              placeholder={`Write custom management code/instructions for ${client.businessName}...
-
-Examples:
-- How to restart the WhatsApp bot
-- How to add menu items to the chatbot
-- Deployment commands: git push render main
-- How to update Firebase rules
-- Client-specific quirks or custom scripts`}
-            />
-            <button className="btn-primary" style={{ marginTop: '0.5rem', justifyContent: 'center', width: '100%' }}
-              onClick={() => { onUpdate({ managementBlock: customBlock }); setEditMode(false); }}>
-              Save Management Block
-            </button>
-          </>
-        ) : (
-          customBlock
-            ? <pre style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
-                lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                background: 'rgba(0,0,0,0.3)', padding: '0.875rem', borderRadius: 6,
-                border: '1px solid rgba(0,212,255,0.08)', maxHeight: 320, overflowY: 'auto' }}>
-                {customBlock}
-              </pre>
-            : <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--mist-3)',
-                fontSize: '13px', fontStyle: 'italic' }}>
-                No custom block yet. Tap edit to write management code for this client.
-              </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
 function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
