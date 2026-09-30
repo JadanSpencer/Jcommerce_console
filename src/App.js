@@ -1212,7 +1212,7 @@ function App() {
     return () => { unsub(); delete window._dismissAlert; };
   }, []);
 
-  const add    = async (col, data) => { try { await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
+  const add    = async (col, data) => { try { return await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
   const update = async (col, id, data) => { try { await updateDoc(doc(db,col,id), data); } catch { setError('Failed to update.'); } };
   const remove = async (col, id) => { try { await deleteDoc(doc(db,col,id)); } catch { setError('Failed to delete.'); } };
   const toggleHabit = async (habit, date) => { await update('habits', habit.id, { completions: {...(habit.completions||{}), [date]: !habit.completions?.[date]} }); };
@@ -1441,7 +1441,7 @@ function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
-        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)} onAdd={add} todayStr={todayStr}/>}
+        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={remove}/>}
       </main>
 
       <nav className="bottom-nav">
@@ -2224,8 +2224,6 @@ function LeadModal({data,onSave,onClose}) {
     outreachDraft:'', ...data
   });
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  const BIZ_TYPES=['Restaurant','Retail','Pharmacy','School','Salon','Mechanic',
-    'Wholesale','Real Estate','Bakery','Church','Hotel','Other'];
   return (
     <Modal title={data.id?'Edit Lead':'New Lead'} onClose={onClose}>
       <Field label="Business Name"><input className="input" value={f.businessName} onChange={e=>s('businessName',e.target.value)} placeholder="e.g. Kicks Jamaica"/></Field>
@@ -3245,6 +3243,24 @@ const Jk = n => Math.abs(n) >= 1000 ? `${n < 0 ? '−' : ''}${Math.round(Math.ab
 const pctChange = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 100) : null);
 const amountOf = f => Number(f.amount) || 0;
 
+// Retainer months that were due (since the client started) but never collected.
+// Only Active clients owe retainers; Paused and Churned don't accrue.
+const clientSinceOf = l => l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : '');
+const retainerDueDate = (l, mk) => `${mk}-${String(Math.min(Number(l.retainerDueDay) || 1, daysInMonth(mk))).padStart(2, '0')}`;
+const retainerCollected = (l, mk, finances) => !!(l.retainerLog || {})[mk] ||
+  finances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
+function retainerArrears(l, finances, todayStr) {
+  if (!(Number(l.retainerAmount) > 0) || (l.clientStatus || 'Active') !== 'Active') return [];
+  const since = clientSinceOf(l), out = [];
+  for (let i = 0; i < 12; i++) {
+    const mk = addMonths(todayStr.slice(0, 7), -i), due = retainerDueDate(l, mk);
+    if (since && due < since) break;           // before they were a client
+    if (due >= todayStr) continue;             // not late yet
+    if (!retainerCollected(l, mk, finances)) out.push(mk);
+  }
+  return out;
+}
+
 // The ledger's voice, one line per health level (best → worst)
 const LEDGER_LINES = [
   'Profitable. Now protect it.',
@@ -3304,13 +3320,13 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   const runway = avgExp > 0 ? Math.max(0, cash) / avgExp : Infinity;
 
   // ── Clients: retainers and money owed ──────────────────────────────────────
-  const paidClients = leads.filter(l => l.status === 'Paid');
-  const mrr = paidClients.reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
+  const paidClients = leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
+  const mrr = paidClients.filter(l => l.clientStatus !== 'Paused').reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
   const retainerIn = (l, mk) => !!(l.retainerLog || {})[mk] ||
     finances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
-  const retainers = paidClients.filter(l => Number(l.retainerAmount) > 0)
+  const retainers = paidClients.filter(l => Number(l.retainerAmount) > 0 && l.clientStatus !== 'Paused')
     .map(l => ({ l, amount: Number(l.retainerAmount), due: Number(l.retainerDueDay) || 1, got: retainerIn(l, thisMonth) }));
-  const overdueRet = retainers.filter(r => !r.got && r.due < today);
+  const overdueRet = retainers.map(r => { const months = retainerArrears(r.l, finances, todayStr); return { ...r, months, amount: months.length * r.amount }; }).filter(r => r.months.length);
   const pendingRet = retainers.filter(r => !r.got && r.due >= today);
   const setupOwed = paidClients.map(l => {
     const paid = finances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
@@ -3362,7 +3378,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   if (unbudgeted.length) add('warn', `${J(unbudgeted.reduce((s, [, v]) => s + v, 0))} spent on ${unbudgeted.map(([c]) => c).join(', ')} with no budget set.`);
 
   // Present-tense problems only belong on the current month
-  if (isCurrent && overdueRet.length) add('danger', `${overdueRet.map(r => r.l.businessName).join(', ')} ${overdueRet.length === 1 ? 'owes' : 'owe'} this month's retainer (${J(overdueRet.reduce((s, r) => s + r.amount, 0))}). Chase it today.`);
+  if (isCurrent && overdueRet.length) add('danger', `Unpaid retainers: ${overdueRet.map(r => `${r.l.businessName} (${r.months.length} month${r.months.length === 1 ? '' : 's'})`).join(', ')}. That's ${J(overdueRet.reduce((s, r) => s + r.amount, 0))}. Chase it today.`);
   if (isCurrent && setupOwed.length) add('warn', `Clients still owe ${J(setupOwed.reduce((s, x) => s + x.due, 0))} on project fees. Collect before you spend.`);
   if (isCurrent && sinceIncome !== null && sinceIncome > 30) add('danger', `No income in ${sinceIncome} days.`);
   if (isCurrent && avgExp > 0 && runway < 3) add('danger', `Cash covers ${runway.toFixed(1)} months of spending. You want 3 or more.`);
@@ -3563,7 +3579,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           {owed > 0 && (
             <div className="fin-owed">
               <div className="card-label" style={{ margin:'1.1rem 0 0.5rem' }}>Owed to you</div>
-              {overdueRet.map(r => <div key={r.l.id} className="row-between"><span>{r.l.businessName} · retainer</span><span className="bad">{J(r.amount)}</span></div>)}
+              {overdueRet.map(r => <div key={r.l.id} className="row-between"><span>{r.l.businessName} · {r.months.length > 1 ? `${r.months.length} retainers` : 'retainer'}</span><span className="bad">{J(r.amount)}</span></div>)}
               {setupOwed.map(x => <div key={x.l.id} className="row-between"><span>{x.l.businessName} · project</span><span className="warn">{J(x.due)}</span></div>)}
             </div>
           )}
@@ -3936,325 +3952,412 @@ function GoalModal({data,onSave,onClose}) {
   );
 }
 
-// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
-// ─── CLIENT MANAGEMENT ────────────────────────────────────────────────────────
-function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
-  const paidClients = leads.filter(l => l.status === 'Paid');
-  const [sel, setSel]           = useState(paidClients[0]?.id || null);
-  const [clientTab, setClientTab] = useState('overview'); // overview | retainer
+// ─── CLIENTS ──────────────────────────────────────────────────────────────────
+// A client is a lead with status "Paid". clientStatus (Active / Paused /
+// Churned) controls whether their retainer is counted and chased.
+const CLIENT_STATES = [
+  { id:'Active',  hex:'#3fd1b8' },
+  { id:'Paused',  hex:'#e6c47c' },
+  { id:'Churned', hex:'#e37c62' },
+];
+const CLIENT_HEX = Object.fromEntries(CLIENT_STATES.map(c => [c.id, c.hex]));
+const clientState = l => l.clientStatus || 'Active';
+const BIZ_TYPES = ['Restaurant','Retail','Pharmacy','School','Salon','Mechanic','Wholesale','Real Estate','Bakery','Church','Hotel','Other'];
+
+function ClientManagement({ leads, finances, todayStr, onAdd, onUpdate, onRemove }) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const clients = leads.filter(l => l.status === 'Paid');
+  const [sel, setSel]         = useState(null);
+  const [filter, setFilter]   = useState('Active');
+  const [search, setSearch]   = useState('');
+  const [tab, setTab]         = useState('overview');
+  const [clientForm, setClientForm] = useState(null);   // {} new · client edit
+  const [payForm, setPayForm] = useState(null);
   const [editProduct, setEditProduct] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [editingNote, setEditingNote] = useState(null);
 
-  // Fall back to the first client if the selection is empty or no longer paid
-  const client        = paidClients.find(c => c.id === sel) || paidClients[0];
-  const clientFin     = finances.filter(f => f.pipelineLeadId === client?.id);
-  const totalReceived = clientFin.reduce((s, f) => s + (Number(f.amount) || 0), 0);
+  const thisMonth = todayStr.slice(0, 7);
+  const today = Number(todayStr.slice(8));
+  const paymentsOf = id => finances.filter(f => f.pipelineLeadId === id && f.type === 'income').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const projectPaid = id => paymentsOf(id).filter(f => f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
+  const retainerGot = (l, mk) => retainerCollected(l, mk, finances);
+  const owedBy = l => {
+    const project = Math.max(0, (Number(l.value) || 0) - projectPaid(l.id));
+    const arrears = retainerArrears(l, finances, todayStr);
+    const ret = arrears.length * (Number(l.retainerAmount) || 0);
+    return { project, ret, arrears, total: project + ret };
+  };
 
-  // ── RETAINER TOGGLE ───────────────────────────────────────────────────────
-  // Tracks which months retainer was collected: { "2026-06": true, ... }
-  const retainerLog   = client?.retainerLog || {};
-  const thisMonth     = todayStr?.slice(0, 7); // "2026-06"
-  const collectedThis = !!retainerLog[thisMonth];
+  const q = search.trim().toLowerCase();
+  const list = clients
+    .filter(l => filter === 'All' || clientState(l) === filter)
+    .filter(l => !q || [l.businessName, l.contactName, l.phone, l.location].some(v => (v || '').toLowerCase().includes(q)))
+    .sort((a, b) => owedBy(b).total - owedBy(a).total || (a.businessName || '').localeCompare(b.businessName || ''));
+  const client = clients.find(c => c.id === sel) || list[0] || null;
 
-  // Check if retainer already logged in finances for this month
-  const retainerAlreadyLogged = finances.some(f =>
-    f.pipelineLeadId === client?.id &&
-    f.paymentStage === 'Monthly Retainer' &&
-    (f.date || '').startsWith(thisMonth)
-  );
+  const active = clients.filter(l => clientState(l) === 'Active');
+  const mrr = active.reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
+  const owedAll = clients.reduce((s, l) => s + owedBy(l).total, 0);
+  const lifetime = finances.filter(f => f.type === 'income' && clients.some(c => c.id === f.pipelineLeadId)).reduce((s, f) => s + amountOf(f), 0);
 
-  const toggleRetainer = async () => {
-    const newLog = { ...retainerLog, [thisMonth]: !collectedThis };
-    const updated = { ...client, retainerLog: newLog };
-    onUpdateLead(client.id, updated);
-    // Only log finance entry when marking collected AND not already logged
-    if (!collectedThis && client.retainerAmount && !retainerAlreadyLogged) {
-      onAdd('finances', {
-        type: 'income',
-        description: `${client.businessName} — Monthly Retainer ${thisMonth}`,
-        amount: Number(client.retainerAmount),
-        category: 'Monthly Retainer',
-        date: todayStr,
-        pipelineLeadId: client.id,
-        paymentStage: 'Monthly Retainer',
+  // ── Actions ────────────────────────────────────────────────────────────────
+  const saveClient = async d => {
+    const { fromLeadId, ...data } = d;
+    if (fromLeadId) { await onUpdate('leads', fromLeadId, { ...data, status: 'Paid' }); setSel(fromLeadId); }
+    else if (d.id) await onUpdate('leads', d.id, data);
+    else { const ref = await onAdd('leads', { ...data, status: 'Paid', source: 'Manual' }); if (ref?.id) setSel(ref.id); }
+    setClientForm(null); setFilter(f => (f === 'All' ? f : data.clientStatus || 'Active'));
+  };
+
+  const setRetainerMonth = async (l, mk, collected) => {
+    const logged = paymentsOf(l.id).find(f => f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
+    if (!collected && logged) {
+      const ok = await confirm({ message: `Unmark ${monthName(mk)}? This also deletes the ${J(amountOf(logged))} retainer payment from Finance.`, label: 'Unmark', danger: true });
+      if (!ok) return;
+      await onRemove('finances', logged.id);
+    }
+    await onUpdate('leads', l.id, { retainerLog: { ...(l.retainerLog || {}), [mk]: collected } });
+    if (collected && !logged && Number(l.retainerAmount) > 0) {
+      const day = String(Math.min(daysInMonth(mk), Number(l.retainerDueDay) || 1)).padStart(2, '0');
+      await onAdd('finances', {
+        type: 'income', description: `${l.businessName} — Monthly Retainer ${mk}`, amount: Number(l.retainerAmount),
+        category: 'Monthly Retainer', date: mk === thisMonth ? todayStr : `${mk}-${day}`, pipelineLeadId: l.id, paymentStage: 'Monthly Retainer',
       });
     }
   };
 
-  if (paidClients.length === 0) return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Client Management</div>
-        <div className="hero-big">No Clients Yet</div>
-        <div className="hero-sub">Close a deal in Pipeline — it will appear here.</div>
-      </div>
-    </div>
-  );
+  const savePayment = d => { d.id ? onUpdate('finances', d.id, d) : onAdd('finances', d); setPayForm(null); };
+  const deletePayment = async () => {
+    if (await confirm({ message: `Delete this ${J(amountOf(payForm))} payment? It's removed from Finance too.`, label: 'Delete', danger: true })) { onRemove('finances', payForm.id); setPayForm(null); }
+  };
+
+  const notes = (client?.clientNotes || []).slice().sort((a, b) => (b.at || '').localeCompare(a.at || ''));
+  const saveNote = () => {
+    const text = noteDraft.trim();
+    if (!text || !client) return;
+    const all = client.clientNotes || [];
+    const next = editingNote
+      ? all.map(n => (n.id === editingNote ? { ...n, text, edited: new Date().toISOString() } : n))
+      : [...all, { id: Date.now().toString(36), text, at: new Date().toISOString() }];
+    onUpdate('leads', client.id, { clientNotes: next });
+    setNoteDraft(''); setEditingNote(null);
+  };
+  const deleteNote = async n => {
+    if (await confirm({ message: 'Delete this note?', label: 'Delete', danger: true }))
+      onUpdate('leads', client.id, { clientNotes: (client.clientNotes || []).filter(x => x.id !== n.id) });
+  };
+
+  const removeClient = async mode => {
+    const l = deleting;
+    if (mode === 'pipeline') await onUpdate('leads', l.id, { status: 'Lost', clientStatus: null });
+    else {
+      // Keep the money in Finance, just unlink it from the deleted client
+      await Promise.all(finances.filter(f => f.pipelineLeadId === l.id).map(f => onUpdate('finances', f.id, { pipelineLeadId: null })));
+      await onRemove('leads', l.id);
+    }
+    setDeleting(null); setSel(null);
+  };
+
+  const waNumber = p => (p || '').replace(/\D/g, '');
+  const counts = Object.fromEntries(CLIENT_STATES.map(s => [s.id, clients.filter(l => clientState(l) === s.id).length]));
 
   return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Client Management</div>
-        <div className="hero-big" style={{ fontSize: '24px' }}>
-          {client?.businessName || 'Select Client'}
+    <div className="section clients">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Clients</div></div>
+        <div className="seg">
+          {[...CLIENT_STATES.map(s => [s.id, `${s.id} ${counts[s.id]}`]), ['All', `All ${clients.length}`]].map(([id, label]) => (
+            <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
+          ))}
         </div>
-        <div className="hero-sub">{paidClients.length} active client{paidClients.length !== 1 ? 's' : ''}</div>
+        <button className="btn-primary" onClick={() => setClientForm({})}><Icons.plus size={14}/> Client</button>
       </div>
 
-      {/* Client selector */}
-      {paidClients.length > 1 && (
-        <div className="pill-row">
-          {paidClients.map(c => (
-            <button key={c.id}
-              className={`pill ${client?.id === c.id ? 'active' : ''}`}
-              onClick={() => { setSel(c.id); setClientTab('overview'); }}>
-              {c.businessName}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="grid-2">
+        <div className="fin-tile"><span>Active clients</span><b>{active.length}</b><span className="fin-delta">{counts.Paused} paused · {counts.Churned} churned</span></div>
+        <div className="fin-tile"><span>Retainers (MRR)</span><b className="good">{J(mrr)}</b><span className="fin-delta">active clients only</span></div>
+        <div className="fin-tile"><span>Owed to you</span><b className={owedAll ? 'bad' : ''}>{J(owedAll)}</b><span className="fin-delta">{owedAll ? 'chase it' : 'all settled'}</span></div>
+        <div className="fin-tile"><span>Lifetime revenue</span><b>{J(lifetime)}</b><span className="fin-delta">from these clients</span></div>
+      </div>
 
-      {client && (<>
-        {/* ── RETAINER BANNER ── */}
-        {client.retainerAmount > 0 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            background: collectedThis ? 'rgba(26,219,138,0.07)' : 'rgba(255,96,64,0.07)',
-            border: `1px solid ${collectedThis ? 'rgba(26,219,138,0.25)' : 'rgba(255,96,64,0.25)'}`,
-            borderLeft: `3px solid ${collectedThis ? '#1adb8a' : '#ff6040'}`,
-            borderRadius: 10, padding: '0.875rem 1rem',
-          }}>
-            <div>
-              <div style={{ fontFamily: 'var(--fm)', fontSize: '8px', letterSpacing: '0.2em',
-                textTransform: 'uppercase', color: collectedThis ? '#1adb8a' : '#ff6040', marginBottom: 3 }}>
-                Retainer · {thisMonth}
-              </div>
-              <div style={{ fontFamily: 'var(--fe)', fontSize: '18px', fontWeight: 700,
-                color: collectedThis ? '#1adb8a' : 'var(--mist-0)' }}>
-                {collectedThis ? '✓ Collected' : `J$${Number(client.retainerAmount).toLocaleString()} due`}
-              </div>
-              <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 2 }}>
-                {collectedThis
-                  ? retainerAlreadyLogged ? '✓ Income logged to Finance' : 'Toggle only — add manually if needed'
-                  : retainerAlreadyLogged ? 'Already in finances — toggle to mark collected' : 'Mark collected to log income automatically'}
-              </div>
-            </div>
-            <button
-              onClick={toggleRetainer}
-              style={{
-                padding: '0.6rem 1rem', borderRadius: 8, cursor: 'pointer', fontWeight: 700,
-                fontSize: '12px', fontFamily: 'var(--fm)',
-                background: collectedThis ? 'rgba(255,96,64,0.1)' : 'rgba(26,219,138,0.12)',
-                color: collectedThis ? '#ff6040' : '#1adb8a',
-                border: `1px solid ${collectedThis ? 'rgba(255,96,64,0.3)' : 'rgba(26,219,138,0.3)'}`,
-              }}>
-              {collectedThis ? 'Unmark' : '✓ Mark Collected'}
-            </button>
-          </div>
-        )}
-
-        {/* ── STATS ── */}
-        <div className="grid-2">
-          {[
-            { l: 'Monthly Retainer', v: `J$${Number(client.retainerAmount||0).toLocaleString()}/mo`, c: 'var(--bolt)' },
-            { l: 'Total Received',   v: `J$${totalReceived.toLocaleString()}`,                      c: '#1adb8a' },
-            { l: 'Setup Value',      v: `J$${Number(client.value||0).toLocaleString()}`,            c: 'var(--horizon)' },
-            { l: 'Balance Due',      v: `J$${Math.max(0, Number(client.value||0) - totalReceived).toLocaleString()}`, c: totalReceived >= Number(client.value||0) ? '#1adb8a' : '#ff6040' },
-          ].map(s => (
-            <div key={s.l} className="stat-card">
-              <div className="stat-label">{s.l}</div>
-              <div className="stat-value" style={{ color: s.c, fontSize: '18px' }}>{s.v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* ── TABS ── */}
-        <div style={{ display: 'flex', gap: 2, background: 'rgba(0,24,36,0.6)',
-          border: '1px solid rgba(0,212,255,0.08)', borderRadius: 8, padding: 3 }}>
-          {[
-            { id: 'overview', label: '📋 Overview' },
-            { id: 'retainer', label: '💳 Retainers' },
-          ].map(t => (
-            <button key={t.id} onClick={() => setClientTab(t.id)} style={{
-              flex: 1, padding: '0.4rem 0.5rem', border: 'none', borderRadius: 5, cursor: 'pointer',
-              fontFamily: 'var(--fm)', fontSize: '10px', letterSpacing: '0.05em',
-              background: clientTab === t.id ? 'rgba(0,136,200,0.15)' : 'none',
-              color: clientTab === t.id ? 'var(--bolt-lt)' : 'var(--mist-3)',
-            }}>{t.label}</button>
-          ))}
-        </div>
-
-        {/* ── OVERVIEW TAB ── */}
-        {clientTab === 'overview' && (<>
-          {/* Tech Stack */}
-          {client.product?.techStack && (
-            <div className="card span-6">
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
-                <div className="card-label" style={{ margin: 0 }}>Tech Stack & Links</div>
-                <button className="icon-btn" onClick={() => setEditProduct(true)}><Icons.edit size={12}/></button>
-              </div>
-              {[
-                { l: 'Product Type',   v: client.product?.type },
-                { l: 'Framework',      v: client.product.techStack.framework },
-                { l: 'Hosting',        v: client.product.techStack.hosting },
-                { l: 'Render Service', v: client.product.techStack.renderService },
-                { l: 'Database',       v: client.product.techStack.database },
-                { l: 'Domain',         v: client.product.techStack.domain },
-                { l: 'Domain Cost',    v: client.product.techStack.domainCost },
-                { l: 'APIs Used',      v: client.product.techStack.apis },
-                { l: 'Live URL',       v: client.product.techStack.liveUrl, link: true },
-                { l: 'GitHub Repo',    v: client.product.techStack.repoUrl, link: true },
-                { l: 'Admin Panel',    v: client.product.techStack.adminUrl, link: true },
-              ].filter(r => r.v).map(row => (
-                <div key={row.l} style={{ display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'center', padding: '0.5rem 0', borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
-                  <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
-                    letterSpacing: '0.1em', textTransform: 'uppercase', flexShrink: 0, marginRight: '1rem' }}>
-                    {row.l}
-                  </span>
-                  {row.link
-                    ? <a href={row.v} target="_blank" rel="noopener noreferrer"
-                        style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--bolt)',
-                          textDecoration: 'none', wordBreak: 'break-all', textAlign: 'right' }}>{row.v}</a>
-                    : <span style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
-                        textAlign: 'right' }}>{row.v}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-          {!client.product?.techStack && (
-            <div className="card span-6" style={{ textAlign: 'center', padding: '1.5rem' }}>
-              <div style={{ color: 'var(--mist-3)', marginBottom: '0.75rem', fontSize: '13px' }}>
-                No product details yet
-              </div>
-              <button className="btn-primary" onClick={() => setEditProduct(true)}>
-                <Icons.plus size={14}/> Add Product Details
-              </button>
-            </div>
-          )}
-
-          {/* Platforms */}
-          {client.product?.platforms?.length > 0 && (
-            <div className="card span-6">
-              <div className="card-label">Online Platforms</div>
-              {client.product.platforms.map((p, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
-                  alignItems: 'center', background: 'rgba(0,212,255,0.04)',
-                  border: '1px solid rgba(0,212,255,0.08)', borderRadius: 6,
-                  padding: '0.625rem 0.875rem', marginBottom: '0.375rem' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', fontWeight: 500 }}>{p.name}</div>
-                    <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 2 }}>{p.role}</div>
-                  </div>
-                  {p.url && <a href={p.url} target="_blank" rel="noopener noreferrer"
-                    style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--bolt)', textDecoration: 'none' }}>
-                    Open ↗
-                  </a>}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Monthly Costs */}
-          {client.product?.monthlyCosts?.length > 0 && (
-            <div className="card span-6">
-              <div className="card-label">Monthly Running Costs</div>
-              {client.product.monthlyCosts.map((c, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
-                  padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  <span style={{ fontSize: '13px', color: 'var(--mist-1)' }}>{c.name}</span>
-                  <span style={{ fontFamily: 'var(--fm)', fontSize: '12px', color: '#ff6040', fontWeight: 500 }}>
-                    {c.currency === 'USD' ? '$' : 'J$'}{Number(c.amount).toLocaleString()}/mo
-                  </span>
-                </div>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.625rem',
-                paddingTop: '0.5rem', borderTop: '1px solid rgba(0,212,255,0.1)' }}>
-                <span style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--mist-3)',
-                  letterSpacing: '0.15em', textTransform: 'uppercase' }}>Total Monthly</span>
-                <span style={{ fontFamily: 'var(--fe)', fontSize: '18px', fontWeight: 600, color: '#ff6040' }}>
-                  J${client.product.monthlyCosts.reduce((s, c) => s + (Number(c.amount) || 0), 0).toLocaleString()}/mo
+      {/* List */}
+      <div className="card cl-list span-4">
+        <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search clients…"/>
+        {list.length === 0
+          ? <div className="agenda-empty small">{clients.length ? 'No clients match.' : 'No clients yet.'} <button className="link-btn" onClick={() => setClientForm({})}>Add one</button></div>
+          : list.map(l => {
+            const o = owedBy(l);
+            return (
+              <button key={l.id} className={`cl-row ${client?.id === l.id ? 'on' : ''}`} onClick={() => { setSel(l.id); setTab('overview'); setNoteDraft(''); setEditingNote(null); }} style={{ '--c': CLIENT_HEX[clientState(l)] }}>
+                <span className="cl-avatar">{(l.businessName || '?')[0]}</span>
+                <span className="cl-row-main">
+                  <span className="cl-row-name">{l.businessName}</span>
+                  <span className="cl-row-meta">{clientState(l)}{Number(l.retainerAmount) > 0 ? ` · ${J(l.retainerAmount)}/mo` : ''}</span>
                 </span>
+                {o.total > 0 && <span className="cl-owed">{J(o.total)}</span>}
+              </button>
+            );
+          })}
+      </div>
+
+      {/* Detail */}
+      {!client ? (
+        <div className="card span-8 agenda-empty">Close a deal in the Pipeline, or add a client directly.</div>
+      ) : (() => {
+        const o = owedBy(client), pays = paymentsOf(client.id);
+        const paidTotal = pays.reduce((s, f) => s + amountOf(f), 0);
+        const since = clientSinceOf(client);
+        return (
+          <div className="cl-detail span-8">
+            <div className="card cl-head" style={{ '--c': CLIENT_HEX[clientState(client)] }}>
+              <div className="cl-head-top">
+                <span className="cl-avatar big">{(client.businessName || '?')[0]}</span>
+                <div className="cl-head-main">
+                  <div className="cl-name">{client.businessName}</div>
+                  <div className="cl-sub">
+                    <span className="cl-state">{clientState(client)}</span>
+                    {client.businessType && <span>{client.businessType}</span>}
+                    {client.location && <span>{client.location}{client.country ? `, ${client.country}` : ''}</span>}
+                    {since && <span>client since {fmtDate(since, { month:'short', year:'numeric' })}</span>}
+                  </div>
+                </div>
+                <div className="cl-head-actions">
+                  <button className="icon-btn" title="Edit client" onClick={() => setClientForm(client)}><Icons.edit size={13}/></button>
+                  <button className="icon-btn danger-btn" title="Delete client" onClick={() => setDeleting(client)}><Icons.trash size={13}/></button>
+                </div>
+              </div>
+              <div className="cl-contact">
+                {client.contactName && <span>👤 {client.contactName}</span>}
+                {client.phone && <a className="wa-btn" href={`https://wa.me/${waNumber(client.phone)}`} target="_blank" rel="noopener noreferrer"><Icons.whatsapp size={13}/> WhatsApp</a>}
+                {client.phone && <a className="wa-btn cl-btn" href={`tel:${client.phone}`}><Icons.phone size={13}/> {client.phone}</a>}
+                {client.email && <a className="wa-btn cl-btn" href={`mailto:${client.email}`}>✉ {client.email}</a>}
+                {client.websiteUrl && <a className="wa-btn cl-btn" href={client.websiteUrl} target="_blank" rel="noopener noreferrer">↗ Website</a>}
               </div>
             </div>
-          )}
 
-          {/* Credentials */}
-          {client.product?.credentials?.length > 0 && (
-            <div className="card span-6">
-              <div className="card-label">Credentials & Access</div>
-              {client.product.credentials.map((c, i) => (
-                <div key={i} style={{ background: 'rgba(0,24,36,0.7)',
-                  border: '1px solid rgba(0,212,255,0.1)', borderLeft: '2px solid var(--bolt-3)',
-                  borderRadius: 6, padding: '0.625rem 0.875rem', marginBottom: '0.375rem' }}>
-                  <div style={{ fontFamily: 'var(--fm)', fontSize: '9px', color: 'var(--bolt)',
-                    letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 3 }}>{c.service}</div>
-                  <div style={{ fontFamily: 'var(--fm)', fontSize: '11px', color: 'var(--mist-1)',
-                    lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{c.details}</div>
-                </div>
+            <div className="grid-2">
+              <div className="fin-tile"><span>Paid to date</span><b className="good">{J(paidTotal)}</b><span className="fin-delta">{pays.length} payment{pays.length === 1 ? '' : 's'}</span></div>
+              <div className="fin-tile"><span>Project balance</span><b className={o.project ? 'bad' : ''}>{J(o.project)}</b><span className="fin-delta">of {J(client.value || 0)}</span></div>
+              <div className="fin-tile"><span>Retainer</span><b>{Number(client.retainerAmount) > 0 ? `${J(client.retainerAmount)}` : '—'}</b><span className="fin-delta">{Number(client.retainerAmount) > 0 ? `due day ${client.retainerDueDay || 1}` : 'none set'}</span></div>
+              <div className="fin-tile"><span>This month</span><b className={o.ret ? 'bad' : Number(client.retainerAmount) > 0 && retainerGot(client, thisMonth) ? 'good' : ''}>{Number(client.retainerAmount) > 0 ? (retainerGot(client, thisMonth) ? 'Collected' : o.ret ? 'Overdue' : 'Due') : '—'}</b><span className="fin-delta">{o.arrears.length ? `${o.arrears.length} unpaid · ${J(o.ret)}` : `${monthName(thisMonth, { month:'long' })} retainer`}</span></div>
+            </div>
+
+            <div className="seg seg-full">
+              {[['overview','Overview'],['payments',`Payments ${pays.length}`],['retainers','Retainers'],['notes',`Notes ${notes.length}`]].map(([id, label]) => (
+                <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
               ))}
             </div>
-          )}
 
-          {/* Payment History */}
-          <div className="card span-6">
-            <div className="card-label">Payment History</div>
-            {clientFin.length === 0
-              ? <div style={{ fontSize: '13px', color: 'var(--mist-3)', fontStyle: 'italic' }}>No payments logged.</div>
-              : clientFin.map(f => (
-                <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between',
-                  padding: '0.5rem 0', borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
-                  <div>
-                    <div style={{ fontSize: '13px', color: 'var(--mist-1)' }}>{f.paymentStage || f.description}</div>
-                    <div style={{ fontFamily: 'var(--fm)', fontSize: '10px', color: 'var(--mist-3)', marginTop: 1 }}>{f.date}</div>
+            {tab === 'overview' && (
+              <div className="cl-cols">
+                <div className="card">
+                  <div className="card-label">Profile</div>
+                  <dl className="fin-kv">
+                    {[['Contact', client.contactName], ['Phone', client.phone], ['Email', client.email], ['Business type', client.businessType], ['Size', client.businessSize],
+                      ['Location', [client.location, client.country].filter(Boolean).join(', ')], ['Project fee', client.value ? J(client.value) : ''],
+                      ['Retainer', Number(client.retainerAmount) > 0 ? `${J(client.retainerAmount)}/mo · day ${client.retainerDueDay || 1}` : ''], ['Client since', since]]
+                      .map(([k, v]) => <div key={k}><dt>{k}</dt><dd className={v ? '' : 'muted'}>{v || '—'}</dd></div>)}
+                  </dl>
+                  {client.notes && <div className="notes-box" style={{ marginTop:'0.75rem' }}>{client.notes}</div>}
+                </div>
+                <div className="card">
+                  <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+                    <span className="card-label" style={{ margin:0 }}>Product & tech</span>
+                    <button className="icon-btn" title="Edit product" onClick={() => setEditProduct(true)}><Icons.edit size={12}/></button>
                   </div>
-                  <div style={{ fontFamily: 'var(--fm)', fontSize: '13px', fontWeight: 600, color: '#1adb8a' }}>
-                    +J${Number(f.amount).toLocaleString()}
+                  {!client.product ? <div className="agenda-empty small">No product details. <button className="link-btn" onClick={() => setEditProduct(true)}>Add them</button></div> : (<>
+                    <dl className="fin-kv">
+                      {client.product.type && <div><dt>Product</dt><dd>{client.product.type}</dd></div>}
+                      {Object.entries(client.product.techStack || {}).map(([k, v]) => {
+                        const label = (TECH_FIELDS.find(f => f[0] === k) || [k, k])[1];
+                        return <div key={k}><dt>{label}</dt><dd>{/^https?:/.test(v) ? <a href={v} target="_blank" rel="noopener noreferrer" className="cl-link">{v.replace(/^https?:\/\//, '')}</a> : v}</dd></div>;
+                      })}
+                    </dl>
+                    {(client.product.platforms || []).length > 0 && <>
+                      <div className="card-label" style={{ margin:'1rem 0 0.4rem' }}>Platforms</div>
+                      {client.product.platforms.map((p, i) => <div key={i} className="row-between cl-line"><span>{p.name} <em>{p.role}</em></span>{p.url && <a href={p.url} target="_blank" rel="noopener noreferrer" className="cl-link">Open ↗</a>}</div>)}
+                    </>}
+                    {(client.product.monthlyCosts || []).length > 0 && <>
+                      <div className="card-label" style={{ margin:'1rem 0 0.4rem' }}>Monthly running costs</div>
+                      {client.product.monthlyCosts.map((c, i) => <div key={i} className="row-between cl-line"><span>{c.name}</span><span className="bad">{c.currency === 'USD' ? 'US$' : 'J$'}{Number(c.amount).toLocaleString()}</span></div>)}
+                    </>}
+                    {(client.product.credentials || []).length > 0 && <>
+                      <div className="card-label" style={{ margin:'1rem 0 0.4rem' }}>Credentials</div>
+                      {client.product.credentials.map((c, i) => <div key={i} className="cl-cred"><b>{c.service}</b><span>{c.details}</span></div>)}
+                    </>}
+                  </>)}
+                </div>
+              </div>
+            )}
+
+            {tab === 'payments' && (
+              <div className="card">
+                <div className="row-between" style={{ marginBottom:'0.5rem' }}>
+                  <span className="card-label" style={{ margin:0 }}>Payments · also in Finance</span>
+                  <button className="btn-primary" onClick={() => setPayForm({ type:'income', pipelineLeadId: client.id, category:'First Deposit', description: `${client.businessName} payment` })}><Icons.plus size={13}/> Payment</button>
+                </div>
+                {pays.length === 0 ? <div className="agenda-empty small">No payments logged for {client.businessName}.</div>
+                  : pays.map(f => (
+                    <button key={f.id} className="fin-tx income" onClick={() => setPayForm(f)}>
+                      <span className="fin-tx-dot"/>
+                      <span className="fin-tx-main">
+                        <span className="fin-tx-desc">{f.paymentStage || f.category}</span>
+                        <span className="fin-tx-meta">{f.date ? fmtDate(f.date, { month:'short', day:'numeric', year:'numeric' }) : 'No date'} · {f.description}</span>
+                      </span>
+                      <span className="fin-tx-amt">+{J(amountOf(f))}</span>
+                    </button>
+                  ))}
+              </div>
+            )}
+
+            {tab === 'retainers' && (
+              <div className="card">
+                <div className="card-label">Retainer · last 12 months · click to mark</div>
+                {!(Number(client.retainerAmount) > 0) ? (
+                  <div className="agenda-empty small">No retainer set. <button className="link-btn" onClick={() => setClientForm(client)}>Set one</button></div>
+                ) : (<>
+                  <div className="cl-months">
+                    {Array.from({ length: 12 }, (_, i) => addMonths(thisMonth, -i)).map(mk => {
+                      const got = retainerGot(client, mk);
+                      const before = !got && since && retainerDueDate(client, mk) < since;
+                      const late = !got && !before && retainerDueDate(client, mk) < todayStr;
+                      return (
+                        <button key={mk} disabled={before} className={`cl-month ${got ? 'got' : late ? 'late' : ''} ${before ? 'before' : ''}`}
+                          onClick={() => setRetainerMonth(client, mk, !got)} title={got ? 'Collected. Click to unmark.' : 'Mark as collected (logs the payment)'}>
+                          <span>{monthName(mk, { month:'short' })}</span>
+                          <b>{got ? '✓' : before ? '·' : late ? '!' : '○'}</b>
+                          <em>{mk.slice(0, 4)}</em>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="fin-bar-legend" style={{ marginTop:'0.75rem' }}>Marking a month collected logs {J(client.retainerAmount)} in Finance. Unmarking removes it.</div>
+                </>)}
+              </div>
+            )}
+
+            {tab === 'notes' && (
+              <div className="card">
+                <div className="card-label">Notes</div>
+                <div className="cl-note-new">
+                  <textarea className="input" rows={2} value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Calls, decisions, what they asked for…"
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveNote(); }}/>
+                  <div className="row-gap" style={{ justifyContent:'flex-end' }}>
+                    {editingNote && <button className="btn-ghost" onClick={() => { setEditingNote(null); setNoteDraft(''); }}>Cancel</button>}
+                    <button className="btn-primary" onClick={saveNote} disabled={!noteDraft.trim()}>{editingNote ? 'Save note' : 'Add note'}</button>
                   </div>
                 </div>
-              ))}
-          </div>
-        </>)}
-
-        {/* ── RETAINER HISTORY TAB ── */}
-        {clientTab === 'retainer' && (
-          <div className="card">
-            <div className="card-label">Retainer Collection Log</div>
-            {!client.retainerAmount
-              ? <div style={{ fontSize: '13px', color: 'var(--mist-3)' }}>No retainer set for this client.</div>
-              : (<>
-                  <div style={{ fontSize: '12px', color: 'var(--mist-2)', marginBottom: '0.75rem' }}>
-                    J${Number(client.retainerAmount).toLocaleString()}/mo retainer
+                {notes.length === 0 ? <div className="agenda-empty small">No notes yet.</div> : notes.map(n => (
+                  <div key={n.id} className="cl-note">
+                    <div className="cl-note-meta">
+                      <span>{new Date(n.at).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })}{n.edited ? ' · edited' : ''}</span>
+                      <span className="row-gap">
+                        <button className="icon-btn" title="Edit" onClick={() => { setEditingNote(n.id); setNoteDraft(n.text); }}><Icons.edit size={11}/></button>
+                        <button className="icon-btn danger-btn" title="Delete" onClick={() => deleteNote(n)}><Icons.trash size={11}/></button>
+                      </span>
+                    </div>
+                    <div className="cl-note-text">{n.text}</div>
                   </div>
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const d = new Date();
-                    d.setMonth(d.getMonth() - i);
-                    const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-                    const collected = retainerLog[key];
-                    return (
-                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between',
-                        alignItems: 'center', padding: '0.5rem 0',
-                        borderBottom: '1px solid rgba(0,212,255,0.05)' }}>
-                        <span style={{ fontFamily: 'var(--fm)', fontSize: '12px', color: 'var(--mist-2)' }}>
-                          {key}
-                        </span>
-                        <span style={{ fontFamily: 'var(--fm)', fontSize: '11px', fontWeight: 600,
-                          color: collected ? '#1adb8a' : 'var(--mist-4)' }}>
-                          {collected ? '✓ Collected' : '— Not logged'}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </>)}
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </>)}
+        );
+      })()}
 
-      {editProduct && client && (
-        <ProductModal client={client}
-          onSave={d => { onUpdateLead(client.id, { ...client, product: d }); setEditProduct(false); }}
-          onClose={() => setEditProduct(false)} />
+      {clientForm !== null && <ClientModal data={clientForm} leads={leads} onSave={saveClient} onClose={() => setClientForm(null)}/>}
+      {payForm !== null && (
+        <FinanceModal data={payForm} leads={leads} onSave={savePayment} onDelete={payForm.id ? deletePayment : null} onClose={() => setPayForm(null)}/>
       )}
+      {editProduct && client && (
+        <ProductModal client={client} onSave={d => { onUpdate('leads', client.id, { product: d }); setEditProduct(false); }} onClose={() => setEditProduct(false)}/>
+      )}
+      {deleting && (
+        <Modal title={`Remove ${deleting.businessName}?`} onClose={() => setDeleting(null)}>
+          <p className="cl-del-text">Choose what happens. Either way, the {J(paymentsOf(deleting.id).reduce((s, f) => s + amountOf(f), 0))} they've paid stays in Finance.</p>
+          <button className="btn-ghost cl-del-opt" onClick={() => removeClient('pipeline')}>
+            <b>Move back to the Pipeline</b><span>Marks them Lost. Their details, notes and history stay.</span>
+          </button>
+          <button className="btn-ghost cl-del-opt danger-text" onClick={() => removeClient('delete')}>
+            <b>Delete for good</b><span>Removes the client, their notes and product details. This can't be undone.</span>
+          </button>
+          <ModalFoot onClose={() => setDeleting(null)}/>
+        </Modal>
+      )}
+      {ConfirmUI}
     </div>
+  );
+}
+
+function ClientModal({ data, leads, onSave, onClose }) {
+  const editing = !!data.id;
+  const [f, setF] = useState({
+    businessName:'', contactName:'', phone:'', email:'', websiteUrl:'', location:'', country:'Jamaica',
+    businessType:'Other', businessSize:'Small', value:'', retainerAmount:'', retainerDueDay:'1',
+    clientStatus:'Active', clientSince: localDateStr(), notes:'', ...data,
+  });
+  const [fromLead, setFromLead] = useState('');
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const prospects = leads.filter(l => l.status !== 'Paid');
+  const pickLead = id => {
+    setFromLead(id);
+    const l = leads.find(x => x.id === id);
+    if (l) setF(p => ({ ...p, ...Object.fromEntries(Object.entries(l).filter(([k, v]) => v !== '' && v != null && !['id','createdAt','status','source'].includes(k))) }));
+  };
+  const due = Number(f.retainerDueDay);
+  const problems = [];
+  if (!f.businessName.trim()) problems.push('Business name is required.');
+  if (Number(f.retainerAmount) > 0 && !(due >= 1 && due <= 28)) problems.push('Retainer due day must be 1 to 28.');
+  if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) problems.push('That email looks wrong.');
+  if (f.websiteUrl && !/^https?:\/\//.test(f.websiteUrl)) problems.push('Website should start with https://');
+
+  const save = () => {
+    if (problems.length) return;
+    const { id, createdAt, ...rest } = f;
+    const out = { ...rest, businessName: f.businessName.trim(), value: f.value === '' ? '' : Number(f.value), retainerAmount: f.retainerAmount === '' ? '' : Number(f.retainerAmount), retainerDueDay: String(due || 1) };
+    onSave(editing ? { id, ...out } : fromLead ? { ...out, fromLeadId: fromLead } : out);
+  };
+
+  return (
+    <Modal title={editing ? `Edit ${data.businessName}` : 'New Client'} onClose={onClose}>
+      {!editing && prospects.length > 0 && (
+        <Field label="Convert a Pipeline lead (optional)">
+          <select className="input" value={fromLead} onChange={e => pickLead(e.target.value)}>
+            <option value="">Start from scratch</option>
+            {prospects.map(l => <option key={l.id} value={l.id}>{l.businessName} · {l.status}</option>)}
+          </select>
+        </Field>
+      )}
+      <Field label="Business name"><input className="input" autoFocus value={f.businessName} onChange={e => s('businessName', e.target.value)}/></Field>
+      <Field label="Status">
+        <div className="sched-cals">
+          {CLIENT_STATES.map(c => <button key={c.id} type="button" className={`sched-cal ${f.clientStatus === c.id ? 'on' : ''}`} style={{ '--c': c.hex }} onClick={() => s('clientStatus', c.id)}><span className="dot"/>{c.id}</button>)}
+        </div>
+      </Field>
+      <div className="grid-2">
+        <Field label="Contact person"><input className="input" value={f.contactName} onChange={e => s('contactName', e.target.value)}/></Field>
+        <Field label="Phone / WhatsApp"><input className="input" value={f.phone} onChange={e => s('phone', e.target.value)} placeholder="+1876…"/></Field>
+        <Field label="Email"><input className="input" type="email" value={f.email || ''} onChange={e => s('email', e.target.value)}/></Field>
+        <Field label="Website"><input className="input" value={f.websiteUrl || ''} onChange={e => s('websiteUrl', e.target.value)} placeholder="https://"/></Field>
+        <Field label="Location"><input className="input" value={f.location} onChange={e => s('location', e.target.value)}/></Field>
+        <Field label="Country"><input className="input" value={f.country} onChange={e => s('country', e.target.value)}/></Field>
+        <Field label="Business type">
+          <select className="input" value={f.businessType} onChange={e => s('businessType', e.target.value)}>{BIZ_TYPES.map(t => <option key={t}>{t}</option>)}</select>
+        </Field>
+        <Field label="Client since"><input className="input" type="date" value={f.clientSince || ''} onChange={e => s('clientSince', e.target.value)}/></Field>
+      </div>
+      <div className="card-label" style={{ margin:'0.25rem 0 0' }}>Money</div>
+      <div className="grid-2">
+        <Field label="Project fee (J$)"><input className="input" type="number" min="0" value={f.value} onChange={e => s('value', e.target.value)}/></Field>
+        <Field label="Retainer per month (J$)"><input className="input" type="number" min="0" value={f.retainerAmount} onChange={e => s('retainerAmount', e.target.value)} placeholder="0 = none"/></Field>
+        {Number(f.retainerAmount) > 0 && <Field label="Retainer due on day"><input className="input" type="number" min="1" max="28" value={f.retainerDueDay} onChange={e => s('retainerDueDay', e.target.value)}/></Field>}
+      </div>
+      <Field label="Notes"><textarea className="input" style={{ minHeight:56, resize:'vertical' }} value={f.notes || ''} onChange={e => s('notes', e.target.value)}/></Field>
+      {problems.length > 0 && <div className="form-warn">{problems[0]}</div>}
+      <ModalFoot onClose={onClose} onSave={save}/>
+    </Modal>
   );
 }
 
