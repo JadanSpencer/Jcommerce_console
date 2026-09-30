@@ -1163,6 +1163,148 @@ select.input {
   .xp-avatar { width: 46px; height: 46px; font-size: 18px; }
 }
 
+/* ─── SCHEDULE ────────────────────────────────────────────────────── */
+.sched-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem 1rem; }
+.sched-range { display: flex; align-items: center; gap: 0.375rem; margin-right: auto; }
+.sched-title { font-family: var(--fe); font-size: 19px; font-weight: 600; color: var(--ink-0); margin-left: 0.5rem; white-space: nowrap; }
+.sched-today { padding: 0.4rem 0.85rem; font-size: 12px; }
+.sched-today:disabled { opacity: 0.4; cursor: default; }
+
+.sched-cals { display: flex; flex-wrap: wrap; gap: 0.375rem; }
+.sched-cal {
+  display: inline-flex; align-items: center; gap: 0.45rem;
+  padding: 0.42rem 0.8rem; border-radius: var(--rf);
+  border: 1px solid rgba(255,255,255,0.08); background: rgba(5,15,24,0.5);
+  color: var(--ink-3); font-family: var(--fs); font-size: 12.5px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.sched-cal .dot { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--c); transition: all 0.15s; }
+.sched-cal .hrs { font-family: var(--fm); font-size: 10.5px; color: var(--ink-3); }
+.sched-cal:hover { color: var(--ink-1); }
+.sched-cal.on { color: var(--ink-0); border-color: color-mix(in srgb, var(--c) 45%, transparent); background: color-mix(in srgb, var(--c) 11%, transparent); }
+.sched-cal.on .dot { background: var(--c); box-shadow: 0 0 8px var(--c); }
+
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r2); background: rgba(5,15,24,0.6); border: 1px solid rgba(255,255,255,0.07); }
+.seg button { border: none; background: none; cursor: pointer; padding: 0.42rem 0.9rem; border-radius: var(--r1); font-family: var(--fs); font-size: 12.5px; font-weight: 500; color: var(--ink-3); transition: all 0.15s; white-space: nowrap; }
+.seg button:hover:not(.on) { color: var(--ink-1); }
+.seg button.on { background: rgba(28,171,151,0.16); color: var(--teal-100); }
+.seg-full { display: flex; width: 100%; }
+.seg-full button { flex: 1; }
+
+/* Week grid */
+.card.sched-week { padding: 0; overflow: clip; }
+.sched-head {
+  display: grid; grid-template-columns: 58px repeat(7, minmax(0, 1fr));
+  position: sticky; top: var(--nh); z-index: 5;
+  background: rgba(8,20,33,0.97); backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.sched-dayhead {
+  border: none; background: none; cursor: pointer;
+  padding: 0.7rem 0 0.6rem; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border-left: 1px solid rgba(255,255,255,0.04); color: var(--ink-3);
+}
+.sched-dayhead .dow { font-family: var(--fm); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.sched-dayhead .dnum {
+  font-family: var(--fe); font-size: 20px; font-weight: 600; color: var(--ink-1);
+  width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; transition: background 0.15s;
+}
+.sched-dayhead:hover .dnum { background: rgba(255,255,255,0.06); }
+.sched-dayhead.today .dow { color: var(--teal-300); }
+.sched-dayhead.today .dnum { background: var(--teal-400); color: var(--abyss-950); box-shadow: 0 0 16px rgba(28,171,151,0.45); }
+
+.sched-body { display: grid; grid-template-columns: 58px repeat(7, minmax(0, 1fr)); position: relative; }
+.sched-gutter { position: relative; }
+.sched-hour { position: absolute; right: 10px; transform: translateY(-50%); font-family: var(--fm); font-size: 10px; color: var(--ink-3); white-space: nowrap; }
+.sched-col {
+  position: relative; cursor: cell;
+  border-left: 1px solid rgba(255,255,255,0.045);
+  background-image:
+    linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px);
+  background-size: 100% var(--hour), 100% calc(var(--hour) / 2);
+}
+.sched-col.weekend { background-color: rgba(0,0,0,0.14); }
+.sched-col.today { background-color: rgba(28,171,151,0.04); }
+
+.sched-ev {
+  position: absolute; z-index: 1;
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 5px 8px; text-align: left; overflow: hidden; cursor: pointer;
+  border: none; border-left: 3px solid var(--c); border-radius: 7px;
+  background: color-mix(in srgb, var(--c) 18%, #07131f);
+  color: var(--ink-0);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+  transition: background 0.12s, box-shadow 0.12s;
+}
+.sched-ev:hover { z-index: 2; background: color-mix(in srgb, var(--c) 28%, #07131f); box-shadow: 0 6px 20px rgba(0,0,0,0.45), 0 0 0 1px color-mix(in srgb, var(--c) 55%, transparent); }
+.sched-ev .ev-title { font-family: var(--fs); font-size: 12px; font-weight: 600; line-height: 1.25; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; word-break: break-word; }
+.sched-ev.short .ev-title { -webkit-line-clamp: 1; }
+.sched-ev.narrow { padding: 4px 4px 4px 5px; }
+.sched-ev.narrow .ev-title { font-size: 10.5px; }
+.sched-ev.narrow .ev-time { display: none; }
+.sched-ev .ev-time  { font-family: var(--fm); font-size: 10px; color: color-mix(in srgb, var(--c) 75%, white); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sched-ev.short { flex-direction: row; align-items: center; gap: 6px; padding: 2px 8px; }
+.sched-ev.past { opacity: 0.55; }
+.sched-ev.clash { background-image: repeating-linear-gradient(135deg, rgba(227,124,98,0.13) 0 6px, transparent 6px 12px); box-shadow: inset 0 0 0 1px rgba(227,124,98,0.55); }
+.sched-now { position: absolute; left: -1px; right: 0; height: 2px; z-index: 3; pointer-events: none; background: var(--coral-400); box-shadow: 0 0 8px var(--coral-400); }
+.sched-now::before { content: ''; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--coral-400); }
+
+/* Day agenda */
+.sched-dayview { display: flex; flex-direction: column; gap: 1rem; }
+.sched-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0.375rem; }
+.sched-strip button {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 0.55rem 0 0.5rem; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.07); border-radius: var(--r2);
+  background: rgba(8,22,36,0.6); color: var(--ink-3); transition: all 0.15s;
+}
+.sched-strip button:hover { border-color: rgba(255,255,255,0.15); }
+.sched-strip .dow { font-family: var(--fm); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+.sched-strip .dnum { font-family: var(--fe); font-size: 18px; font-weight: 600; color: var(--ink-1); }
+.sched-strip .dots { display: flex; gap: 3px; height: 5px; }
+.sched-strip .dots i { width: 5px; height: 5px; border-radius: 50%; }
+.sched-strip button.today .dow, .sched-strip button.today .dnum { color: var(--teal-300); }
+.sched-strip button.on { border-color: rgba(28,171,151,0.5); background: rgba(28,171,151,0.12); }
+
+.agenda-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.875rem; font-family: var(--fe); font-size: 17px; font-weight: 600; color: var(--ink-0); }
+.agenda-head .muted { font-family: var(--fm); font-size: 11px; font-weight: 400; }
+.agenda { display: flex; flex-direction: column; gap: 0.5rem; }
+.agenda-item {
+  display: grid; grid-template-columns: 66px 3px minmax(0, 1fr) auto; align-items: center; gap: 0.875rem;
+  width: 100%; padding: 0.75rem 1rem; text-align: left; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.06); border-radius: var(--r2);
+  background: rgba(5,15,24,0.55); color: inherit; transition: border-color 0.15s, background 0.15s;
+}
+.agenda-item:hover { border-color: color-mix(in srgb, var(--c) 45%, transparent); }
+.agenda-item.compact { grid-template-columns: 54px 3px minmax(0, 1fr) auto; gap: 0.7rem; padding: 0.6rem 0.75rem; }
+.agenda-item.past { opacity: 0.45; }
+.agenda-item.now { border-color: color-mix(in srgb, var(--c) 55%, transparent); background: color-mix(in srgb, var(--c) 10%, rgba(5,15,24,0.7)); }
+.agenda-time { display: flex; flex-direction: column; font-family: var(--fm); font-size: 12px; color: var(--ink-0); line-height: 1.35; }
+.agenda-time .end { font-size: 10.5px; color: var(--ink-3); }
+.agenda-bar { align-self: stretch; min-height: 28px; border-radius: 2px; background: var(--c); box-shadow: 0 0 8px color-mix(in srgb, var(--c) 60%, transparent); }
+.agenda-main { display: flex; flex-direction: column; min-width: 0; }
+.agenda-title { font-size: 14px; font-weight: 600; color: var(--ink-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agenda-item.compact .agenda-title { font-size: 13px; }
+.agenda-meta { font-family: var(--fm); font-size: 10.5px; color: var(--ink-3); margin-top: 2px; }
+.agenda-meta .warn { color: var(--coral-400); }
+.agenda-badge { font-family: var(--fm); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 2px 8px; border-radius: var(--rf); color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); }
+.agenda-date { font-family: var(--fm); font-size: 10px; letter-spacing: 0.08em; color: var(--ink-2); margin: 0.25rem 0 0.35rem; }
+.agenda-empty { text-align: center; padding: 2.5rem 1rem; color: var(--ink-3); font-family: var(--fe); font-style: italic; font-size: 15px; }
+.agenda-empty.small { padding: 1rem 0.5rem; font-size: 13.5px; }
+.link-btn { background: none; border: none; cursor: pointer; color: var(--teal-300); font: inherit; font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
+
+.sched-side { display: flex; flex-direction: column; gap: 1rem; }
+
+/* Event form */
+.day-pick { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.day-pick button { padding: 0.5rem 0; border-radius: var(--r1); cursor: pointer; border: 1px solid rgba(255,255,255,0.08); background: rgba(5,15,24,0.5); color: var(--ink-2); font-family: var(--fm); font-size: 11px; transition: all 0.15s; }
+.day-pick button.on { border-color: rgba(28,171,151,0.55); background: rgba(28,171,151,0.15); color: var(--teal-100); }
+.form-warn { font-size: 12px; color: var(--coral-400); margin-top: -0.4rem; }
+.danger-text { color: var(--coral-400); border-color: rgba(216,98,77,0.25); }
+.danger-text:hover { color: var(--coral-400); border-color: rgba(216,98,77,0.5); }
+
 /* ─── LAYOUT HELPERS (mobile defaults) ───────────────────────────── */
 .nav-brand, .nav-foot, .nav-key, .page-title { display: none; }
 .dash-row   { display: flex; flex-direction: column; gap: 1rem; }
@@ -1302,6 +1444,8 @@ select.input {
   .section > .span-6 { grid-column: span 6; }
   .section > .span-7 { grid-column: span 7; }
   .section > .span-8 { grid-column: span 8; }
+  .section > .span-9 { grid-column: span 9; }
+  .section > .span-3 { grid-column: span 3; }
   .section > [class*="span-"] { align-self: stretch; }
 
   .section > .grid-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }

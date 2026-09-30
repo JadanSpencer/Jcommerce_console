@@ -38,6 +38,8 @@ const Icons = {
   circle:    () => <Icon d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />,
   chevDown:  () => <Icon d="M6 9l6 6 6-6" />,
   chevUp:    () => <Icon d="M18 15l-6-6-6 6" />,
+  chevLeft:  () => <Icon d="M15 18l-6-6 6-6" />,
+  chevRight: () => <Icon d="M9 18l6-6-6-6" />,
   bell:      () => <Icon d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />,
   dollar:    () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
   trend:     () => <Icon d="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6" />,
@@ -2539,367 +2541,284 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 }
 
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
+// Three calendars (Work / School / Personal) that can be shown or hidden,
+// a week grid for the desktop and a day agenda for narrow screens.
+const SCHED_CALS = [
+  { id:'Work',     hex:'#3fd1b8' },
+  { id:'School',   hex:'#8b98f5' },
+  { id:'Personal', hex:'#e6c47c' },
+];
+const SCHED_HEX = Object.fromEntries(SCHED_CALS.map(c => [c.id, c.hex]));
+const HOUR_PX = 56;
+const calOf  = b => b.scheduleType || 'Work';
+const toMin  = t => { if (!t) return 0; const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
+const fmtTime = t => {
+  const m = toMin(t), h = Math.floor(m / 60) % 24, mm = m % 60;
+  return `${((h + 11) % 12) + 1}${mm ? ':' + String(mm).padStart(2, '0') : ''}${h >= 12 ? 'pm' : 'am'}`;
+};
+const fmtHour = h => `${((h + 11) % 12) + 1} ${h >= 12 && h < 24 ? 'PM' : 'AM'}`;
+const dayNameOf = date => DAYS[(parseLocal(date).getDay() + 6) % 7];
+const fmtDate = (date, opts) => parseLocal(date).toLocaleDateString('en-US', opts);
+
+// Does a (possibly recurring) block occur on this calendar date?
+function blockOccursOn(b, date) {
+  if (b.day !== dayNameOf(date)) return false;
+  if (b.recurrence === 'once') return !b.startDate || mondayOf(date) === mondayOf(b.startDate);
+  const start = b.startDate || '2000-01-01', end = b.endDate || '2099-12-31';
+  if (date < start || date > end) return false;
+  if (b.recurrence === 'biweekly') {
+    const weeks = Math.round((parseLocal(mondayOf(date)) - parseLocal(mondayOf(start))) / (7 * 86400000));
+    return weeks >= 0 && weeks % 2 === 0;
+  }
+  return true;
+}
+
+// Ids of blocks that overlap another block on the same day
+function findClashes(blocks) {
+  const ids = new Set();
+  for (let i = 0; i < blocks.length; i++) for (let j = i + 1; j < blocks.length; j++) {
+    const a = blocks[i], b = blocks[j];
+    if (toMin(a.start) < toMin(b.end) && toMin(b.start) < toMin(a.end)) { ids.add(a.id); ids.add(b.id); }
+  }
+  return ids;
+}
+
+// Place overlapping blocks side by side: [{ b, col, cols }]
+function layoutDay(blocks) {
+  const sorted = [...blocks].sort((a, b) => toMin(a.start) - toMin(b.start) || toMin(b.end) - toMin(a.end));
+  const out = [];
+  let cluster = [], clusterEnd = -1;
+  const flush = () => {
+    const colEnds = [];
+    cluster.forEach(item => {
+      let c = colEnds.findIndex(end => end <= toMin(item.b.start));
+      if (c === -1) { c = colEnds.length; colEnds.push(0); }
+      colEnds[c] = toMin(item.b.end);
+      item.col = c;
+    });
+    cluster.forEach(item => { item.cols = colEnds.length; });
+    out.push(...cluster);
+    cluster = [];
+  };
+  sorted.forEach(b => {
+    if (cluster.length && toMin(b.start) >= clusterEnd) { flush(); clusterEnd = -1; }
+    cluster.push({ b });
+    clusterEnd = Math.max(clusterEnd, toMin(b.end));
+  });
+  if (cluster.length) flush();
+  return out;
+}
 
 function Schedule({schedule,onAdd,onUpdate,onDelete}) {
   const { confirm, ConfirmUI } = useConfirm();
-  const [form, setForm]             = useState(null);
-  const [viewMode, setViewMode]     = useState('list'); // list | grid | merged
-  const [activeSched, setActiveSched] = useState('Work'); // Work | School | Personal
-  const [weekOffset, setWeekOffset] = useState(0);
-  const today = new Date();
-  const todayStr = localDateStr(today);
-  const todayDayName = DAYS[today.getDay() === 0 ? 6 : today.getDay() - 1];
-  const [sel, setSel] = useState(todayDayName);
+  const todayStr = localDateStr();
+  const [view, setView]     = useState(window.innerWidth >= 1024 ? 'week' : 'day');
+  const [monday, setMonday] = useState(mondayOf(todayStr));
+  const [sel, setSel]       = useState(todayStr);
+  const [form, setForm]     = useState(null);
+  const [now, setNow]       = useState(new Date());
+  const [visible, setVisible] = useState(() => {
+    try { const v = JSON.parse(localStorage.getItem('jc_sched_cals')); if (Array.isArray(v) && v.length) return v; } catch {}
+    return SCHED_CALS.map(c => c.id);
+  });
 
-  const SCHED_TYPES = ['Work','School','Personal'];
-  const SCHED_COLORS = { Work:'#00d4ff', School:'#7b6cf5', Personal:'#1adb8a' };
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(t); }, []);
+  useEffect(() => { try { localStorage.setItem('jc_sched_cals', JSON.stringify(visible)); } catch {} }, [visible]);
 
-  const weekLabel = weekOffset === 0 ? 'This Week'
-    : weekOffset === -1 ? 'Last Week'
-    : weekOffset === 1  ? 'Next Week'
-    : weekOffset < 0 ? `${Math.abs(weekOffset)} Weeks Ago`
-    : `${weekOffset} Weeks Ahead`;
+  const weekDates = DAYS.map((_, i) => addDays(monday, i));
+  const isThisWeek = monday === mondayOf(todayStr);
+  const shiftWeek = n => { setMonday(m => addDays(m, 7 * n)); setSel(s => addDays(s, 7 * n)); };
+  const goToday   = () => { setMonday(mondayOf(todayStr)); setSel(todayStr); };
+  const toggleCal = id => setVisible(v => v.includes(id) ? v.filter(x => x !== id) : [...v, id]);
 
-  const timeToMin = t => {
-    if (!t) return 0;
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
+  const allOn   = date => schedule.filter(b => blockOccursOn(b, date)).sort((a, b) => toMin(a.start) - toMin(b.start));
+  const shownOn = date => allOn(date).filter(b => visible.includes(calOf(b)));
+  const week    = weekDates.map(date => { const blocks = shownOn(date); return { date, blocks, clashes: findClashes(blocks) }; });
+
+  // Hours per calendar this week (all calendars, even hidden ones)
+  const hours = {};
+  weekDates.forEach(d => allOn(d).forEach(b => {
+    hours[calOf(b)] = (hours[calOf(b)] || 0) + Math.max(0, toMin(b.end) - toMin(b.start)) / 60;
+  }));
+
+  // Visible hour range — at least 7am–7pm, stretched to fit the week's events
+  const weekBlocks = week.flatMap(d => d.blocks);
+  const startH = Math.max(0,  Math.min(7,  ...weekBlocks.map(b => Math.floor(toMin(b.start) / 60))));
+  const endH   = Math.min(24, Math.max(19, ...weekBlocks.map(b => Math.ceil(toMin(b.end) / 60))));
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+
+  const sun = weekDates[6];
+  const rangeLabel = monday.slice(0, 7) === sun.slice(0, 7)
+    ? `${fmtDate(monday, { month:'long', day:'numeric' })} – ${fmtDate(sun, { day:'numeric' })}, ${sun.slice(0, 4)}`
+    : `${fmtDate(monday, { month:'short', day:'numeric' })} – ${fmtDate(sun, { month:'short', day:'numeric' })}, ${sun.slice(0, 4)}`;
+
+  const newEvent = (date, start = '09:00', end = '10:00') => setForm({
+    day: dayNameOf(date), start, end, startDate: date,
+    scheduleType: visible.length === 1 ? visible[0] : 'Work',
+  });
+
+  const addAtClick = (e, date) => {
+    const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
+    const mins = Math.min(endH * 60 - 60, Math.max(startH * 60, startH * 60 + Math.floor(y / HOUR_PX * 2) * 30));
+    const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+    newEvent(date, hhmm(mins), hhmm(mins + 60));
   };
 
-  // Get the actual calendar date for a given day name in the current week offset
-  const getDateForDay = (dayName) => {
-    const dow = today.getDay(); // 0=Sun
-    const mondayOffset = dow === 0 ? -6 : 1 - dow;
-    const monday = new Date(today);
-    monday.setDate(today.getDate() + mondayOffset + weekOffset * 7);
-    const idx = DAYS.indexOf(dayName);
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + idx);
-    return localDateStr(d);
-  };
-
-  // Check if a block should appear in a given week offset + day
-  const blockAppliesToWeek = (b, dayName) => {
-    const targetDate = getDateForDay(dayName);
-    // One-off: only in the week that contains its date
-    if (b.recurrence === 'once') return !b.startDate || mondayOf(targetDate) === mondayOf(b.startDate);
-    const startDate  = b.startDate || '2000-01-01';
-    const endDate    = b.endDate   || '2099-12-31';
-    if (targetDate < startDate || targetDate > endDate) return false;
-
-    switch (b.recurrence) {
-      case 'weekly':    return true; // every week, same day
-      case 'biweekly': {
-        // Biweekly: count weeks from startDate
-        const weekDiff = Math.round((parseLocal(mondayOf(targetDate)) - parseLocal(mondayOf(startDate))) / (7 * 86400000));
-        return weekDiff >= 0 && weekDiff % 2 === 0;
-      }
-      case 'period':
-        // Runs every week within startDate→endDate
-        return true;
-      default:          return true;
+  const deleteForm = async () => {
+    if (await confirm({ message: `Delete "${form.title}" from your schedule?`, label: 'Delete', danger: true })) {
+      onDelete(form.id); setForm(null);
     }
   };
 
-  // Urgency glow: how close is the block to its date?
-  const getUrgencyGlow = (b, dayName) => {
-    if (!b.startDate || b.acknowledged) return 0;
-    const targetDate = getDateForDay(dayName);
-    const daysUntil  = Math.round((parseLocal(targetDate) - parseLocal(todayStr)) / 86400000);
-    if (daysUntil < 0)  return 0;   // past
-    if (daysUntil === 0) return 1;  // today — max glow
-    if (daysUntil <= 2) return 0.7;
-    if (daysUntil <= 7) return 0.4;
-    return 0.1;
-  };
+  // Upcoming one-time events in the next two weeks
+  const upcoming = schedule
+    .filter(b => b.recurrence === 'once' && b.startDate && b.startDate >= todayStr && b.startDate <= addDays(todayStr, 14))
+    .sort((a, b) => (a.startDate + a.start).localeCompare(b.startDate + b.start));
 
-  const getBlocks = (dayName, schedType) => {
-    return schedule
-      .filter(b => b.day === dayName && (b.scheduleType || 'Work') === schedType && blockAppliesToWeek(b, dayName))
-      .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
-  };
-
-  const getAllBlocks = (dayName) => {
-    return schedule
-      .filter(b => b.day === dayName && blockAppliesToWeek(b, dayName))
-      .sort((a, b) => timeToMin(a.start) - timeToMin(b.start));
-  };
-
-  const findClashesInList = (blocks) => {
-    const clashes = new Set();
-    for (let i = 0; i < blocks.length; i++) {
-      for (let j = i + 1; j < blocks.length; j++) {
-        const aS = timeToMin(blocks[i].start), aE = timeToMin(blocks[i].end);
-        const bS = timeToMin(blocks[j].start), bE = timeToMin(blocks[j].end);
-        if (aS < bE && bS < aE) { clashes.add(blocks[i].id); clashes.add(blocks[j].id); }
-      }
-    }
-    return clashes;
-  };
-
-  const handleDelete = async (id, title) => {
-    const ok = await confirm({ message: `Remove "${title}" from schedule?`, label: 'Remove', danger: true });
-    if (ok) onDelete(id);
-  };
-
-  const BlockCard = ({ b, showType = false }) => {
-    const baseColor = BLOCK_COLORS[b.type] || '#3a4860';
-    const schedColor = SCHED_COLORS[b.scheduleType || 'Work'];
-    const urgency   = getUrgencyGlow(b, b.day);
-    const glowColor = urgency > 0 ? schedColor : baseColor;
-
+  const AgendaItem = ({ b, date, clash, compact }) => {
+    const isToday = date === todayStr;
+    const state = date < todayStr || (isToday && toMin(b.end) <= nowMin) ? 'past'
+      : isToday && toMin(b.start) <= nowMin ? 'now' : '';
     return (
-      <div className="card fade-in" style={{
-        borderLeft: `3px solid ${baseColor}`,
-        boxShadow: urgency > 0 ? `0 0 ${Math.round(urgency * 16)}px ${glowColor}${Math.round(urgency * 100).toString(16).padStart(2,'0')}` : 'none',
-        transition: 'box-shadow 0.4s',
-      }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:'0.5rem' }}>
-          <div style={{ flex:1, minWidth:0 }}>
-            <div style={{ display:'flex', alignItems:'center', gap:'0.375rem', marginBottom:2, flexWrap:'wrap' }}>
-              <div style={{ fontWeight:500, fontSize:'14px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{b.title}</div>
-              {showType && (
-                <span style={{ fontFamily:'var(--fm)', fontSize:'8px', padding:'1px 6px', borderRadius:99,
-                  background:`${schedColor}18`, color:schedColor, border:`1px solid ${schedColor}30`, flexShrink:0 }}>
-                  {b.scheduleType || 'Work'}
-                </span>
-              )}
-              {b.recurrence && b.recurrence !== 'once' && (
-                <span style={{ fontFamily:'var(--fm)', fontSize:'8px', color:'var(--mist-3)', flexShrink:0 }}>
-                  {b.recurrence === 'weekly' ? '↻' : b.recurrence === 'biweekly' ? '↻2w' : b.recurrence === 'period' ? `📅` : ''}
-                </span>
-              )}
-            </div>
-            <div style={{ fontFamily:'var(--fm)', fontSize:'11px', color: baseColor, marginTop:2, fontWeight:300 }}>
-              {b.start} – {b.end} · {b.type}
-              {b.startDate && b.recurrence === 'period' && b.endDate && (
-                <span style={{ color:'var(--mist-3)', marginLeft:6 }}>until {b.endDate}</span>
-              )}
-            </div>
-          </div>
-          <div style={{ display:'flex', gap:'0.35rem', flexShrink:0 }}>
-            {urgency > 0 && !b.acknowledged && (
-              <button className="btn-ghost" style={{ fontSize:'9px', padding:'0.2rem 0.5rem', color: schedColor, borderColor: `${schedColor}40` }}
-                onClick={() => onUpdate(b.id, { ...b, acknowledged: true })}>
-                ✓ Ack
-              </button>
-            )}
-            <button className="icon-btn" onClick={() => setForm(b)}><Icons.edit size={12}/></button>
-            <button className="icon-btn danger-btn" onClick={() => handleDelete(b.id, b.title)}><Icons.trash size={12}/></button>
-          </div>
-        </div>
-      </div>
+      <button className={`agenda-item ${state} ${compact ? 'compact' : ''}`} style={{ '--c': SCHED_HEX[calOf(b)] }} onClick={() => setForm(b)}>
+        <span className="agenda-time"><span>{fmtTime(b.start)}</span><span className="end">{fmtTime(b.end)}</span></span>
+        <span className="agenda-bar"/>
+        <span className="agenda-main">
+          <span className="agenda-title">{b.title}</span>
+          <span className="agenda-meta">
+            {calOf(b)}{b.type && b.type !== calOf(b) ? ` · ${b.type}` : ''}
+            {b.recurrence === 'once' ? ' · one-time' : b.recurrence === 'biweekly' ? ' · every 2 weeks' : ''}
+            {clash && <span className="warn"> · overlaps</span>}
+          </span>
+        </span>
+        {state === 'now' && <span className="agenda-badge">Now</span>}
+      </button>
     );
   };
 
-  const currentBlocks = viewMode === 'merged' ? getAllBlocks(sel) : getBlocks(sel, activeSched);
-  const clashSet = findClashesInList(viewMode === 'merged' ? getAllBlocks(sel) : currentBlocks);
+  const selDay = week.find(d => d.date === sel) || { date: sel, blocks: shownOn(sel), clashes: new Set() };
+  const todayBlocks = shownOn(todayStr);
+  const todayClashes = findClashes(todayBlocks);
 
   return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Schedule</div>
-        <div className="hero-big" style={{ fontSize:'22px' }}>
-          {viewMode === 'merged' ? 'Full Life View' : activeSched}
+    <div className="section sched">
+      {/* Toolbar */}
+      <div className="sched-bar">
+        <div className="sched-range">
+          <button className="icon-btn" title="Previous week" onClick={() => shiftWeek(-1)}><Icons.chevLeft size={15}/></button>
+          <button className="icon-btn" title="Next week" onClick={() => shiftWeek(1)}><Icons.chevRight size={15}/></button>
+          <button className="btn-ghost sched-today" onClick={goToday} disabled={isThisWeek && sel === todayStr}>Today</button>
+          <div className="sched-title">{rangeLabel}</div>
         </div>
-        <div className="hero-sub">Structure creates freedom</div>
-      </div>
-
-      {/* Schedule type tabs */}
-      <div style={{ display:'flex', gap:2, background:'rgba(0,24,36,0.6)',
-        border:'1px solid rgba(0,212,255,0.08)', borderRadius:8, padding:3 }}>
-        {SCHED_TYPES.map(t => (
-          <button key={t} onClick={() => { setActiveSched(t); if (viewMode === 'merged') setViewMode('list'); }}
-            style={{
-              flex:1, padding:'0.4rem 0.5rem', border:'none', borderRadius:5, cursor:'pointer',
-              fontFamily:'var(--fm)', fontSize:'10px', letterSpacing:'0.05em',
-              background: activeSched === t && viewMode !== 'merged' ? `${SCHED_COLORS[t]}20` : 'none',
-              color: activeSched === t && viewMode !== 'merged' ? SCHED_COLORS[t] : 'var(--mist-3)',
-              borderBottom: activeSched === t && viewMode !== 'merged' ? `2px solid ${SCHED_COLORS[t]}` : '2px solid transparent',
-            }}>{t}</button>
-        ))}
-        <button onClick={() => setViewMode(v => v === 'merged' ? 'list' : 'merged')}
-          style={{
-            flex:1, padding:'0.4rem 0.5rem', border:'none', borderRadius:5, cursor:'pointer',
-            fontFamily:'var(--fm)', fontSize:'10px', letterSpacing:'0.05em',
-            background: viewMode === 'merged' ? 'rgba(240,192,96,0.15)' : 'none',
-            color: viewMode === 'merged' ? 'var(--horizon)' : 'var(--mist-3)',
-            borderBottom: viewMode === 'merged' ? '2px solid var(--horizon)' : '2px solid transparent',
-          }}>⊕ Merged</button>
-      </div>
-
-      {/* Week nav + view toggle */}
-      <div style={{ display:'flex', alignItems:'center', gap:'0.5rem' }}>
-        <button className="icon-btn" onClick={() => setWeekOffset(w => w - 1)}>←</button>
-        <div style={{ flex:1, textAlign:'center', fontFamily:'var(--fm)', fontSize:'10px',
-          color: weekOffset === 0 ? 'var(--bolt)' : 'var(--mist-2)',
-          letterSpacing:'0.1em', textTransform:'uppercase' }}>
-          {weekLabel}
-        </div>
-        <button className="icon-btn" onClick={() => setWeekOffset(w => w + 1)}>→</button>
-        <button className="icon-btn" onClick={() => setWeekOffset(0)} style={{ fontSize:'9px', fontFamily:'var(--fm)', width:36 }}>NOW</button>
-        <div style={{ display:'flex', background:'rgba(0,24,36,0.6)',
-          border:'1px solid rgba(0,212,255,0.08)', borderRadius:6, padding:2, gap:2 }}>
-          {['list','grid'].map(v => (
-            <button key={v} onClick={() => setViewMode(v === viewMode ? v : v)}
-              style={{
-                padding:'0.3rem 0.5rem', border:'none', borderRadius:4, cursor:'pointer',
-                fontFamily:'var(--fm)', fontSize:'9px',
-                background: viewMode === v ? 'rgba(0,136,200,0.15)' : 'none',
-                color: viewMode === v ? 'var(--bolt-lt)' : 'var(--mist-3)',
-              }}>{v === 'list' ? 'LIST' : 'GRID'}</button>
+        <div className="sched-cals">
+          {SCHED_CALS.map(c => (
+            <button key={c.id} className={`sched-cal ${visible.includes(c.id) ? 'on' : ''}`} style={{ '--c': c.hex }}
+              onClick={() => toggleCal(c.id)} title={visible.includes(c.id) ? `Hide ${c.id}` : `Show ${c.id}`}>
+              <span className="dot"/>{c.id}<span className="hrs">{Math.round((hours[c.id] || 0) * 10) / 10}h</span>
+            </button>
           ))}
         </div>
-        <button className="btn-primary icon-only" onClick={() => setForm({ day: sel, scheduleType: activeSched === 'Work' || viewMode !== 'merged' ? activeSched : 'Work' })}>
-          <Icons.plus size={14}/>
-        </button>
+        <div className="seg">
+          <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>Week</button>
+          <button className={view === 'day' ? 'on' : ''} onClick={() => setView('day')}>Day</button>
+        </div>
+        <button className="btn-primary" onClick={() => newEvent(sel)}><Icons.plus size={14}/> Event</button>
       </div>
 
-      {/* Day pills */}
-      <div className="pill-row">
-        {DAYS.map(d => (
-          <button key={d} className={`pill ${sel === d ? 'active' : ''}`}
-            onClick={() => setSel(d)}
-            style={d === todayDayName && weekOffset === 0 ? { borderColor:'rgba(240,192,96,0.4)', color:'var(--horizon)' } : {}}>
-            {d}
-          </button>
-        ))}
-      </div>
-
-      {/* ─── LIST VIEW ─── */}
-      {(viewMode === 'list' || viewMode === 'merged') && (
-        <>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            <span style={{ fontFamily:'var(--fe)', fontSize:'16px', fontWeight:600, color:'var(--mist-0)' }}>
-              {sel} {viewMode === 'merged' && <span style={{ fontSize:'11px', color:'var(--horizon)', fontFamily:'var(--fm)' }}>— All schedules</span>}
-            </span>
-            {clashSet.size > 0 && (
-              <span style={{ fontFamily:'var(--fm)', fontSize:'9px', color:'#ff6040',
-                border:'1px solid rgba(255,96,64,0.3)', borderRadius:4, padding:'2px 6px' }}>
-                ⚠ {clashSet.size} clash{clashSet.size > 1 ? 'es' : ''}
-              </span>
-            )}
+      {/* Week grid */}
+      {view === 'week' && (
+        <div className="card sched-week span-9" style={{ '--hour': `${HOUR_PX}px` }}>
+          <div className="sched-head">
+            <div/>
+            {week.map(d => (
+              <button key={d.date} className={`sched-dayhead ${d.date === todayStr ? 'today' : ''}`}
+                onClick={() => { setSel(d.date); setView('day'); }} title="Open day">
+                <span className="dow">{dayNameOf(d.date)}</span>
+                <span className="dnum">{Number(d.date.slice(8))}</span>
+              </button>
+            ))}
           </div>
-          {currentBlocks.length === 0
-            ? <Empty text={`Nothing on ${sel}${weekOffset !== 0 ? ` — ${weekLabel}` : ''}.`}/>
-            : <div className="list">
-                {currentBlocks.map(b => (
-                  <div key={b.id} style={{ outline: clashSet.has(b.id) ? '1px solid rgba(255,96,64,0.5)' : 'none', borderRadius:10 }}>
-                    <BlockCard b={b} showType={viewMode === 'merged'}/>
-                  </div>
-                ))}
-              </div>
-          }
-        </>
-      )}
-
-      {/* ─── GRID VIEW ─── */}
-      {viewMode === 'grid' && (() => {
-        const gridH = 640;
-        const startMin = 6 * 60, endMin = 22 * 60, totalMins = endMin - startMin;
-        const topPct    = t => ((timeToMin(t) - startMin) / totalMins) * gridH;
-        const heightPct = (s, e) => Math.max(18, ((timeToMin(e) - timeToMin(s)) / totalMins) * gridH);
-        const HOURS_G = Array.from({ length: 17 }, (_, i) => i + 6);
-
-        const allClashes = (() => {
-          const clashes = new Set();
-          DAYS.forEach(d => {
-            const db = getBlocks(d, activeSched);
-            for (let i = 0; i < db.length; i++) for (let j = i + 1; j < db.length; j++) {
-              if (timeToMin(db[i].start) < timeToMin(db[j].end) && timeToMin(db[j].start) < timeToMin(db[i].end)) {
-                clashes.add(db[i].id); clashes.add(db[j].id);
-              }
-            }
-          });
-          return clashes;
-        })();
-
-        return (
-          <div className="card" style={{ padding:'0.75rem 0.5rem', overflowX:'auto' }}>
-            <div style={{ minWidth:520, userSelect:'none' }}>
-              <div style={{ display:'grid', gridTemplateColumns:'40px repeat(7,1fr)', gap:1, marginBottom:4 }}>
-                <div/>
-                {DAYS.map(d => (
-                  <div key={d} style={{ fontFamily:'var(--fm)', fontSize:'8.5px', letterSpacing:'0.12em',
-                    textTransform:'uppercase', textAlign:'center', padding:'0.375rem 0',
-                    color: d === todayDayName && weekOffset === 0 ? 'var(--bolt-lt)' : 'var(--mist-3)',
-                    borderBottom: `1px solid ${d === todayDayName && weekOffset === 0 ? 'rgba(0,212,255,0.4)' : 'rgba(255,255,255,0.04)'}`,
-                  }}>{d}</div>
-                ))}
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'40px repeat(7,1fr)', gap:1 }}>
-                <div style={{ position:'relative', height:gridH }}>
-                  {HOURS_G.map(h => (
-                    <div key={h} style={{ position:'absolute', top:`${((h-6)/16)*gridH}px`, right:4,
-                      fontFamily:'var(--fm)', fontSize:'8px', color:'var(--mist-4)', lineHeight:1, transform:'translateY(-50%)' }}>
-                      {h.toString().padStart(2,'0')}
-                    </div>
-                  ))}
-                </div>
-                {DAYS.map(d => {
-                  const dayB = getBlocks(d, activeSched);
-                  const targetDate = getDateForDay(d);
-                  const isToday = targetDate === todayStr;
+          <div className="sched-body" style={{ height: (endH - startH) * HOUR_PX }}>
+            <div className="sched-gutter">
+              {Array.from({ length: endH - startH }, (_, i) => i + startH).filter(h => h > startH).map(h => (
+                <span key={h} className="sched-hour" style={{ top: (h - startH) * HOUR_PX }}>{fmtHour(h)}</span>
+              ))}
+            </div>
+            {week.map((d, i) => (
+              <div key={d.date} className={`sched-col ${d.date === todayStr ? 'today' : ''} ${i >= 5 ? 'weekend' : ''}`}
+                style={{ backgroundPositionY: `${-startH * HOUR_PX}px` }} onClick={e => addAtClick(e, d.date)}>
+                {layoutDay(d.blocks).map(({ b, col, cols }) => {
+                  const top = (toMin(b.start) - startH * 60) / 60 * HOUR_PX;
+                  const h = Math.max(22, (toMin(b.end) - toMin(b.start)) / 60 * HOUR_PX - 3);
                   return (
-                    <div key={d} style={{
-                      position:'relative', height:gridH,
-                      background: isToday ? 'rgba(0,212,255,0.015)' : 'transparent',
-                      borderLeft:'1px solid rgba(255,255,255,0.03)', cursor:'pointer',
-                    }}
-                    onClick={e => {
-                      const rect = e.currentTarget.getBoundingClientRect();
-                      const mins = Math.floor(((e.clientY - rect.top) / gridH) * totalMins / 30) * 30 + startMin;
-                      const hh = Math.floor(mins / 60).toString().padStart(2,'0');
-                      const mm = (mins % 60).toString().padStart(2,'0');
-                      const eh = Math.floor((mins + 60) / 60).toString().padStart(2,'0');
-                      const em = ((mins + 60) % 60).toString().padStart(2,'0');
-                      setSel(d); setForm({ day:d, start:`${hh}:${mm}`, end:`${eh}:${em}`, scheduleType: activeSched });
-                    }}>
-                      {HOURS_G.map(h => (
-                        <div key={h} style={{ position:'absolute', top:`${((h-6)/16)*gridH}px`,
-                          left:0, right:0, height:1,
-                          background: h % 2 === 0 ? 'rgba(0,212,255,0.05)' : 'rgba(255,255,255,0.02)' }}/>
-                      ))}
-                      {dayB.map(b => {
-                        const t = topPct(b.start), h = heightPct(b.start, b.end);
-                        const c = allClashes.has(b.id) ? '#ff6040' : BLOCK_COLORS[b.type] || '#3a4860';
-                        const urgency = getUrgencyGlow(b, d);
-                        return (
-                          <div key={b.id} onClick={e => { e.stopPropagation(); setForm(b); }}
-                            style={{
-                              position:'absolute', top:`${t}px`, left:2, right:2,
-                              height:`${h}px`, minHeight:18,
-                              background:`${c}20`, border:`1px solid ${c}60`,
-                              borderLeft:`3px solid ${c}`, borderRadius:4, overflow:'hidden',
-                              cursor:'pointer', zIndex:2,
-                              boxShadow: urgency > 0 ? `0 0 ${Math.round(urgency*14)}px ${c}${Math.round(urgency*180).toString(16)}` : `0 0 8px ${c}20`,
-                              transition:'all 0.15s',
-                            }}>
-                            <div style={{ fontFamily:'var(--fm)', fontSize:'8px', fontWeight:500,
-                              color:c, padding:'3px 4px', lineHeight:1.3, overflow:'hidden',
-                              textShadow:`0 0 6px ${c}80` }}>
-                              {b.title}
-                              {h > 28 && <span style={{ display:'block', opacity:0.7, fontSize:'7px' }}>{b.start}–{b.end}</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <button key={b.id}
+                      className={`sched-ev ${h < 40 ? 'short' : ''} ${cols >= 3 ? 'narrow' : ''} ${d.clashes.has(b.id) ? 'clash' : ''} ${d.date < todayStr || (d.date === todayStr && toMin(b.end) <= nowMin) ? 'past' : ''}`}
+                      style={{ top, height: h, left: `calc(${col / cols * 100}% + 3px)`, width: `calc(${100 / cols}% - 6px)`, '--c': SCHED_HEX[calOf(b)] }}
+                      onClick={e => { e.stopPropagation(); setForm(b); }}
+                      title={`${b.title}\n${fmtTime(b.start)} – ${fmtTime(b.end)} · ${calOf(b)}`}>
+                      <span className="ev-title">{b.title}</span>
+                      <span className="ev-time">{fmtTime(b.start)} – {fmtTime(b.end)}</span>
+                    </button>
                   );
                 })}
+                {d.date === todayStr && nowMin >= startH * 60 && nowMin <= endH * 60 && (
+                  <div className="sched-now" style={{ top: (nowMin - startH * 60) / 60 * HOUR_PX }}/>
+                )}
               </div>
-              <div style={{ fontFamily:'var(--fm)', fontSize:'9px', color:'var(--mist-4)',
-                marginTop:'0.5rem', textAlign:'center', letterSpacing:'0.08em' }}>
-                CLICK ANY SLOT TO ADD · CLICK BLOCK TO EDIT · RED = CLASH
-              </div>
-            </div>
+            ))}
           </div>
-        );
-      })()}
+        </div>
+      )}
+
+      {/* Day agenda */}
+      {view === 'day' && (
+        <div className="sched-dayview span-9">
+          <div className="sched-strip">
+            {week.map(d => (
+              <button key={d.date} className={`${d.date === sel ? 'on' : ''} ${d.date === todayStr ? 'today' : ''}`} onClick={() => setSel(d.date)}>
+                <span className="dow">{dayNameOf(d.date)}</span>
+                <span className="dnum">{Number(d.date.slice(8))}</span>
+                <span className="dots">{d.blocks.slice(0, 4).map(b => <i key={b.id} style={{ background: SCHED_HEX[calOf(b)] }}/>)}</span>
+              </button>
+            ))}
+          </div>
+          <div className="card">
+            <div className="agenda-head">
+              <span>{fmtDate(sel, { weekday:'long', month:'long', day:'numeric' })}</span>
+              <span className="muted">{selDay.blocks.length} event{selDay.blocks.length === 1 ? '' : 's'}</span>
+            </div>
+            {selDay.blocks.length === 0
+              ? <div className="agenda-empty">Nothing scheduled. <button className="link-btn" onClick={() => newEvent(sel)}>Add an event</button></div>
+              : <div className="agenda">{selDay.blocks.map(b => <AgendaItem key={b.id} b={b} date={sel} clash={selDay.clashes.has(b.id)}/>)}</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Side panel */}
+      <div className="sched-side span-3">
+        <div className="card">
+          <div className="card-label">Today · {fmtDate(todayStr, { weekday:'short', month:'short', day:'numeric' })}</div>
+          {todayBlocks.length === 0
+            ? <div className="agenda-empty small">A free day.</div>
+            : <div className="agenda">{todayBlocks.map(b => <AgendaItem key={b.id} b={b} date={todayStr} clash={todayClashes.has(b.id)} compact/>)}</div>}
+        </div>
+        <div className="card">
+          <div className="card-label">Coming up · one-time</div>
+          {upcoming.length === 0
+            ? <div className="agenda-empty small">No one-off events in the next two weeks.</div>
+            : <div className="agenda">{upcoming.map(b => (
+                <div key={b.id}>
+                  <div className="agenda-date">{fmtDate(b.startDate, { weekday:'short', month:'short', day:'numeric' })}</div>
+                  <AgendaItem b={b} date={b.startDate} compact/>
+                </div>
+              ))}</div>}
+        </div>
+      </div>
 
       {form !== null && (
-        <SchedModal data={form} activeSched={activeSched}
+        <SchedModal data={form}
           onSave={d => { d.id ? onUpdate(d.id, d) : onAdd(d); setForm(null); }}
+          onDelete={form.id ? deleteForm : null}
           onClose={() => setForm(null)}/>
       )}
       {ConfirmUI}
@@ -2907,86 +2826,90 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
   );
 }
 
-function SchedModal({data, activeSched, onSave, onClose}) {
+function SchedModal({data, onSave, onDelete, onClose}) {
   const [f, setF] = useState({
     day:'Mon', start:'09:00', end:'10:00', title:'', type:'Work',
-    scheduleType: activeSched || 'Work',
+    scheduleType: 'Work',
     recurrence: 'weekly',     // weekly | biweekly | once | period
     startDate: localDateStr(), // first occurrence / start of period
     endDate: '',               // end of period (for 'period' recurrence)
-    acknowledged: false,
     ...data,
   });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const invalid = f.start && f.end && toMin(f.end) <= toMin(f.start);
 
   const RECURRENCE_OPTS = [
-    { id:'weekly',   label:'Every Week'    },
-    { id:'biweekly', label:'Bi-Weekly'     },
-    { id:'once',     label:'One Time'      },
-    { id:'period',   label:'Date Range'    },
+    { id:'weekly',   label:'Every week'   },
+    { id:'biweekly', label:'Every 2 weeks'},
+    { id:'once',     label:'One time'     },
+    { id:'period',   label:'Date range'   },
   ];
+  const setDate = v => {
+    s('startDate', v);
+    if (f.recurrence === 'once' && v) s('day', dayNameOf(v));
+  };
 
   return (
     <Modal title={data.id ? 'Edit Event' : 'New Event'} onClose={onClose}>
       <Field label="Title">
-        <input className="input" value={f.title} onChange={e => s('title', e.target.value)} placeholder="e.g. Church, Gym, Client meeting"/>
-      </Field>
-      <div className="grid-2">
-        <Field label="Day">
-          <select className="input" value={f.day} onChange={e => s('day', e.target.value)}>
-            {DAYS.map(d => <option key={d}>{d}</option>)}
-          </select>
-        </Field>
-        <Field label="Schedule">
-          <select className="input" value={f.scheduleType} onChange={e => s('scheduleType', e.target.value)}>
-            <option value="Work">Work</option>
-            <option value="School">School</option>
-            <option value="Personal">Personal</option>
-          </select>
-        </Field>
-      </div>
-      <div className="grid-2">
-        <Field label="Start"><input className="input" type="time" value={f.start} onChange={e => s('start', e.target.value)}/></Field>
-        <Field label="End"><input className="input" type="time" value={f.end} onChange={e => s('end', e.target.value)}/></Field>
-      </div>
-      <Field label="Block Type">
-        <select className="input" value={f.type} onChange={e => s('type', e.target.value)}>
-          {Object.keys(BLOCK_COLORS).map(t => <option key={t}>{t}</option>)}
-        </select>
+        <input className="input" autoFocus value={f.title} onChange={e => s('title', e.target.value)} placeholder="e.g. COMP 2201 Lecture, Gym, Client call"/>
       </Field>
 
-      <div>
-        <label style={{ display:'block', fontFamily:'var(--fm)', fontSize:'8.5px', fontWeight:500,
-          textTransform:'uppercase', letterSpacing:'0.14em', color:'var(--mist-3)', marginBottom:'0.375rem' }}>
-          Recurrence
-        </label>
-        <div className="pill-row">
-          {RECURRENCE_OPTS.map(r => (
-            <button key={r.id} className={`pill ${f.recurrence === r.id ? 'active' : ''}`}
-              style={{ fontSize:'10px', padding:'0.28rem 0.6rem' }}
-              onClick={() => s('recurrence', r.id)}>
-              {r.label}
+      <Field label="Calendar">
+        <div className="sched-cals">
+          {SCHED_CALS.map(c => (
+            <button key={c.id} type="button" className={`sched-cal ${f.scheduleType === c.id ? 'on' : ''}`} style={{ '--c': c.hex }} onClick={() => s('scheduleType', c.id)}>
+              <span className="dot"/>{c.id}
             </button>
           ))}
         </div>
-      </div>
+      </Field>
+
+      <Field label="Day">
+        <div className="day-pick">
+          {DAYS.map(d => (
+            <button key={d} type="button" className={f.day === d ? 'on' : ''} onClick={() => s('day', d)}>{d}</button>
+          ))}
+        </div>
+      </Field>
 
       <div className="grid-2">
-        <Field label={f.recurrence === 'once' ? 'Date' : f.recurrence === 'period' ? 'Start Date' : 'From Date'}>
-          <input className="input" type="date" value={f.startDate} onChange={e => {
-            const v = e.target.value;
-            s('startDate', v);
-            if (f.recurrence === 'once' && v) { const dow = parseLocal(v).getDay(); s('day', DAYS[dow === 0 ? 6 : dow - 1]); }
-          }}/>
+        <Field label="Starts"><input className="input" type="time" value={f.start} onChange={e => s('start', e.target.value)}/></Field>
+        <Field label="Ends"><input className="input" type="time" value={f.end} onChange={e => s('end', e.target.value)}/></Field>
+      </div>
+      {invalid && <div className="form-warn">End time must be after the start time.</div>}
+
+      <Field label="Repeats">
+        <div className="seg seg-full">
+          {RECURRENCE_OPTS.map(r => (
+            <button key={r.id} type="button" className={f.recurrence === r.id ? 'on' : ''} onClick={() => s('recurrence', r.id)}>{r.label}</button>
+          ))}
+        </div>
+      </Field>
+
+      <div className="grid-2">
+        <Field label={f.recurrence === 'once' ? 'Date' : 'Starting'}>
+          <input className="input" type="date" value={f.startDate} onChange={e => setDate(e.target.value)}/>
         </Field>
-        {(f.recurrence === 'period') && (
-          <Field label="End Date">
+        {f.recurrence !== 'once' && (
+          <Field label="Until (optional)">
             <input className="input" type="date" value={f.endDate} onChange={e => s('endDate', e.target.value)}/>
           </Field>
         )}
       </div>
 
-      <ModalFoot onClose={onClose} onSave={() => f.title.trim() && onSave(f)}/>
+      <Field label="Tag">
+        <select className="input" value={f.type} onChange={e => s('type', e.target.value)}>
+          {Object.keys(BLOCK_COLORS).map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+
+      <ModalFoot onClose={onClose} onSave={() => f.title.trim() && !invalid && onSave(f)}/>
+      {onDelete && (
+        <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}>
+          <Icons.trash size={13}/> Delete event
+        </button>
+      )}
     </Modal>
   );
 }
