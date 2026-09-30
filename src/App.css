@@ -1169,6 +1169,15 @@ select.input {
 .chart-grid { display: flex; flex-direction: column; gap: 0.75rem; }
 .sys-alerts { position: fixed; top: 0; left: 0; right: 0; z-index: 9990; }
 
+.signin { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 1.25rem; background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(28,171,151,0.10), transparent 70%), var(--abyss-950); }
+.signin-card { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: stretch; gap: 0.875rem; text-align: center; padding: 2.25rem 2rem; border-radius: var(--tide-lg); background: rgba(8,22,36,0.82); border: 1px solid rgba(255,255,255,0.07); box-shadow: 0 24px 80px rgba(0,0,0,0.55); }
+.signin-card .splash-logo { justify-content: center; }
+.signin-card label { text-align: left; }
+.signin-msg { font-size: 12.5px; line-height: 1.5; text-align: left; }
+.signin-links { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.25rem; }
+.signin-links button { background: none; border: none; cursor: pointer; font-family: var(--fm); font-size: 11px; color: var(--teal-300); padding: 0.25rem 0; }
+.signin-links button:hover { color: var(--teal-100); }
+
 .alert-toast {
   position: fixed; bottom: calc(var(--bh) + 5rem);
   left: 1rem; right: 1rem; max-width: 440px; margin: 0 auto;

@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { db } from './firebase';
+import { db, auth } from './firebase';
+import {
+  onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+  sendPasswordResetEmail, signOut,
+} from 'firebase/auth';
 import {
   collection, addDoc, updateDoc, deleteDoc,
   doc, onSnapshot, query, orderBy, where, limit, serverTimestamp
@@ -47,6 +51,7 @@ const Icons = {
   loader:    () => <Icon d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
+  logout:    () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
   filter:    () => <Icon d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
   alert:     () => <Icon d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />,
 };
@@ -984,7 +989,89 @@ function Particles() {
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
-export default function App() {
+// ─── AUTH GATE ────────────────────────────────────────────────────────────────
+// Firestore rules only admit the owner's account, so nothing loads until
+// someone signs in.
+export default function Root() {
+  const [user, setUser] = useState(undefined); // undefined = still checking
+  useEffect(() => onAuthStateChanged(auth, u => setUser(u || null)), []);
+  if (user === undefined) return <div className="splash" style={{animation:'none'}}/>;
+  if (!user) return <SignIn/>;
+  return <App key={user.uid}/>;
+}
+
+const AUTH_ERRORS = {
+  'auth/invalid-credential':     'Wrong email or password.',
+  'auth/wrong-password':         'Wrong email or password.',
+  'auth/user-not-found':         'No account with that email.',
+  'auth/email-already-in-use':   'That email already has an account — sign in instead.',
+  'auth/weak-password':          'Use at least 6 characters.',
+  'auth/invalid-email':          'That email address looks wrong.',
+  'auth/too-many-requests':      'Too many attempts. Wait a minute and try again.',
+  'auth/network-request-failed': 'No connection. Check your internet.',
+  'auth/configuration-not-found':'Email sign-in isn\'t enabled in the Firebase console yet.',
+  'auth/operation-not-allowed':  'Email sign-in isn\'t enabled in the Firebase console yet.',
+};
+
+function SignIn() {
+  const [mode, setMode]         = useState('signin'); // signin | create
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy]         = useState(false);
+  const [msg, setMsg]           = useState(null); // { text, ok }
+
+  const submit = async e => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    setBusy(true); setMsg(null);
+    try {
+      if (mode === 'create') await createUserWithEmailAndPassword(auth, email.trim(), password);
+      else await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (err) {
+      setMsg({ text: AUTH_ERRORS[err.code] || err.message });
+    }
+    setBusy(false);
+  };
+
+  const reset = async () => {
+    if (!email.trim()) { setMsg({ text: 'Enter your email first, then click "Forgot password".' }); return; }
+    try { await sendPasswordResetEmail(auth, email.trim()); setMsg({ text: 'Password reset email sent.', ok: true }); }
+    catch (err) { setMsg({ text: AUTH_ERRORS[err.code] || err.message }); }
+  };
+
+  return (
+    <div className="signin">
+      <form className="signin-card" onSubmit={submit}>
+        <div className="splash-logo" style={{marginBottom:'1rem',animation:'none'}}>
+          <div className="splash-j" style={{fontSize:64}}>J</div>
+          <div className="splash-c" style={{fontSize:64}}>C</div>
+        </div>
+        <div className="splash-wordmark" style={{animation:'none',fontSize:15}}>JCommerce</div>
+        <div className="splash-sub" style={{animation:'none',marginBottom:'1.75rem'}}>
+          {mode === 'create' ? 'Create your owner account' : 'Founder Console'}
+        </div>
+        <Field label="Email">
+          <input className="input" type="email" autoComplete="username" autoFocus value={email} onChange={e=>setEmail(e.target.value)}/>
+        </Field>
+        <Field label="Password">
+          <input className="input" type="password" autoComplete={mode==='create'?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)}/>
+        </Field>
+        {msg && <div className="signin-msg" style={{color: msg.ok ? 'var(--sea-400)' : 'var(--coral-400)'}}>{msg.text}</div>}
+        <button className="btn-primary" type="submit" disabled={busy} style={{justifyContent:'center',width:'100%',marginTop:'0.5rem',opacity:busy?0.7:1}}>
+          {busy ? 'Please wait…' : mode === 'create' ? 'Create account' : 'Sign in'}
+        </button>
+        <div className="signin-links">
+          <button type="button" onClick={()=>{setMode(m=>m==='create'?'signin':'create');setMsg(null);}}>
+            {mode === 'create' ? 'Have an account? Sign in' : 'First time? Create account'}
+          </button>
+          {mode === 'signin' && <button type="button" onClick={reset}>Forgot password</button>}
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function App() {
   const [tab, setTab] = useState('dashboard');
   const [leads, setLeads]       = useState([]);
   const [habits, setHabits]     = useState([]);
@@ -1323,6 +1410,7 @@ export default function App() {
               Briefing
             </button>
           )}
+          <button className="icon-btn" title="Sign out" onClick={()=>signOut(auth)}><Icons.logout size={14}/></button>
           <div className="xp-chip">
             <span className="xp-chip-lv">L{level}</span>
             <span className="xp-chip-sep">·</span>

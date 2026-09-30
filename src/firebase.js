@@ -2,6 +2,7 @@
 // Replace these values with your Firebase project config
 import { initializeApp } from 'firebase/app';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyDymahr1CYeQnCNhFRPqGm-pexD0stg_fE",
@@ -14,6 +15,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
 
 // Local testing only: REACT_APP_FIRESTORE_EMULATOR=localhost:8080 npm start
 if (process.env.REACT_APP_FIRESTORE_EMULATOR) {
