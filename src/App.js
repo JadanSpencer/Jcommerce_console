@@ -13,6 +13,7 @@ import {
   CartesianGrid, AreaChart, Area, Cell, ComposedChart, Line, ReferenceLine
 } from 'recharts';
 import kakuzuArt from './assets/ghosts/kakuzu.webp';
+import uchihaArt from './assets/ghosts/uchiha.webp';
 
 // ─── CUSTOM SVG ICONS (no lucide — proper hand-crafted icons) ─────────────────
 const Icon = ({ d, size = 20, stroke = 'currentColor', fill = 'none', strokeWidth = 1.6 }) => (
@@ -4065,6 +4066,7 @@ function ClientManagement({ leads, finances, todayStr, onAdd, onUpdate, onRemove
 
   return (
     <div className="section clients">
+      <SectionGhost src={uchihaArt}/>
       <div className="sched-bar">
         <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Clients</div></div>
         <div className="seg">
