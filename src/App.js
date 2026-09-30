@@ -164,13 +164,10 @@ function calcTodoXP(todos, todayStr) {
   const yesterday = addDays(todayStr, -1);
   let xp = 0;
 
-  // REWARD: +5 XP for every todo completed on any past day (not today)
+  // REWARD: +5 XP once per task that got done. (Re-ticking an old task on
+  // later days used to earn +5 every day.)
   todos.forEach(t => {
-    xp += Object.entries(t.doneOn||{})
-      .filter(([date, done]) => done && date <= yesterday)
-      .length * 5;
-    // Today's completions also reward — but NO penalty for incomplete today
-    if (t.doneOn?.[todayStr]) xp += 5;
+    if (Object.values(t.doneOn || {}).some(Boolean)) xp += 5;
   });
 
   // PENALTY: only for todos added ON yesterday that were NOT completed yesterday
@@ -225,6 +222,7 @@ function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers
     for (let i = 1; i <= daysBack; i++) {
       const d = addDays(todayStr, -i);
       if (d < createdStr) break; // habit didn't exist yet
+      if (h.archivedAt && d >= h.archivedAt) continue; // no longer tracked
       if (!h.completions?.[d]) xp -= 10; // missed that day — deduct
     }
   });
@@ -232,10 +230,43 @@ function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers
   xp += calcTodoXP(todos, todayStr);
   // Bonuses derived from stored data so they survive a restart:
   // +100 per completed goal, +15 per Tide Log entry
-  xp += goals.filter(g => Number(g.target) > 0 && Number(g.current) >= Number(g.target)).length * 100;
+  // +100 per goal reached, −50 per goal missed or given up
+  goals.forEach(g => { const st = goalStatus(g, todayStr); if (st === 'done') xp += 100; if (st === 'failed') xp -= 50; });
   xp += journal.length * 15;
   xp += focusXP(timers, todayStr);
   return Math.max(0, xp);
+}
+
+// ─── GOALS: kinds that track themselves from real data ────────────────────────
+const GOAL_KINDS = [
+  { id:'revenue', label:'Revenue',        unit:'J$',    hint:'Income logged in Finance since the start date', auto:true },
+  { id:'profit',  label:'Profit',         unit:'J$',    hint:'Income minus expenses since the start date',    auto:true },
+  { id:'clients', label:'New clients',    unit:'clients', hint:'Paying clients won since the start date',    auto:true },
+  { id:'focus',   label:'Focus hours',    unit:'hours', hint:'Time filled in Focus timers since the start date', auto:true },
+  { id:'savings', label:'Savings',        unit:'J$',    hint:'Money you have put aside. Update it yourself',   auto:false },
+  { id:'custom',  label:'Custom',         unit:'',      hint:'Anything else. Update it yourself',              auto:false },
+];
+const goalKind = g => GOAL_KINDS.find(k => k.id === (g.kind || 'custom')) || GOAL_KINDS[5];
+const goalUnit = g => (g.kind ? (g.kind === 'custom' ? g.unit || '' : goalKind(g).unit) : 'J$');
+const fmtGoal = (g, v) => { const u = goalUnit(g); const n = u === 'hours' ? Math.round(v * 10) / 10 : Math.round(v); return u === 'J$' ? `J$${n.toLocaleString()}` : `${n.toLocaleString()}${u ? ` ${u}` : ''}`; };
+function goalProgress(g, { finances = [], leads = [], timers = [] } = {}) {
+  const start = g.startDate || '0000-00-00';
+  const inRange = d => d && d >= start;
+  switch (g.kind) {
+    case 'revenue': return finances.filter(f => f.type === 'income' && inRange(f.date)).reduce((s, f) => s + (Number(f.amount) || 0), 0);
+    case 'profit':  return finances.filter(f => inRange(f.date)).reduce((s, f) => s + (f.type === 'income' ? 1 : -1) * (Number(f.amount) || 0), 0);
+    case 'clients': return leads.filter(l => l.status === 'Paid' && inRange(l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : ''))).length;
+    case 'focus':   return timers.reduce((s, t) => s + (t.sessions || []).filter(x => inRange(localDateStr(new Date(x.end)))).reduce((a, x) => a + (Number(x.sec) || 0), 0), 0) / 3600;
+    default:        return Number(g.current) || 0;
+  }
+}
+// done/failed are written once by the App watcher so a finished goal stays finished
+function goalStatus(g, todayStr) {
+  if (g.status === 'done' || g.completedAt) return 'done';
+  if (g.status === 'failed') return 'failed';
+  if (!g.kind && Number(g.target) > 0 && Number(g.current) >= Number(g.target)) return 'done';   // older goals
+  if (g.deadline && g.deadline < todayStr) return 'failed';
+  return 'active';
 }
 
 function xpToLevel(xp) {
@@ -646,7 +677,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
 
       <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--mist-4)',
         marginTop:'0.625rem',letterSpacing:'0.08em',textAlign:'right'}}>
-        vs prior 7 days · binary search O(log n)
+        vs prior 7 days
       </div>
     </div>
   );
@@ -1216,7 +1247,11 @@ function App() {
   const add    = async (col, data) => { try { return await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
   const update = async (col, id, data) => { try { await updateDoc(doc(db,col,id), data); } catch { setError('Failed to update.'); } };
   const remove = async (col, id) => { try { await deleteDoc(doc(db,col,id)); } catch { setError('Failed to delete.'); } };
-  const toggleHabit = async (habit, date) => { await update('habits', habit.id, { completions: {...(habit.completions||{}), [date]: !habit.completions?.[date]} }); };
+  // Only today and yesterday can be changed: back-filling old days used to erase penalties
+  const toggleHabit = async (habit, date) => {
+    if (date > todayStr || date < addDays(todayStr, -1)) return;
+    await update('habits', habit.id, { completions: {...(habit.completions||{}), [date]: !habit.completions?.[date]} });
+  };
   const toggleTodo  = async (todo) => { await update('todos', todo.id, { doneOn: {...(todo.doneOn||{}), [todayStr]: !todo.doneOn?.[todayStr]} }); };
 
   // ── TIDE LOG — a one-line-each nightly check-in that ties the business
@@ -1280,6 +1315,17 @@ function App() {
     const iv = setInterval(check, 5000);
     return () => clearInterval(iv);
   }, [timers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Goals: write done/failed once, so XP can't flip back and forth ─────────
+  useEffect(() => {
+    const ctx = { finances, leads, timers };
+    goals.forEach(g => {
+      if (g.status === 'done' || g.status === 'failed' || g.completedAt) return;
+      const target = Number(g.target) || 0;
+      if (target > 0 && goalProgress(g, ctx) >= target) update('goals', g.id, { status: 'done', completedAt: new Date().toISOString() });
+      else if (g.deadline && g.deadline < todayStr) update('goals', g.id, { status: 'failed', failedAt: new Date().toISOString() });
+    });
+  }, [goals, finances, leads, timers, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // One budget doc per expense category; a limit of 0 removes it
   const setBudget = async (category, limit) => {
@@ -1433,14 +1479,14 @@ function App() {
       )}
 
       <main className="main">
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} habitsToday={habitsToday} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} paidLeads={paidLeads} openLeads={openLeads} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} todayTodos={todayTodos} todayDone={todayDone} journal={journal} onSaveJournal={saveJournal} timers={timers} onOpenFocus={()=>setTab('focus')}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
-        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
+        {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={remove}/>}
       </main>
@@ -1627,152 +1673,259 @@ function TideRow({ tag, color, text, compact }) {
   );
 }
 
-function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone, journal, onSaveJournal, timers = [], onOpenFocus }) {
-  // Wide layout has room for roughly eight months of history
-  const weekCount = window.innerWidth >= 1024 ? 32 : 20;
-  const weeks = getLast20Weeks(weekCount);
-  const allDates = weeks.flat();
-  const habitHeatmap = allDates.map(date => {
-    const done = habits.filter(h=>h.completions?.[date]).length;
-    const total = habits.length;
-    return { date, lv: total===0 ? 0 : Math.ceil((done/total)*4) };
+// ─── HOME: the Today command centre ──────────────────────────────────────────
+// Pulls every section together into one answer: what to do next, and whether
+// you're on track. Everything here is read from the same data the other
+// sections use, so the two never disagree.
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, todayStr, xp, level, progress, xpInLevel,
+  onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
+  const [taskDraft, setTaskDraft] = useState('');
+  const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
+  const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const thisMonth = todayStr.slice(0, 7), today = Number(todayStr.slice(8));
+  const dim = daysInMonth(thisMonth), daysLeft = dim - today;
+
+  // ── Money ────────────────────────────────────────────────────────────────
+  const sumMonth = (mk, type) => finances.filter(f => monthOf(f.date) === mk && f.type === type).reduce((s, f) => s + amountOf(f), 0);
+  const inc = sumMonth(thisMonth, 'income'), exp = sumMonth(thisMonth, 'expense'), net = inc - exp;
+  const target = minProfitForLevel(level);
+  const last3 = [1, 2, 3].map(i => addMonths(thisMonth, -i));
+  const avgInc = last3.reduce((s, m) => s + sumMonth(m, 'income'), 0) / 3;
+  const avgExp = last3.reduce((s, m) => s + sumMonth(m, 'expense'), 0) / 3;
+  const cash = finances.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0);
+  const clients = leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
+  const arrears = clients.map(l => ({ l, months: retainerArrears(l, finances, todayStr) })).filter(x => x.months.length);
+  const owedRet = arrears.reduce((s, x) => s + x.months.length * (Number(x.l.retainerAmount) || 0), 0);
+  const pendingRet = clients.filter(l => l.clientStatus !== 'Paused' && Number(l.retainerAmount) > 0 && retainerDueDate(l, thisMonth) >= todayStr && !retainerCollected(l, thisMonth, finances))
+    .reduce((s, l) => s + Number(l.retainerAmount), 0);
+  const projNet = net + pendingRet - avgExp * (daysLeft / dim);
+  // Expected income this month: the better of your 3-month average and what's
+  // actually in plus retainers still due. Spend past (expected − minimum) and you miss it.
+  const expectedInc = Math.max(avgInc, inc + pendingRet);
+  const allowed = Math.max(0, expectedInc - target);
+  const safeLeft = allowed - exp;
+  const safePerDay = safeLeft > 0 ? safeLeft / (daysLeft + 1) : 0;
+  const lastLog = finances.reduce((m, f) => (f.date && f.date > m ? f.date : m), '');
+  const sinceLog = lastLog ? Math.round((parseLocal(todayStr) - parseLocal(lastLog)) / 864e5) : null;
+
+  // ── Day ──────────────────────────────────────────────────────────────────
+  const activeHabits = habits.filter(h => !h.archivedAt);
+  const habitsLeft = activeHabits.filter(h => !h.completions?.[todayStr]);
+  const todayTasks = todos.filter(t => t.addedDate === todayStr)
+    .sort((a, b) => (a.doneOn?.[todayStr] ? 1 : 0) - (b.doneOn?.[todayStr] ? 1 : 0) || (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+  const tasksDone = todayTasks.filter(t => t.doneOn?.[todayStr]).length;
+  const blocks = schedule.filter(b => blockOccursOn(b, todayStr)).sort((a, b) => toMin(a.start) - toMin(b.start));
+  const nextBlock = blocks.find(b => toMin(b.end) > nowMin);
+  const activeTimers = timers.filter(t => timerStatus(t, todayStr) === 'active');
+  const wroteTide = journal.some(j => j.date === todayStr);
+
+  // ── Next moves: ranked from every section ────────────────────────────────
+  const moves = [];
+  const push = (lv, text, cta, act) => moves.push({ lv, text, cta, act });
+  const go = tab => () => onNav(tab);
+  if (projNet < target) {
+    const gap = target - projNet;
+    push('danger', `Profit is heading for ${J(projNet)} this month, ${J(gap)} short of your Level ${level} minimum. That's ${J(gap / Math.max(1, daysLeft + 1))} a day.`, 'Finance', go('finance'));
+  }
+  arrears.forEach(({ l, months }) => push('danger', `Chase ${l.businessName}: ${months.length} unpaid retainer${months.length === 1 ? '' : 's'} (${J(months.length * Number(l.retainerAmount))}).`, 'Client', go('clients')));
+  const openLeads = leads.filter(l => !['Paid', 'Flaked', 'Lost'].includes(l.status));
+  const followUps = openLeads.filter(l => l.nextActionDate && l.nextActionDate <= todayStr).sort((a, b) => a.nextActionDate.localeCompare(b.nextActionDate));
+  followUps.slice(0, 3).forEach(l => {
+    const late = Math.round((parseLocal(todayStr) - parseLocal(l.nextActionDate)) / 864e5);
+    push(late > 0 ? 'danger' : 'warn', `Follow up with ${l.businessName}${l.nextAction ? `: ${l.nextAction}` : ''}${late > 0 ? ` (${late}d late)` : ''}.`, 'Pipeline', go('pipeline'));
   });
+  if (followUps.length > 3) push('warn', `${followUps.length - 3} more follow-ups are due.`, 'Pipeline', go('pipeline'));
+  activeTimers.forEach(t => {
+    const left = timerTargetSec(t) - timerElapsed(t, Date.now());
+    const d = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
+    const perDay = left / Math.max(1, d + 1);
+    if (d <= 1 || perDay > 1.5 * 3600) push(d <= 0 ? 'danger' : 'warn', `${t.title}: ${fmtHM(left)} left, due ${d <= 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`}.`, t.runningSince ? 'Open' : 'Start', t.runningSince ? go('focus') : () => { onStartTimer(t); onNav('focus'); });
+  });
+  if (habitsLeft.length) {
+    const risky = habitsLeft.map(h => ({ h, s: habitStreak(h, todayStr) })).filter(x => x.s > 0).sort((a, b) => b.s - a.s)[0];
+    push(hour >= 18 ? 'warn' : 'info', `${habitsLeft.length} habit${habitsLeft.length === 1 ? '' : 's'} left today${risky ? `, including your ${risky.s}-day "${risky.h.name}" streak` : ''}.`, 'Habits', go('habits'));
+  }
+  if (todayTasks.length < 5) push(hour >= 12 ? 'warn' : 'info', `Plan ${5 - todayTasks.length} more task${5 - todayTasks.length === 1 ? '' : 's'}. Five is the minimum.`, 'Tasks', go('todos'));
+  else if (tasksDone < 5) push(hour >= 15 ? 'warn' : 'info', `Finish ${5 - tasksDone} more task${5 - tasksDone === 1 ? '' : 's'} today to avoid −10 XP tomorrow.`, 'Tasks', go('todos'));
+  goals.forEach(g => {
+    if (goalStatus(g, todayStr) !== 'active' || !g.deadline) return;
+    const cur = goalProgress(g, { finances, leads, timers }), tgt = Number(g.target) || 0;
+    const start = g.startDate || todayStr;
+    const span = Math.max(1, Math.round((parseLocal(g.deadline) - parseLocal(start)) / 864e5));
+    const elapsed = Math.min(1, Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(start)) / 864e5) / span));
+    if (tgt > 0 && cur / tgt + 0.05 < elapsed) push('warn', `"${g.title}" is behind pace: ${fmtGoal(g, cur)} of ${fmtGoal(g, tgt)} with ${Math.round((1 - elapsed) * 100)}% of the time left.`, 'Goals', go('goals'));
+  });
+  if (sinceLog !== null && sinceLog >= 3) push('warn', `Nothing logged in Finance for ${sinceLog} days. Log what you spent.`, 'Log it', go('finance'));
+  if (openLeads.filter(l => !l.nextActionDate).length) push('info', `${openLeads.filter(l => !l.nextActionDate).length} open lead${openLeads.filter(l => !l.nextActionDate).length === 1 ? ' has' : 's have'} no next step. A lead without a date gets forgotten.`, 'Pipeline', go('pipeline'));
+  if (nextBlock && toMin(nextBlock.start) > nowMin && toMin(nextBlock.start) - nowMin <= 120) push('info', `Next up: ${nextBlock.title} at ${fmtTime(nextBlock.start)}.`, 'Schedule', go('schedule'));
+  if (hour >= 18 && !wroteTide) push('info', "Write tonight's Tide Log before bed. +15 XP.", null, null);
+  const order = { danger: 0, warn: 1, info: 2 };
+  moves.sort((a, b) => order[a.lv] - order[b.lv]);
+  const dangerCount = moves.filter(m => m.lv === 'danger').length;
+
+  const verdict = dangerCount >= 3 ? 'A lot needs you today. Start at the top.'
+    : dangerCount ? 'Handle the red items first. Everything else can wait.'
+    : moves.length ? 'On track. Keep the streak going.' : 'All clear. Use the time to find new clients.';
+
+  const weekCount = window.innerWidth >= 1024 ? 26 : 16;
+  const weeks = getLast20Weeks(weekCount);
 
   return (
-    <div className="section">
-      {/* XP Hero */}
-      <div className="xp-hero span-5" style={{'--prog':`${progress*100}%`}}>
-        <div className="xp-avatar">J</div>
-        <div style={{flex:1,minWidth:0}}>
-          <div className="xp-name">Jadan Spencer</div>
-          <div className="xp-lvl-tag">Level {level} Founder</div>
-          <div className="xp-track"><div className="xp-fill"/></div>
-          <div className="xp-pts">{xpInLevel} / 500 XP → Level {level+1}</div>
+    <div className="section home">
+      <div className="card home-hero span-8">
+        <div className="home-greet">{greet}, Jadan.</div>
+        <div className="home-date">{fmtDate(todayStr, { weekday:'long', month:'long', day:'numeric' })}</div>
+        <div className="home-verdict">{verdict}</div>
+        <div className="home-stats">
+          <div><b className={habitsLeft.length ? '' : 'good'}>{activeHabits.length - habitsLeft.length}/{activeHabits.length}</b><span>habits</span></div>
+          <div><b className={tasksDone >= 5 ? 'good' : ''}>{tasksDone}/{Math.max(5, todayTasks.length)}</b><span>tasks</span></div>
+          <div><b>{fmtHM((focusByDay(timers)[todayStr] || 0) + timers.filter(t => t.runningSince).reduce((s2, t) => s2 + timerRunSec(t, Date.now()), 0))}</b><span>focused</span></div>
+          <div><b className={dangerCount ? 'bad' : 'good'}>{dangerCount}</b><span>urgent</span></div>
+        </div>
+        <div className="home-level">
+          <span className="home-lv">Level {level}</span>
+          <div className="xp-track home-xp"><div className="xp-fill" style={{ width: `${progress * 100}%` }}/></div>
+          <span className="home-xpn">{xpInLevel} / 500 XP</span>
         </div>
       </div>
 
-      {/* ⚡ Velocity Tracker */}
-      <VelocityTracker
-        leads={leads} finances={finances}
-        habits={habits} todos={todos}
-        todayStr={todayStr} xp={xp}
-      />
-
-      {/* Stats */}
-      <div className="grid-2">
-        <StatCard label="Net Profit"    value={`J$${profit.toLocaleString()}`}    icon={Icons.trend}   color={profit>=0?'#1adb8a':'#ff6040'} />
-        <StatCard label="Paid Clients"  value={paidLeads.length}                    icon={Icons.users}   color="var(--horizon)" />
-        <StatCard label="Open Pipeline" value={openLeads.length}                    icon={Icons.target}  color="var(--horizon)" />
-        <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--horizon)" />
+      <div className="card home-money span-4">
+        <div className="card-label">{monthName(thisMonth, { month:'long' })} money</div>
+        <div className="row-between" style={{ alignItems:'flex-end' }}>
+          <div className={`fin-net ${net >= 0 ? 'pos' : 'neg'}`} style={{ fontSize: 34 }}>{J(net)}</div>
+          <div className="home-target">of {J(target)}</div>
+        </div>
+        <div className="goal-bar" style={{ margin:'0.6rem 0 0.9rem' }}>
+          <div className="goal-fill" style={{ width: `${Math.max(0, Math.min(100, (net / target) * 100))}%` }}/>
+          <div className="goal-time" style={{ left: `${(today / dim) * 100}%` }}/>
+        </div>
+        <dl className="fin-kv">
+          <div><dt>Safe to spend</dt><dd className={safeLeft > 0 ? 'good' : 'bad'}>{safeLeft > 0 ? `${J(safePerDay)}/day` : 'Nothing'}</dd></div>
+          <div><dt>Cash on hand</dt><dd className={cash < 0 ? 'bad' : ''}>{J(cash)}</dd></div>
+          <div><dt>Owed to you</dt><dd className={owedRet ? 'bad' : ''}>{J(owedRet)}</dd></div>
+        </dl>
+        {safeLeft <= 0 && <div className="goal-hint" style={{ marginTop:'0.5rem' }}>{expectedInc === 0 ? 'No income coming in. Every dollar spent is borrowed from the future.' : `Spending past ${J(allowed)} this month means missing your minimum.`}</div>}
+        {safeLeft > 0 && <div className="goal-hint" style={{ marginTop:'0.5rem' }}>{J(safeLeft)} left this month before you dip under your minimum.</div>}
       </div>
 
-      <div className="dash-row">
-      {/* Today habits quick */}
-      {habits.length > 0 && (
-        <div className="card fade-in">
-          <div className="card-label">Today's Habits</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-            {habits.map(h => (
-              <div key={h.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleHabit(h,todayStr)} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
-                  {h.completions?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
-                </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</span>
-                {h.completions?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#1adb8a',flexShrink:0}}>+10</span>}
-              </div>
-            ))}
-          </div>
+      <div className="card home-moves span-8">
+        <div className="row-between" style={{ marginBottom:'0.6rem' }}>
+          <span className="card-label" style={{ margin:0 }}>Next moves</span>
+          <span className="fin-delta">{moves.length} item{moves.length === 1 ? '' : 's'}</span>
         </div>
-      )}
-
-      {/* Today tasks quick */}
-      {todayTodos.length > 0 && (
-        <div className="card fade-in">
-          <div className="card-label">Tasks · {todayDone.length}/{todayTodos.length}</div>
-          <div style={{display:'flex',flexDirection:'column',gap:'0.5rem'}}>
-            {todayTodos.map(t => (
-              <div key={t.id} style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggleTodo(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
-                  {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
-                </button>
-                <span style={{flex:1,minWidth:0,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></span>
-                {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5',flexShrink:0}}>+5</span>}
-              </div>
+        {moves.length === 0 ? <div className="agenda-empty small">Nothing urgent. Go find the next client.</div> : (
+          <ul className="moves">
+            {moves.slice(0, 8).map((m, i) => (
+              <li key={i} className={`move ${m.lv}`}>
+                <span className="move-dot"/>
+                <span className="move-text">{m.text}</span>
+                {m.cta && <button className="btn-ghost move-cta" onClick={m.act}>{m.cta}</button>}
+              </li>
             ))}
-          </div>
+            {moves.length > 8 && <li className="move info"><span className="move-dot"/><span className="move-text">+{moves.length - 8} more</span></li>}
+          </ul>
+        )}
+      </div>
+
+      <div className="card span-4">
+        <div className="row-between" style={{ marginBottom:'0.6rem' }}>
+          <span className="card-label" style={{ margin:0 }}>Today's schedule</span>
+          <button className="link-btn" onClick={() => onNav('schedule')}>Open</button>
         </div>
-      )}
-
-      {/* Tide Log — one line each for business, personal, tomorrow */}
-      <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
-
-      {/* Focus bottles */}
-      {timers.some(t => timerStatus(t, todayStr) === 'active') && (
-        <div className="card fade-in">
-          <div className="row-between" style={{ marginBottom:'0.75rem' }}>
-            <span className="card-label" style={{ margin:0 }}>Focus</span>
-            <button className="link-btn" onClick={onOpenFocus}>Open</button>
-          </div>
-          <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
-            {timers.filter(t => timerStatus(t, todayStr) === 'active').sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 4).map(t => {
-              const pct = timerElapsed(t, Date.now()) / timerTargetSec(t);
-              const days = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
+        {blocks.length === 0 ? <div className="agenda-empty small">Nothing scheduled. Protect the time.</div> : (
+          <div className="home-sched">
+            {blocks.map(b => {
+              const state = toMin(b.end) <= nowMin ? 'past' : toMin(b.start) <= nowMin ? 'now' : b === nextBlock ? 'next' : '';
               return (
-                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#8b98f5' }}>
-                  <div className="row-between"><span>{t.runningSince ? '● ' : ''}{t.title}</span><span className={days <= 1 ? 'bad' : ''}>{days === 0 ? 'due today' : days === 1 ? 'tomorrow' : `${days}d`}</span></div>
-                  <div className="dash-focus-bar"><div style={{ width: `${pct * 100}%` }}/></div>
+                <div key={b.id} className={`home-block ${state}`} style={{ '--c': SCHED_HEX[calOf(b)] }}>
+                  <span className="home-block-time">{fmtTime(b.start)}</span>
+                  <span className="home-block-bar"/>
+                  <span className="home-block-title">{b.title}</span>
+                  {state === 'now' && <span className="agenda-badge" style={{ '--c': SCHED_HEX[calOf(b)] }}>Now</span>}
+                  {state === 'next' && <span className="home-next">next</span>}
                 </div>
               );
             })}
           </div>
+        )}
+      </div>
+
+      <div className="dash-row home-quads">
+        <div className="card">
+          <div className="row-between" style={{ marginBottom:'0.6rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Habits · {activeHabits.length - habitsLeft.length}/{activeHabits.length}</span>
+            <button className="link-btn" onClick={() => onNav('habits')}>Open</button>
+          </div>
+          {activeHabits.length === 0 ? <div className="agenda-empty small">No habits yet.</div> : activeHabits.map(h => {
+            const done = !!h.completions?.[todayStr], s = habitStreak(h, todayStr);
+            return (
+              <div key={h.id} className={`home-check ${done ? 'done' : ''}`}>
+                <button className="check-btn" onClick={() => onToggleHabit(h, todayStr)} style={{ color: done ? 'var(--sea-400)' : 'var(--mist-3)' }}>{done ? <Icons.check size={20}/> : <Icons.circle size={20}/>}</button>
+                <span className="home-check-title">{h.name}</span>
+                {s > 0 && <span className="home-streak">🔥{s}</span>}
+              </div>
+            );
+          })}
         </div>
-      )}
+
+        <div className="card">
+          <div className="row-between" style={{ marginBottom:'0.6rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Tasks · {tasksDone}/{todayTasks.length}</span>
+            <button className="link-btn" onClick={() => onNav('todos')}>Open</button>
+          </div>
+          {todayTasks.slice(0, 7).map(t => {
+            const done = !!t.doneOn?.[todayStr];
+            return (
+              <div key={t.id} className={`home-check ${done ? 'done' : ''}`}>
+                <button className="check-btn" onClick={() => onToggleTodo(t)} style={{ color: done ? '#8b98f5' : 'var(--mist-3)' }}>{done ? <Icons.check size={20}/> : <Icons.circle size={20}/>}</button>
+                <span className="home-check-title">{t.starred ? '★ ' : ''}{t.title}</span>
+              </div>
+            );
+          })}
+          <input className="input home-add" value={taskDraft} onChange={e => setTaskDraft(e.target.value)} placeholder={todayTasks.length < 5 ? `Add a task (${5 - todayTasks.length} to go)…` : 'Add a task…'}
+            onKeyDown={e => { if (e.key === 'Enter' && taskDraft.trim()) { onAddTodo({ title: taskDraft.trim(), note: '' }); setTaskDraft(''); } }}/>
+        </div>
+
+        <div className="card">
+          <div className="row-between" style={{ marginBottom:'0.6rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Focus</span>
+            <button className="link-btn" onClick={() => onNav('focus')}>Open</button>
+          </div>
+          {activeTimers.length === 0 ? <div className="agenda-empty small">No timers running. <button className="link-btn" onClick={() => onNav('focus')}>Set one</button></div>
+            : activeTimers.sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 4).map(t => {
+              const pct = timerElapsed(t, Date.now()) / timerTargetSec(t);
+              const d = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
+              return (
+                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#8b98f5' }}>
+                  <div className="row-between"><span>{t.runningSince ? '● ' : ''}{t.title}</span><span className={d <= 1 ? 'bad' : ''}>{d === 0 ? 'today' : d === 1 ? 'tomorrow' : `${d}d`}</span></div>
+                  <div className="dash-focus-bar"><div style={{ width: `${pct * 100}%` }}/></div>
+                </div>
+              );
+            })}
+        </div>
+
+        <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
       </div>
 
       <div className="dash-row wide">
-      {/* Heatmap */}
-      <div className="card fade-in">
-        <div className="card-label">Consistency — {weekCount} Weeks</div>
-        <div style={{overflowX:'auto'}}>
-          <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
-            {weeks.map((week,wi) => (
-              <div key={wi} style={{display:'flex',flexDirection:'column',gap:'3px'}}>
-                {week.map(date => {
-                  const e = habitHeatmap.find(h=>h.date===date);
-                  return <div key={date} className={`hcell lv${e?.lv||0}${date===todayStr?' today':''}`} title={date}/>;
-                })}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="heatmap-legend">
-          <span>Less</span>
-          {[0,1,2,3,4].map(l => <div key={l} className={`hcell lv${l}`}/>)}
-          <span>More</span>
-        </div>
-      </div>
-
-      {/* Pipeline chart */}
-      {leads.length > 0 && (
+        <VelocityTracker leads={leads} finances={finances} habits={activeHabits} todos={todos} todayStr={todayStr} xp={xp}/>
         <div className="card fade-in">
-          <div className="card-label">Pipeline</div>
-          <ResponsiveContainer width="100%" height={CHART_H(140)}>
-            <BarChart data={LEAD_STATUSES.map(s=>({name:s,count:leads.filter(l=>l.status===s).length})).filter(d=>d.count>0)} margin={{left:0,right:0,top:4,bottom:0}}>
-              <defs>
-                <linearGradient id="pipelineFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%"  stopColor="#7bf4e0" stopOpacity={0.95}/>
-                  <stop offset="100%" stopColor="#0e6058" stopOpacity={0.85}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-              <XAxis dataKey="name" tick={{fill:'#59697a',fontSize:9}}/>
-              <YAxis tick={{fill:'#59697a',fontSize:9}} allowDecimals={false} width={22}/>
-              <Tooltip contentStyle={{background:'rgba(6,16,26,0.96)',border:'1px solid rgba(28,171,151,0.25)',borderRadius:'10px',color:'#c4d3e0',fontSize:'11px'}} cursor={{fill:'rgba(28,171,151,0.06)'}}/>
-              <Bar dataKey="count" fill="url(#pipelineFill)" radius={[3,3,0,0]} animationDuration={800} animationEasing="ease-out"/>
-            </BarChart>
-          </ResponsiveContainer>
+          <div className="card-label">Habit consistency · {weekCount} weeks</div>
+          <div style={{ overflowX:'auto' }}>
+            <div style={{ display:'flex', gap:'3px', minWidth:'max-content' }}>
+              {weeks.map((week, wi) => (
+                <div key={wi} style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
+                  {week.map(date => {
+                    const done = activeHabits.filter(h => h.completions?.[date]).length;
+                    const lv = activeHabits.length === 0 ? 0 : Math.ceil((done / activeHabits.length) * 4);
+                    return <div key={date} className={`hcell lv${lv}${date === todayStr ? ' today' : ''}`} title={`${date}: ${done}/${activeHabits.length}`}/>;
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="heatmap-legend"><span>Less</span>{[0, 1, 2, 3, 4].map(l => <div key={l} className={`hcell lv${l}`}/>)}<span>More</span></div>
         </div>
-      )}
       </div>
     </div>
   );
@@ -1870,17 +2023,50 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
   // Unique locations from leads
   const leadLocations = [...new Set(leads.map(l=>l.location||l.parish).filter(Boolean))];
 
+  // ── Follow-ups: every open lead should have a next step with a date ──────
+  const todayStr = localDateStr();
+  const openLeads = leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status));
+  const openValue = openLeads.reduce((s, l) => s + (Number(l.value) || 0), 0);
+  const won = leads.filter(l => l.status === 'Paid').length;
+  const closedLost = leads.filter(l => ['Lost','Flaked'].includes(l.status)).length;
+  const winRate = won + closedLost ? Math.round((won / (won + closedLost)) * 100) : null;
+  const followUps = openLeads.filter(l => l.nextActionDate && l.nextActionDate <= todayStr).sort((a, b) => a.nextActionDate.localeCompare(b.nextActionDate));
+  const noNextStep = openLeads.filter(l => !l.nextActionDate);
+  const lateBy = l => Math.round((parseLocal(todayStr) - parseLocal(l.nextActionDate)) / 864e5);
+  const markContacted = l => onUpdate(l.id, {
+    status: l.status === 'New' ? 'Contacted' : l.status, lastContacted: todayStr,
+    nextActionDate: addDays(todayStr, 3), nextAction: l.nextAction || 'Follow up',
+  });
+
   return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Sales Pipeline</div>
-        <div className="hero-big filled">J${totalVal.toLocaleString()}</div>
-        <div className="hero-sub">
-          {leads.filter(l=>l.status==='Paid').length} paid ·{' '}
-          {leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length} open ·{' '}
-          {filtered.length} shown
-        </div>
+    <div className="section pipeline">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Pipeline</div></div>
+        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> Lead</button>
       </div>
+
+      <div className="grid-2">
+        <div className="fin-tile"><span>Open pipeline</span><b className="good">{J(openValue)}</b><span className="fin-delta">{openLeads.length} open lead{openLeads.length === 1 ? '' : 's'}</span></div>
+        <div className="fin-tile"><span>Win rate</span><b className={winRate !== null && winRate < 20 ? 'bad' : ''}>{winRate === null ? '—' : `${winRate}%`}</b><span className="fin-delta">{won} won · {closedLost} lost</span></div>
+        <div className="fin-tile"><span>Follow-ups due</span><b className={followUps.length ? 'bad' : 'good'}>{followUps.length}</b><span className="fin-delta">{followUps.length ? 'do them today' : 'all caught up'}</span></div>
+        <div className="fin-tile"><span>No next step</span><b className={noNextStep.length ? 'warn' : ''}>{noNextStep.length}</b><span className="fin-delta">leads without a date</span></div>
+      </div>
+
+      {followUps.length > 0 && (
+        <div className="card pl-follow">
+          <div className="card-label">Follow-ups due</div>
+          {followUps.map(l => (
+            <div key={l.id} className="pl-follow-row">
+              <div className="pl-follow-main">
+                <span className="pl-follow-name">{l.businessName}</span>
+                <span className="pl-follow-meta">{l.status}{l.nextAction ? ` · ${l.nextAction}` : ''}{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' · today'}</span>
+              </div>
+              {l.phone && <a className="wa-btn" href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"><Icons.whatsapp size={13}/> WhatsApp</a>}
+              <button className="btn-primary pl-done" onClick={() => markContacted(l)} title="Marks them contacted and books the next follow-up in 3 days">✓ Contacted</button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Search + controls */}
       <div style={{display:'flex',gap:'0.5rem'}}>
@@ -1897,7 +2083,6 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             <span style={{position:'absolute',top:-4,right:-4,background:'#1adb8a',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{activeFilters}</span>
           )}
         </button>
-        <button className="btn-primary icon-only" onClick={()=>setForm({})}><Icons.plus size={16}/></button>
       </div>
 
       {/* Filter panel */}
@@ -2073,6 +2258,8 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
                         {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff6040',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
                         {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
+                        {!['Paid','Flaked','Lost'].includes(l.status) && l.nextActionDate && l.nextActionDate <= todayStr && <span className="badge badge-danger">Follow up{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' today'}</span>}
+                        {!['Paid','Flaked','Lost'].includes(l.status) && !l.nextActionDate && <span className="badge" style={{background:'rgba(230,196,124,0.1)',color:'var(--gold-300)',border:'1px solid rgba(230,196,124,0.3)'}}>No next step</span>}
                       </div>
                       <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
                         {l.location && <span>📍 {l.location}</span>}
@@ -2153,7 +2340,10 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                             :`Retainer in ${alert.daysUntil}d — J$${Number(l.retainerAmount).toLocaleString()}`}
                         </div>
                       )}
-                      <div style={{display:'flex',gap:'0.4rem',justifyContent:'flex-end'}}>
+                      <div style={{display:'flex',gap:'0.4rem',justifyContent:'flex-end',flexWrap:'wrap'}}>
+                        {!['Paid','Flaked','Lost'].includes(l.status) && (
+                          <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem'}} onClick={() => markContacted(l)} title="Next follow-up in 3 days">✓ Contacted</button>
+                        )}
                         <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem'}}
                           onClick={()=>{
                             const inv = {
@@ -2221,7 +2411,7 @@ function LeadModal({data,onSave,onClose}) {
     location:'', country:'Jamaica', businessType:'Restaurant',
     businessSize:'Small', status:'New', value:'', retainerAmount:'',
     retainerDueDay:'', priority:'medium',
-    notes:'', nextAction:'', nextActionDate:'',
+    notes:'', nextAction:'First contact', nextActionDate:localDateStr(),
     outreachDraft:'', ...data
   });
   const s=(k,v)=>setF(p=>({...p,[k]:v}));
@@ -2314,104 +2504,136 @@ function PaymentModal({lead,existing,onLog,onUpdateEntry,onClose}) {
 }
 
 // ─── HABITS ───────────────────────────────────────────────────────────────────
+const habitCreated = (h, todayStr) => (h.createdAt?.toDate ? localDateStr(h.createdAt.toDate()) : todayStr);
+const habitStreakFrom = (h, start) => { let n = 0, d = start; while (h.completions?.[d]) { n++; d = addDays(d, -1); } return n; };
+const habitStreak = (h, todayStr) => (h.completions?.[todayStr] ? habitStreakFrom(h, todayStr) : habitStreakFrom(h, addDays(todayStr, -1)));
+function habitBest(h) {
+  let best = 0, run = 0, prev = null;
+  Object.keys(h.completions || {}).filter(k => h.completions[k]).sort().forEach(d => {
+    run = prev && addDays(prev, 1) === d ? run + 1 : 1;
+    best = Math.max(best, run); prev = d;
+  });
+  return best;
+}
+function habitRate(h, todayStr, days = 30) {
+  const from = [addDays(todayStr, -(days - 1)), habitCreated(h, todayStr)].sort()[1];
+  const total = Math.round((parseLocal(todayStr) - parseLocal(from)) / 864e5) + 1;
+  let done = 0;
+  for (let i = 0; i < total; i++) if (h.completions?.[addDays(from, i)]) done++;
+  return total > 0 ? done / total : 0;
+}
+
 function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
-  const [form,setForm]     = useState(null);
-  const [expanded,setExpanded] = useState(null);
-  const weeks = getLast20Weeks();
   const { confirm, ConfirmUI } = useConfirm();
+  const [form, setForm] = useState(null);
+  const [expanded, setExpanded] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const weeks = getLast20Weeks();
+  const yesterday = addDays(todayStr, -1);
+  const evening = new Date().getHours() >= 18;
+  const active = habits.filter(h => !h.archivedAt);
+  const archived = habits.filter(h => h.archivedAt);
+  const doneToday = active.filter(h => h.completions?.[todayStr]).length;
+  const atRisk = active.filter(h => !h.completions?.[todayStr] && habitStreak(h, todayStr) > 0);
+  const avgRate = active.length ? active.reduce((s, h) => s + habitRate(h, todayStr), 0) / active.length : 0;
+  const longest = active.reduce((m, h) => Math.max(m, habitStreak(h, todayStr)), 0);
+  const createdMs = h => (h.createdAt?.toDate ? h.createdAt.toDate().getTime() : Date.now());
 
-  const handleDelete = async (id, name) => {
-    const ok = await confirm({ message: `Delete habit "${name}"? This removes all completion history.`, label: 'Delete', danger: true });
-    if (ok) onDelete(id);
-  };
-
-  const streakFor = h => {
-    let s = 0; const today = new Date();
-    for (let i = 0; i < 365; i++) {
-      const d = new Date(today); d.setDate(today.getDate()-i);
-      const k = localDateStr(d);
-      if (h.completions?.[k]) s++; else if (i>0) break;
+  const archive = async h => {
+    if (await confirm({ message: `Stop tracking "${h.name}"? It won't cost XP from tomorrow. Its history and XP so far stay.`, label: 'Archive', danger: false })) {
+      onUpdate(h.id, { archivedAt: todayStr }); setForm(null);
     }
-    return s;
+  };
+  const remove = async h => {
+    if (await confirm({ message: `Delete "${h.name}"? Only allowed right after creating it.`, label: 'Delete', danger: true })) { onDelete(h.id); setForm(null); }
   };
 
+  const list = showArchived ? archived : active;
   return (
-    <div className="section">
-      <div className="hero" style={{position:'relative'}}>
-        {/* Emotion face — right side of hero */}
-        {(() => {
-          const total = habits.length;
-          const done  = habits.filter(h=>h.completions?.[todayStr]).length;
-          const pct   = total > 0 ? done / total : 0;
-          const svgKey = pct >= 1 ? 'thriving' : pct >= 0.7 ? 'good' : pct >= 0.4 ? 'watchout' : pct > 0 ? 'struggling' : 'danger';
-          const color  = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
-          return total > 0 ? (
-            <div style={{ position:'absolute', top:'50%', right:'1rem', transform:'translateY(-50%)', width:52, height:52 }}>
-              <div className={`emotion-face lv-${svgKey}`} style={{ width:52, height:52, color }}
-                dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
-            </div>
-          ) : null;
-        })()}
-        <div className="hero-eye">Daily Habits</div>
-        <div className="hero-big filled">{habits.filter(h=>h.completions?.[todayStr]).length}/{habits.length}</div>
-        <div className="hero-sub">Done today · +10 XP per habit · -10 XP if missed</div>
+    <div className="section habits">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Habits</div></div>
+        <div className="seg">
+          <button className={!showArchived ? 'on' : ''} onClick={() => setShowArchived(false)}>Tracking {active.length}</button>
+          <button className={showArchived ? 'on' : ''} onClick={() => setShowArchived(true)}>Archived {archived.length}</button>
+        </div>
+        <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Habit</button>
       </div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-        <span style={{fontWeight:700,fontSize:'15px'}}>Your Habits</span>
-        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> Add</button>
+
+      <div className="grid-2">
+        <div className="fin-tile"><span>Done today</span><b className={active.length && doneToday === active.length ? 'good' : ''}>{doneToday}/{active.length}</b><span className="fin-delta">+{doneToday * 10} XP today</span></div>
+        <div className="fin-tile"><span>Longest streak</span><b>{longest} day{longest === 1 ? '' : 's'}</b><span className="fin-delta">still alive</span></div>
+        <div className="fin-tile"><span>Last 30 days</span><b className={avgRate >= 0.8 ? 'good' : avgRate < 0.5 ? 'bad' : ''}>{Math.round(avgRate * 100)}%</b><span className="fin-delta">of days completed</span></div>
+        <div className="fin-tile"><span>Missed day costs</span><b className="bad">−10 XP</b><span className="fin-delta">per habit, judged next morning</span></div>
       </div>
-      {habits.length===0 ? <Empty text="No habits yet. Add your first one."/> : (
-        <div className="list">
-          {habits.map(h => {
-            const streak = streakFor(h);
-            const total  = Object.values(h.completions||{}).filter(Boolean).length;
-            const isOpen = expanded===h.id;
+
+      {!showArchived && atRisk.length > 0 && (
+        <ul className="fin-findings focus-warn">
+          {atRisk.map(h => (
+            <li key={h.id} className={evening ? 'danger' : 'warn'}>
+              Your {habitStreak(h, todayStr)}-day "{h.name}" streak ends tonight if you skip it.
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {list.length === 0 ? (
+        <div className="card agenda-empty">{showArchived ? 'Nothing archived.' : 'No habits yet. Start with one you can do even on your worst day.'}
+          {!showArchived && <> <button className="link-btn" onClick={() => setForm({})}>Add a habit</button></>}
+        </div>
+      ) : (
+        <div className="habit-list">
+          {list.map(h => {
+            const done = !!h.completions?.[todayStr];
+            const streak = habitStreak(h, todayStr), best = habitBest(h), rate = habitRate(h, todayStr);
+            const open = expanded === h.id;
+            const created = habitCreated(h, todayStr);
             return (
-              <div key={h.id} className="card habit-card fade-in">
-                <div className="habit-head" onClick={()=>setExpanded(isOpen?null:h.id)}>
-                  <button className="check-btn" onClick={e=>{e.stopPropagation();onToggle(h,todayStr);}} style={{color:h.completions?.[todayStr]?'#1adb8a':'var(--mist-3)',flexShrink:0}}>
-                    {h.completions?.[todayStr] ? <Icons.check size={24}/> : <Icons.circle size={24}/>}
-                  </button>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontWeight:600,fontSize:'14.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:h.completions?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:h.completions?.[todayStr]?'line-through':'none'}}>{h.name}</div>
-                    <div style={{display:'flex',gap:'0.75rem',marginTop:'2px'}}>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#f0c060'}}>🔥 {streak}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{total} done</span>
+              <div key={h.id} className={`card hb-card ${done ? 'done' : ''}`}>
+                <div className="hb-row">
+                  {!h.archivedAt && (
+                    <button className={`hb-check ${done ? 'on' : ''}`} onClick={() => onToggle(h, todayStr)} title={done ? 'Undo' : 'Done today'}>
+                      {done ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
+                    </button>
+                  )}
+                  <div className="hb-main">
+                    <div className="hb-name">{h.name}</div>
+                    <div className="hb-meta">
+                      <span className={streak ? 'hb-fire' : ''}>🔥 {streak}</span>
+                      <span>best {best}</span>
+                      <span className={rate >= 0.8 ? 'good' : rate < 0.5 ? 'bad' : ''}>{Math.round(rate * 100)}% · 30d</span>
+                      {h.archivedAt && <span>archived {fmtDate(h.archivedAt, { month:'short', day:'numeric' })}</span>}
                     </div>
                   </div>
-                  <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                    <button className="icon-btn" onClick={e=>{e.stopPropagation();setForm(h);}}><Icons.edit size={12}/></button>
-                    <button className="icon-btn danger-btn" onClick={e=>{e.stopPropagation();handleDelete(h.id,h.name);}}><Icons.trash size={12}/></button>
-                    <span style={{color:'var(--mist-2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}><Icons.chevDown size={14}/></span>
+                  <div className="hb-week">
+                    {weekDates.map((d, i) => {
+                      const on = !!h.completions?.[d];
+                      const editable = !h.archivedAt && (d === todayStr || d === yesterday);
+                      const state = on ? 'on' : d > todayStr || d < created ? 'future' : d === todayStr ? 'today' : 'miss';
+                      return (
+                        <button key={d} className={`hb-day ${state} ${editable ? 'edit' : ''}`} disabled={!editable}
+                          onClick={() => onToggle(h, d)} title={`${fmtDate(d, { weekday:'long', month:'short', day:'numeric' })}${editable ? '' : ' (locked)'}`}>
+                          <span>{DAYS[i][0]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="row-gap">
+                    <button className="icon-btn" title="History" onClick={() => setExpanded(open ? null : h.id)} style={{ transform: open ? 'rotate(180deg)' : 'none' }}><Icons.chevDown size={13}/></button>
+                    <button className="icon-btn" title="Edit" onClick={() => setForm(h)}><Icons.edit size={12}/></button>
                   </div>
                 </div>
-                {isOpen && (
-                  <div className="habit-body">
-                    <div className="card-label" style={{marginBottom:'0.5rem'}}>20-Week History — click to toggle past days</div>
-                    <div style={{overflowX:'auto'}}>
-                      <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
-                        {weeks.map((week,wi) => (
-                          <div key={wi} style={{display:'flex',flexDirection:'column',gap:'3px'}}>
-                            {week.map(date => (
-                              <div key={date}
-                                className={`hcell small ${h.completions?.[date]?'lv4':'lv0'}${date===todayStr?' today':''}`}
-                                onClick={()=>date<=todayStr&&onToggle(h,date)}
-                                title={date}/>
-                            ))}
+                {open && (
+                  <div className="hb-history">
+                    <div className="card-label" style={{ marginBottom:'0.5rem' }}>20 weeks · only today and yesterday can be changed</div>
+                    <div style={{ overflowX:'auto' }}>
+                      <div style={{ display:'flex', gap:'3px', minWidth:'max-content' }}>
+                        {weeks.map((week, wi) => (
+                          <div key={wi} style={{ display:'flex', flexDirection:'column', gap:'3px' }}>
+                            {week.map(date => <div key={date} className={`hcell small ${h.completions?.[date] ? 'lv4' : 'lv0'}${date === todayStr ? ' today' : ''}`} title={date}/>)}
                           </div>
                         ))}
                       </div>
-                    </div>
-                    <div className="card-label" style={{marginTop:'1rem',marginBottom:'0.5rem'}}>This Week</div>
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'0.25rem'}}>
-                      {weekDates.map((date,i) => (
-                        <div key={date} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:'2px'}}>
-                          <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:700,color:date===todayStr?'#1adb8a':'var(--mist-2)'}}>{DAYS[i]}</span>
-                          <button className="check-btn" onClick={()=>onToggle(h,date)} style={{color:h.completions?.[date]?'#1adb8a':'var(--mist-3)'}}>
-                            {h.completions?.[date] ? <Icons.check size={19}/> : <Icons.circle size={19}/>}
-                          </button>
-                        </div>
-                      ))}
                     </div>
                   </div>
                 )}
@@ -2420,10 +2642,15 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           })}
         </div>
       )}
-      {form!==null && (
-        <Modal title={form.id?'Edit Habit':'New Habit'} onClose={()=>setForm(null)}>
-          <Field label="Habit Name"><input className="input" defaultValue={form.name||''} id="hname" placeholder="e.g. Code 1hr, 10 cold messages"/></Field>
-          <ModalFoot onClose={()=>setForm(null)} onSave={()=>{const n=document.getElementById('hname').value.trim();if(n){form.id?onUpdate(form.id,{name:n}):onAdd({name:n});setForm(null);}}}/>
+
+      {form !== null && (
+        <Modal title={form.id ? 'Edit Habit' : 'New Habit'} onClose={() => setForm(null)}>
+          <Field label="Habit"><input className="input" autoFocus defaultValue={form.name || ''} id="hname" placeholder="e.g. Code 1 hour, 10 cold messages, gym"/></Field>
+          {!form.id && <div className="focus-preview"><div><b className="good">+10 XP</b> every day you do it. <b className="bad">−10 XP</b> every day you don't.</div><div className="muted">Pick something you can do daily. You can only tick today or yesterday.</div></div>}
+          <ModalFoot onClose={() => setForm(null)} onSave={() => { const n = document.getElementById('hname').value.trim(); if (n) { form.id ? onUpdate(form.id, { name: n }) : onAdd({ name: n }); setForm(null); } }}/>
+          {form.id && Date.now() - createdMs(form) < DELETE_GRACE_MS && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={() => remove(form)}><Icons.trash size={13}/> Delete (created by mistake)</button>}
+          {form.id && Date.now() - createdMs(form) >= DELETE_GRACE_MS && !form.archivedAt && <button className="btn-ghost" style={{ justifyContent:'center' }} onClick={() => archive(form)}>Archive (stop tracking)</button>}
+          {form.archivedAt && <button className="btn-ghost" style={{ justifyContent:'center' }} onClick={() => { onUpdate(form.id, { archivedAt: null }); setForm(null); }}>Start tracking again</button>}
         </Modal>
       )}
       {ConfirmUI}
@@ -2431,128 +2658,106 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   );
 }
 
-// ─── TODOS ────────────────────────────────────────────────────────────────────
-function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
-  const [form,setForm]       = useState(null);
-  const [newTitle,setNewTitle] = useState('');
-  const { confirm, ConfirmUI } = useConfirm();
+// ─── TASKS ────────────────────────────────────────────────────────────────────
+const taskDone = t => Object.values(t.doneOn || {}).some(Boolean);
 
-  const handleDeleteTodo = async (id, title) => {
-    const ok = await confirm({ message: `Delete task "${title}"?`, label: 'Delete', danger: true });
-    if (ok) onDelete(id);
+function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [form, setForm] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [star, setStar] = useState(false);
+  const yesterday = addDays(todayStr, -1);
+
+  const today = todos.filter(t => t.addedDate === todayStr);
+  const doneCount = today.filter(t => t.doneOn?.[todayStr]).length;
+  const yList = todos.filter(t => t.addedDate === yesterday);
+  const yMissed = yList.filter(t => !t.doneOn?.[yesterday]).length;
+  const yDone = yList.length - yMissed;
+  const yPenalty = yMissed * 10 + (yList.length > 0 && yDone < 5 ? 10 : 0);
+  const unfinished = todos
+    .filter(t => t.addedDate < todayStr && t.addedDate >= addDays(todayStr, -7) && !taskDone(t) && !t.movedTo)
+    .sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
+  const sorted = [...today].sort((a, b) =>
+    (a.doneOn?.[todayStr] ? 1 : 0) - (b.doneOn?.[todayStr] ? 1 : 0) || (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
+
+  const quickAdd = () => {
+    if (!newTitle.trim()) return;
+    onAdd({ title: newTitle.trim(), note: '', starred: star });
+    setNewTitle(''); setStar(false);
   };
-  const todayTasks  = todos.filter(t=>t.addedDate===todayStr);
-  const olderTasks  = todos.filter(t=>t.addedDate!==todayStr);
-  const doneCount   = todayTasks.filter(t=>t.doneOn?.[todayStr]).length;
-  const taskCount   = todayTasks.length;
-  const underMin    = taskCount < 5;
-  const yesterday   = addDays(todayStr, -1);
-  const missedYest  = todos.filter(t=>t.addedDate===yesterday&&!t.doneOn?.[yesterday]).length;
-  const quickAdd    = () => { if(!newTitle.trim())return; onAdd({title:newTitle.trim(),note:''}); setNewTitle(''); };
-  const sorted = [...todayTasks.filter(t=>!t.doneOn?.[todayStr]),...todayTasks.filter(t=>t.doneOn?.[todayStr])];
+  const carry = async t => {
+    const ref = await onAdd({ title: t.title, note: t.note || '', starred: !!t.starred, carriedFrom: t.id });
+    onUpdate(t.id, { movedTo: ref?.id || true });
+  };
+  const carryAll = () => unfinished.forEach(carry);
+  const remove = async t => {
+    if (await confirm({ message: `Delete "${t.title}"?`, label: 'Delete', danger: true })) onDelete(t.id);
+  };
 
   return (
-    <div className="section">
-      <div className="hero span-8" style={{position:'relative'}}>
-        {/* Emotion face — right side of hero container */}
-        {(() => {
-          const met5 = doneCount >= 5;
-          const hasTasks = taskCount > 0;
-          const svgKey = !hasTasks ? 'danger'
-            : doneCount === 0  ? 'danger'
-            : met5 && doneCount === taskCount ? 'thriving'
-            : met5 ? 'good'
-            : doneCount >= 2   ? 'watchout'
-            : 'struggling';
-          const color = { thriving:'#00d4ff', good:'#40e8ff', watchout:'#f0c060', struggling:'#ff8040', danger:'#ff3030' }[svgKey];
-          return (
-            <div style={{ position:'absolute', top:'50%', right:'1rem', transform:'translateY(-50%)', width:52, height:52 }}>
-              <div className={`emotion-face lv-${svgKey}`} style={{ width:52, height:52, color }}
-                dangerouslySetInnerHTML={{ __html: EMOTION_SVG[svgKey]?.(color) || '' }}/>
-            </div>
-          );
-        })()}
-        <div className="hero-eye">Daily Tasks</div>
-        <div className="hero-big">{doneCount}/{taskCount}</div>
-        <div className="hero-sub" style={{color:underMin?'#ff6040':'var(--mist-1)'}}>
-          {underMin ? `Add ${5-taskCount} more — minimum 5 daily` : `${doneCount*5} XP earned · ${taskCount}/10 tasks`}
-        </div>
+    <div className="section tasks">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Tasks · {fmtDate(todayStr, { weekday:'long', month:'short', day:'numeric' })}</div></div>
       </div>
 
-      <div className="xp-rules span-4">
-        {[{l:'+5 XP',d:'Per task done',c:'#1adb8a'},{l:'-10 XP',d:'Per missed task',c:'#ff6040'},{l:'Goal 10',d:'Tasks/day',c:'#7b6cf5'},{l:'Min 5',d:'Or -10 XP',c:'#f0c060'}].map(r => (
-          <div key={r.l} style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
-            <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:r.c,flexShrink:0}}>{r.l}</span>
-            <span style={{fontSize:'11px',color:'var(--mist-2)'}}>{r.d}</span>
-          </div>
-        ))}
-        {missedYest > 0 && <div style={{gridColumn:'1/-1',color:'#ff6040',fontFamily:'var(--fm)',fontSize:'11px'}}>⚠ {missedYest} missed yesterday = -{missedYest*10} XP</div>}
+      <div className="grid-2">
+        <div className="fin-tile"><span>Done today</span><b className={doneCount >= 5 ? 'good' : ''}>{doneCount}/{today.length}</b><span className="fin-delta">+{doneCount * 5} XP</span></div>
+        <div className="fin-tile"><span>Daily minimum</span><b className={today.length >= 5 ? 'good' : 'bad'}>{Math.min(today.length, 5)}/5</b><span className="fin-delta">{today.length >= 5 ? 'set' : `add ${5 - today.length} more`}</span></div>
+        <div className="fin-tile"><span>Finish at least</span><b className={doneCount >= 5 ? 'good' : ''}>{Math.min(doneCount, 5)}/5</b><span className="fin-delta">or −10 XP tomorrow</span></div>
+        <div className="fin-tile"><span>Yesterday</span><b className={yPenalty ? 'bad' : 'good'}>{yList.length ? (yPenalty ? `−${yPenalty} XP` : 'Clean') : '—'}</b><span className="fin-delta">{yList.length ? `${yDone}/${yList.length} done` : 'nothing planned'}</span></div>
       </div>
 
-      <div style={{display:'flex',gap:'0.5rem'}}>
-        <input className="input" style={{flex:1}} value={newTitle} onChange={e=>setNewTitle(e.target.value)} onKeyDown={e=>e.key==='Enter'&&quickAdd()} placeholder="Add a task for today…"/>
+      <div className="card tk-add">
+        <button className={`tk-star ${star ? 'on' : ''}`} onClick={() => setStar(v => !v)} title="Important">★</button>
+        <input className="input" value={newTitle} onChange={e => setNewTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && quickAdd()} placeholder="Add a task for today and press Enter…"/>
         <button className="btn-primary icon-only" onClick={quickAdd}><Icons.plus size={16}/></button>
       </div>
 
-      {taskCount > 0 && (
-        <div>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'4px'}}>
-            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>Today's progress</span>
-            <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5'}}>{taskCount}/10 · {doneCount} done</span>
-          </div>
-          <div style={{height:'4px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${Math.min(100,(taskCount/10)*100)}%`,background:'linear-gradient(90deg,var(--horizon),var(--mist-2))',borderRadius:'99px',transition:'width 0.4s'}}/>
-          </div>
-        </div>
-      )}
-
-      {sorted.length===0 ? <Empty text="No tasks yet. Add at least 5 to avoid XP penalty."/> : (
-        <div className="list">
-          {sorted.map(t => (
-            <div key={t.id} className="card fade-in" style={{padding:'0.8rem 1rem'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
-                  {t.doneOn?.[todayStr] ? <Icons.check size={24}/> : <Icons.circle size={24}/>}
-                </button>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:'14px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}><span className='' style={{color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-0)'}}>{t.title}</span></div>
-                  {t.note && <div style={{fontSize:'11.5px',color:'var(--mist-2)',marginTop:'1px'}}>{t.note}</div>}
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                  {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5'}}>+5</span>}
-                  <button className="icon-btn" onClick={()=>setForm(t)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={()=>handleDeleteTodo(t.id,t.title)}><Icons.trash size={12}/></button>
-                </div>
+      <div className="card tk-list span-8">
+        <div className="card-label">Today</div>
+        {sorted.length === 0 ? <div className="agenda-empty small">Nothing planned. Five tasks minimum, or it costs you tomorrow.</div> : sorted.map(t => {
+          const done = !!t.doneOn?.[todayStr];
+          return (
+            <div key={t.id} className={`tk-row ${done ? 'done' : ''}`}>
+              <button className="check-btn" onClick={() => onToggle(t)} style={{ color: done ? '#8b98f5' : 'var(--mist-3)' }}>
+                {done ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
+              </button>
+              <button className={`tk-star ${t.starred ? 'on' : ''}`} onClick={() => onUpdate(t.id, { starred: !t.starred })} title="Important">★</button>
+              <div className="tk-main">
+                <div className="tk-title">{t.title}</div>
+                {t.note && <div className="tk-note">{t.note}</div>}
+                {t.carriedFrom && <div className="tk-note">carried forward</div>}
               </div>
+              {done && <span className="tk-xp">+5</span>}
+              <button className="icon-btn" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
+              <button className="icon-btn danger-btn" onClick={() => remove(t)}><Icons.trash size={12}/></button>
             </div>
-          ))}
+          );
+        })}
+      </div>
+
+      <div className="card span-4">
+        <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+          <span className="card-label" style={{ margin:0 }}>Unfinished · last 7 days</span>
+          {unfinished.length > 1 && <button className="link-btn" onClick={carryAll}>Carry all</button>}
         </div>
-      )}
-
-      {olderTasks.length > 0 && (
-        <>
-          <div className="card-label" style={{marginTop:'0.25rem'}}>Recurring / Older</div>
-          <div className="list">
-            {olderTasks.map(t => (
-              <div key={t.id} className="card fade-in" style={{padding:'0.75rem 1rem',opacity:0.7}}>
-                <div style={{display:'flex',alignItems:'center',gap:'0.75rem'}}>
-                  <button className="check-btn" onClick={()=>onToggle(t)} style={{color:t.doneOn?.[todayStr]?'#7b6cf5':'var(--mist-3)',flexShrink:0}}>
-                    {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
-                  </button>
-                  <span style={{flex:1,minWidth:0,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-1)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</span>
-                  <button className="icon-btn danger-btn" onClick={()=>handleDeleteTodo(t.id,t.title)}><Icons.trash size={12}/></button>
-                </div>
-              </div>
-            ))}
+        {unfinished.length === 0 ? <div className="agenda-empty small">Nothing left behind.</div> : unfinished.map(t => (
+          <div key={t.id} className="tk-row old">
+            <div className="tk-main">
+              <div className="tk-title">{t.title}</div>
+              <div className="tk-note">{fmtDate(t.addedDate, { weekday:'short', month:'short', day:'numeric' })} · cost −10 XP</div>
+            </div>
+            <button className="btn-ghost tk-carry" onClick={() => carry(t)}>Carry to today</button>
           </div>
-        </>
-      )}
+        ))}
+        <div className="goal-hint" style={{ marginTop:'0.75rem' }}>A task only counts on the day it's planned. Carrying it forward gives you another shot; the missed day still counts.</div>
+      </div>
 
-      {form!==null && (
-        <Modal title="Edit Task" onClose={()=>setForm(null)}>
-          <Field label="Task"><input className="input" defaultValue={form.title||''} id="ttitle"/></Field>
-          <Field label="Note"><input className="input" defaultValue={form.note||''} id="tnote"/></Field>
-          <ModalFoot onClose={()=>setForm(null)} onSave={()=>{const t=document.getElementById('ttitle').value.trim();const n=document.getElementById('tnote').value.trim();if(t){onUpdate(form.id,{title:t,note:n});setForm(null);}}}/>
+      {form !== null && (
+        <Modal title="Edit Task" onClose={() => setForm(null)}>
+          <Field label="Task"><input className="input" autoFocus defaultValue={form.title || ''} id="ttitle"/></Field>
+          <Field label="Note"><input className="input" defaultValue={form.note || ''} id="tnote"/></Field>
+          <ModalFoot onClose={() => setForm(null)} onSave={() => { const t = document.getElementById('ttitle').value.trim(); const n = document.getElementById('tnote').value.trim(); if (t) { onUpdate(form.id, { title: t, note: n }); setForm(null); } }}/>
         </Modal>
       )}
       {ConfirmUI}
@@ -3871,84 +4076,181 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
 }
 
 // ─── GOALS ──────────────────────────────────────────────────────────────────────
-function Goals({goals,onAdd,onUpdate,onDelete,onGoalComplete}) {
-  const [form,setForm]=useState(null);
+function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDelete }) {
   const { confirm, ConfirmUI } = useConfirm();
-  const handleDeleteGoal = async (id, title) => {
-    const ok = await confirm({ message: `Delete goal "${title}"?`, label: 'Delete', danger: true });
-    if (ok) onDelete(id);
+  const [filter, setFilter] = useState('active');
+  const [form, setForm] = useState(null);
+  const [logFor, setLogFor] = useState(null);
+  const [logVal, setLogVal] = useState('');
+  const ctx = { finances, leads, timers };
+
+  const rows = goals.map(g => {
+    const st = goalStatus(g, todayStr), cur = goalProgress(g, ctx), target = Number(g.target) || 0;
+    const pct = target > 0 ? Math.min(1, Math.max(0, cur / target)) : 0;
+    const daysLeft = g.deadline ? Math.round((parseLocal(g.deadline) - parseLocal(todayStr)) / 864e5) : null;
+    const start = g.startDate || (g.createdAt?.toDate ? localDateStr(g.createdAt.toDate()) : todayStr);
+    const span = g.deadline ? Math.max(1, Math.round((parseLocal(g.deadline) - parseLocal(start)) / 864e5)) : null;
+    const elapsed = g.deadline ? Math.min(1, Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(start)) / 864e5) / span)) : null;
+    const behind = st === 'active' && elapsed !== null && pct + 0.05 < elapsed;
+    const perWeek = st === 'active' && daysLeft !== null && daysLeft >= 0 ? Math.max(0, target - cur) / Math.max(1, (daysLeft + 1) / 7) : null;
+    return { g, st, cur, target, pct, daysLeft, elapsed, behind, perWeek };
+  });
+  const counts = { active: 0, done: 0, failed: 0 };
+  rows.forEach(r => { counts[r.st]++; });
+  const shown = rows.filter(r => filter === 'all' || r.st === filter)
+    .sort((a, b) => (a.g.deadline || '9999').localeCompare(b.g.deadline || '9999'));
+  const nextDue = rows.filter(r => r.st === 'active' && r.daysLeft !== null).sort((a, b) => a.daysLeft - b.daysLeft)[0];
+
+  const createdMs = g => (g.createdAt?.toDate ? g.createdAt.toDate().getTime() : Date.now());
+  const giveUp = async g => {
+    if (await confirm({ message: `Give up on "${g.title}"? It counts as missed: −50 XP.`, label: 'Give up', danger: true })) {
+      onUpdate(g.id, { status: 'failed', failedAt: new Date().toISOString() }); setForm(null);
+    }
   };
+  const remove = async g => {
+    if (await confirm({ message: `Delete "${g.title}"? Only allowed right after creating it.`, label: 'Delete', danger: true })) { onDelete(g.id); setForm(null); }
+  };
+  const logManual = () => {
+    const v = Number(logVal);
+    if (!logFor || logVal === '' || Number.isNaN(v)) return;
+    onUpdate(logFor.id, { current: v });
+    setLogFor(null); setLogVal('');
+  };
+
   return (
-    <div className="section">
-      <div className="hero">
-        <div className="hero-eye">Goals</div>
-        <div className="hero-big">Level Up</div>
-        <div className="hero-sub">{goals.filter(g=>Number(g.current)>=Number(g.target)).length} of {goals.length} complete</div>
+    <div className="section goals">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Goals</div></div>
+        <div className="seg">
+          {[['active', `Active ${counts.active}`], ['done', `Reached ${counts.done}`], ['failed', `Missed ${counts.failed}`], ['all', 'All']].map(([id, label]) => (
+            <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
+          ))}
+        </div>
+        <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Goal</button>
       </div>
-      <div style={{display:'flex',justifyContent:'flex-end'}}>
-        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> Goal</button>
+
+      <div className="grid-2">
+        <div className="fin-tile"><span>Active</span><b>{counts.active}</b><span className="fin-delta">{rows.filter(r => r.behind).length} behind pace</span></div>
+        <div className="fin-tile"><span>Reached</span><b className="good">{counts.done}</b><span className="fin-delta">+{counts.done * 100} XP</span></div>
+        <div className="fin-tile"><span>Missed</span><b className={counts.failed ? 'bad' : ''}>{counts.failed}</b><span className="fin-delta">−{counts.failed * 50} XP</span></div>
+        <div className="fin-tile"><span>Next deadline</span><b>{nextDue ? (nextDue.daysLeft === 0 ? 'Today' : `${nextDue.daysLeft}d`) : '—'}</b><span className="fin-delta">{rows.filter(r => r.st === 'active' && !r.g.deadline).length} without a deadline</span></div>
       </div>
-      {goals.length===0?<Empty text="No goals yet. What are you working toward?"/>:(
-        <div className="list">
-          {goals.map(g=>{
-            const pct=g.target>0?Math.min(100,(Number(g.current)/Number(g.target))*100):0;
-            const lvl=Math.floor(pct/5);
+
+      {shown.length === 0 ? (
+        <div className="card agenda-empty">{filter === 'active' ? 'No active goals. Pick one number that would change your life this quarter.' : 'Nothing here yet.'}
+          {filter === 'active' && <> <button className="link-btn" onClick={() => setForm({})}>Set a goal</button></>}
+        </div>
+      ) : (
+        <div className="goal-grid">
+          {shown.map(({ g, st, cur, target, pct, daysLeft, elapsed, behind, perWeek }) => {
+            const k = goalKind(g);
             return (
-              <div key={g.id} className="card fade-in">
-                <div className="goal-header">
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:4}}>
-                      <div style={{fontFamily:'var(--fe)',fontSize:'15px',fontWeight:600,color:'var(--mist-0)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.title}</div>
-                      {g.category&&<span className="badge" style={{background:'rgba(0,212,255,0.08)',color:'var(--bolt)',border:'1px solid rgba(0,212,255,0.2)',flexShrink:0}}>{g.category}</span>}
-                    </div>
-                    <div className="goal-level-label">
-                      <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>J${Number(g.current||0).toLocaleString()} / J${Number(g.target||0).toLocaleString()}</span>
-                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--bolt)'}}>Level {Math.min(20,lvl)}/20</span>
-                    </div>
-                    <div className="level-blocks">
-                      {Array.from({length:20},(_,i)=>(
-                        <div key={i} className={`level-block ${i<lvl?'filled':''} ${i===lvl&&pct<100?'current':''}`}/>
-                      ))}
-                    </div>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',marginTop:3}}>{Math.round(pct)}% complete</div>
+              <div key={g.id} className={`card goal-card ${st} ${behind ? 'behind' : ''}`}>
+                <div className="focus-head">
+                  <div>
+                    <div className="focus-title">{g.title}</div>
+                    <div className="focus-meta">{k.label}{k.auto ? ' · tracks itself' : ''}</div>
                   </div>
-                  <div style={{display:'flex',gap:'0.35rem',flexShrink:0,alignItems:'flex-start',marginTop:2}}>
-                    {pct<100?(
-                      <button className="icon-btn mint-btn" title="Mark complete (+100 XP)" onClick={()=>{onUpdate(g.id,{...g,current:g.target});onGoalComplete&&onGoalComplete(g);}}>✓</button>
-                    ):(
-                      <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'#1adb8a',padding:'0.2rem 0.5rem',border:'1px solid rgba(26,219,138,0.3)',borderRadius:4,background:'rgba(26,219,138,0.07)'}}>DONE</span>
-                    )}
-                    <button className="icon-btn" onClick={()=>setForm(g)}><Icons.edit size={12}/></button>
-                    <button className="icon-btn danger-btn" onClick={()=>handleDeleteGoal(g.id,g.title)}><Icons.trash size={12}/></button>
-                  </div>
+                  <button className="icon-btn" title="Edit" onClick={() => setForm(g)}><Icons.edit size={12}/></button>
                 </div>
+                <div className="goal-nums">
+                  <span className="goal-cur">{fmtGoal(g, cur)}</span>
+                  <span className="goal-target">of {fmtGoal(g, target)}</span>
+                  <span className="goal-pct">{Math.floor(pct * 100)}%</span>
+                </div>
+                <div className="goal-bar">
+                  <div className="goal-fill" style={{ width: `${pct * 100}%` }}/>
+                  {elapsed !== null && st === 'active' && <div className="goal-time" style={{ left: `${elapsed * 100}%` }} title="Where you should be by now"/>}
+                </div>
+                <div className="goal-foot">
+                  {st === 'done' && <span className="good">Reached{g.completedAt ? ` ${fmtDate(localDateStr(new Date(g.completedAt)), { month:'short', day:'numeric' })}` : ''} · +100 XP</span>}
+                  {st === 'failed' && <span className="bad">Missed · −50 XP</span>}
+                  {st === 'active' && (<>
+                    <span className={daysLeft !== null && daysLeft <= 3 ? 'bad' : ''}>
+                      {g.deadline ? `Due ${fmtDate(g.deadline, { month:'short', day:'numeric' })} · ${daysLeft === 0 ? 'today' : `${daysLeft}d left`}` : 'No deadline'}
+                    </span>
+                    {perWeek !== null && perWeek > 0 && <span className={behind ? 'bad' : ''}>{fmtGoal(g, perWeek)}/week needed</span>}
+                  </>)}
+                </div>
+                {behind && <div className="goal-warn">Behind pace. You're {Math.round(elapsed * 100)}% through the time and {Math.floor(pct * 100)}% of the way there.</div>}
+                {st === 'active' && !k.auto && (
+                  <button className="btn-ghost goal-log" onClick={() => { setLogFor(g); setLogVal(String(Number(g.current) || 0)); }}>Update progress</button>
+                )}
               </div>
             );
           })}
         </div>
       )}
-      {form!==null&&<GoalModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+
+      {logFor && (
+        <Modal title={`Update: ${logFor.title}`} onClose={() => setLogFor(null)}>
+          <Field label={`Where are you now? (${goalUnit(logFor) || 'number'})`}>
+            <input className="input" type="number" autoFocus value={logVal} onChange={e => setLogVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && logManual()}/>
+          </Field>
+          <div className="focus-preview"><div>Target: <b>{fmtGoal(logFor, Number(logFor.target) || 0)}</b>. Be honest. Nobody else is checking.</div></div>
+          <ModalFoot onClose={() => setLogFor(null)} onSave={logManual}/>
+        </Modal>
+      )}
+      {form !== null && (
+        <GoalModal data={form} todayStr={todayStr}
+          onSave={d => { form.id ? onUpdate(form.id, d) : onAdd(d); setForm(null); }}
+          onGiveUp={form.id && goalStatus(form, todayStr) === 'active' ? () => giveUp(form) : null}
+          onDelete={form.id && Date.now() - createdMs(form) < DELETE_GRACE_MS ? () => remove(form) : null}
+          onClose={() => setForm(null)}/>
+      )}
       {ConfirmUI}
     </div>
   );
 }
 
-function GoalModal({data,onSave,onClose}) {
-  const [f,setF]=useState({title:'',category:GOAL_CATS[0],target:'',current:'0',...data});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
+function GoalModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
+  const editing = !!data.id;
+  const locked = editing && goalStatus(data, todayStr) !== 'active';
+  const [title, setTitle] = useState(data.title || '');
+  const [kind, setKind] = useState(data.kind || (editing ? 'custom' : 'revenue'));
+  const [unit, setUnit] = useState(data.unit || (editing && !data.kind ? 'J$' : ''));
+  const [target, setTarget] = useState(data.target ?? '');
+  const [startDate, setStartDate] = useState(data.startDate || todayStr);
+  const [deadline, setDeadline] = useState(data.deadline || '');
+  const k = GOAL_KINDS.find(x => x.id === kind);
+  const minTarget = editing ? Number(data.target) || 0 : 0;
+  const problems = [];
+  if (!title.trim()) problems.push('Name the goal.');
+  if (!(Number(target) > 0)) problems.push('Set a target above zero.');
+  if (editing && Number(target) < minTarget) problems.push(`The target can't go below ${minTarget.toLocaleString()}.`);
+  if (deadline && deadline < todayStr && !editing) problems.push('The deadline must be today or later.');
+  if (editing && data.deadline && (!deadline || deadline > data.deadline)) problems.push("You can't push the deadline back.");
+  const save = () => problems.length === 0 && onSave({
+    title: title.trim(), kind, unit: kind === 'custom' ? unit.trim() : '', target: Number(target), startDate, deadline: deadline || '',
+    ...(editing ? {} : { current: 0, status: 'active' }),
+  });
   return (
-    <Modal title={data.id?'Edit Goal':'New Goal'} onClose={onClose}>
-      <Field label="Goal Title"><input className="input" value={f.title} onChange={e=>s('title',e.target.value)} placeholder="e.g. Reach J$500k revenue"/></Field>
+    <Modal title={editing ? 'Edit Goal' : 'New Goal'} onClose={onClose}>
+      <Field label="Goal"><input className="input" autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Earn J$300,000 before Christmas" disabled={locked}/></Field>
+      <Field label="What does it measure?">
+        <div className="sched-cals">
+          {GOAL_KINDS.map(x => (
+            <button key={x.id} type="button" className={`sched-cal ${kind === x.id ? 'on' : ''}`} style={{ '--c': x.auto ? '#3fd1b8' : '#e6c47c' }}
+              onClick={() => !editing && setKind(x.id)} disabled={editing && kind !== x.id}><span className="dot"/>{x.label}</button>
+          ))}
+        </div>
+        <div className="goal-hint">{k.hint}{editing ? '. The type is fixed once created.' : ''}</div>
+      </Field>
       <div className="grid-2">
-        <Field label="Category">
-          <select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>
-            {GOAL_CATS.map(c=><option key={c}>{c}</option>)}
-          </select>
-        </Field>
-        <Field label="Target (J$)"><input className="input" type="number" value={f.target} onChange={e=>s('target',e.target.value)} placeholder="500000"/></Field>
+        <Field label={`Target${k.unit ? ` (${k.unit})` : ''}`}><input className="input" type="number" min={minTarget} value={target} onChange={e => setTarget(e.target.value)} disabled={locked}/></Field>
+        {kind === 'custom' && <Field label="Unit"><input className="input" value={unit} onChange={e => setUnit(e.target.value)} placeholder="books, kg, apps…" disabled={locked}/></Field>}
+        {k.auto && <Field label="Count from"><input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={editing}/></Field>}
+        <Field label="Deadline"><input className="input" type="date" value={deadline} min={todayStr} max={editing && data.deadline ? data.deadline : undefined} onChange={e => setDeadline(e.target.value)} disabled={locked}/></Field>
       </div>
-      <Field label="Current Progress (J$)"><input className="input" type="number" value={f.current} onChange={e=>s('current',e.target.value)} placeholder="0"/></Field>
-      <ModalFoot onClose={onClose} onSave={()=>f.title.trim()&&onSave(f)}/>
+      {!locked && <div className="focus-preview">
+        <div><b className="good">+100 XP</b> when you reach it.</div>
+        <div>{deadline ? <><b className="bad">−50 XP</b> if it isn't reached by {fmtDate(deadline, { weekday:'short', month:'short', day:'numeric' })}.</> : 'No deadline means no pressure, and goals without pressure rarely happen.'}</div>
+        {!editing && <div className="muted">Once set, the target can't go down and the deadline can't move later.</div>}
+      </div>}
+      {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
+      {!locked ? <ModalFoot onClose={onClose} onSave={save}/> : <ModalFoot onClose={onClose}/>}
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
+      {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
     </Modal>
   );
 }
