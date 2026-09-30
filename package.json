@@ -16,8 +16,8 @@
     "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "electron": "electron .",
-    "electron:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
+    "electron": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "electron:dev": "env -u ELECTRON_RUN_AS_NODE ELECTRON_START_URL=http://localhost:3000 electron .",
     "app:build": "npm run build && electron-builder --mac",
     "app:install": "npm run app:build && rm -rf \"/Applications/JCommerce Console.app\" && cp -R \"dist/mac/JCommerce Console.app\" /Applications/"
   },

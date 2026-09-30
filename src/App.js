@@ -10,8 +10,9 @@ import {
 } from 'firebase/firestore';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, AreaChart, Area, Legend, Cell
+  CartesianGrid, AreaChart, Area, Cell, ComposedChart, Line, ReferenceLine
 } from 'recharts';
+import kakuzuArt from './assets/ghosts/kakuzu.webp';
 
 // ─── CUSTOM SVG ICONS (no lucide — proper hand-crafted icons) ─────────────────
 const Icon = ({ d, size = 20, stroke = 'currentColor', fill = 'none', strokeWidth = 1.6 }) => (
@@ -54,6 +55,7 @@ const Icons = {
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
   logout:    () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
+  hourglass: () => <Icon d="M6 2h12M6 22h12M17 2v3.5a5 5 0 0 1-2.2 4.1L12 12l-2.8-2.4A5 5 0 0 1 7 5.5V2M7 22v-3.5a5 5 0 0 1 2.2-4.1L12 12l2.8 2.4a5 5 0 0 1 2.2 4.1V22" />,
   filter:    () => <Icon d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
   alert:     () => <Icon d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />,
 };
@@ -127,73 +129,6 @@ const EMOTION_LEVELS = [
   { svgKey:'struggling', label:'Struggling',  color:'#ff8040', bg:'rgba(255,128,64,0.08)',  desc:'Pull up your socks' },
   { svgKey:'danger',     label:'Danger',      color:'#ff3030', bg:'rgba(255,48,48,0.08)',   desc:'Critical — act now' },
 ];
-
-function calcEmotionLevel(finances, leads, xp, level) {
-  const totalIncome   = finances.filter(f => f.type==='income').reduce((s,f) => s+(Number(f.amount)||0), 0);
-  const totalExpenses = finances.filter(f => f.type==='expense').reduce((s,f) => s+(Number(f.amount)||0), 0);
-  const profit        = totalIncome - totalExpenses;
-  const mrr           = leads.filter(l => l.status==='Paid' && l.retainerAmount).reduce((s,l) => s+(Number(l.retainerAmount)||0), 0);
-  const paidClients   = leads.filter(l => l.status==='Paid').length;
-  const openLeads     = leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length;
-  const hasData       = finances.length > 0;
-
-  if (!hasData && paidClients === 0) return 2;
-
-  // ── LEVEL-GATED PROFIT REQUIREMENT ───────────────────────────────────────
-  // Min profit doubles every level: Level 1 = J$5k, Level 2 = J$10k, etc.
-  // Not meeting minimum HARD-CAPS the score — cannot be Good or Thriving
-  const minProfit = minProfitForLevel(level);
-  const profitRatio = minProfit > 0 ? profit / minProfit : 1; // 1.0 = exactly at minimum
-
-  let score = 50;
-
-  // Profit vs level requirement (dominant signal, ±45 pts)
-  if      (profitRatio >= 4.0)  score += 45; // 4× minimum = exceptional
-  else if (profitRatio >= 2.0)  score += 35; // 2× minimum = great
-  else if (profitRatio >= 1.5)  score += 25; // 1.5× minimum = solid
-  else if (profitRatio >= 1.0)  score += 15; // meets minimum exactly
-  else if (profitRatio >= 0.75) score += 5;  // 75% of minimum — close
-  else if (profitRatio >= 0.5)  score -= 10; // half of minimum
-  else if (profitRatio >= 0.25) score -= 25; // barely a quarter
-  else if (profit > 0)          score -= 35; // positive but way below minimum
-  else if (profit === 0)        score -= 40; // broke even
-  else                          score -= 50; // losing money
-
-  // MRR stability bonus (max +10) — recurring revenue = future safety
-  if      (mrr >= minProfit * 1.5) score += 10; // MRR alone covers level target
-  else if (mrr >= minProfit)       score += 7;
-  else if (mrr >= minProfit * 0.5) score += 4;
-  else if (mrr > 0)                score += 2;
-
-  // Clients (max +8)
-  if      (paidClients >= 5) score += 8;
-  else if (paidClients >= 3) score += 5;
-  else if (paidClients >= 1) score += 3;
-  else                       score -= 4;
-
-  // Pipeline (max +5)
-  if      (openLeads >= 10) score += 5;
-  else if (openLeads >= 5)  score += 3;
-  else if (openLeads >= 1)  score += 1;
-  else                      score -= 3;
-
-  // Expense efficiency (max ±5)
-  if (hasData && totalIncome > 0) {
-    const er = totalExpenses / totalIncome;
-    if      (er < 0.3) score += 5;
-    else if (er > 1.0) score -= 5;
-    else if (er > 0.8) score -= 3;
-  }
-
-  score = Math.max(0, Math.min(100, score));
-
-  if (score >= 80) return 0; // Thriving
-  if (score >= 60) return 1; // Good
-  if (score >= 40) return 2; // Watch Out
-  if (score >= 20) return 3; // Struggling
-  return 4;                  // Danger
-}
-
 
 // ─── LOCAL DATE (not UTC) ─────────────────────────────────────────────────────
 // toISOString() uses UTC which causes date to flip at 7pm in Jamaica (UTC-5)
@@ -272,7 +207,7 @@ function getLast20Weeks(count = 20) {
   return weeks;
 }
 
-function calcXP(habits, leads, todos, todayStr, goals = [], journal = []) {
+function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = []) {
   let xp = 0;
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
   habits.forEach(h => {
@@ -298,6 +233,7 @@ function calcXP(habits, leads, todos, todayStr, goals = [], journal = []) {
   // +100 per completed goal, +15 per Tide Log entry
   xp += goals.filter(g => Number(g.target) > 0 && Number(g.current) >= Number(g.target)).length * 100;
   xp += journal.length * 15;
+  xp += focusXP(timers, todayStr);
   return Math.max(0, xp);
 }
 
@@ -1085,6 +1021,8 @@ function App() {
   const [logs, setLogs]         = useState([]);
   const [briefings, setBriefings] = useState([]);
   const [journal, setJournal]   = useState([]);
+  const [budgets, setBudgets]   = useState([]);
+  const [timers, setTimers]     = useState([]);
   const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -1185,7 +1123,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],
+      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],
     ];
 
     // Track which collections have fired at least once
@@ -1293,6 +1231,63 @@ function App() {
     }
   };
 
+  // ── Focus timers ─────────────────────────────────────────────────────────
+  const closeSession = (t, endMs) => {
+    const startMs = Date.parse(t.runningSince);
+    const sec = Math.max(0, Math.min(SESSION_CAP_SEC, (endMs - startMs) / 1000, timerTargetSec(t) - (Number(t.elapsedSec) || 0)));
+    return {
+      elapsedSec: Math.min(timerTargetSec(t), (Number(t.elapsedSec) || 0) + sec),
+      runningSince: null,
+      sessions: [...(t.sessions || []), { start: t.runningSince, end: new Date(startMs + sec * 1000).toISOString(), sec: Math.round(sec) }],
+    };
+  };
+  const pauseTimer = t => t.runningSince && update('timers', t.id, closeSession(t, Date.now()));
+  const startTimer = t => {
+    timers.filter(x => x.runningSince && x.id !== t.id).forEach(pauseTimer); // one bottle at a time
+    update('timers', t.id, { runningSince: new Date().toISOString(), cappedAt: null });
+  };
+  const timerWatch = useRef(new Set());
+  useEffect(() => {
+    const check = () => {
+      const now = Date.now(), today = localDateStr();
+      timers.forEach(t => {
+        if (t.status === 'done' || t.status === 'failed' || timerWatch.current.has(t.id)) return;
+        const mark = () => { timerWatch.current.add(t.id); setTimeout(() => timerWatch.current.delete(t.id), 4000); };
+        const base = Number(t.elapsedSec) || 0, target = timerTargetSec(t);
+        if (t.runningSince) {
+          const startMs = Date.parse(t.runningSince), run = (now - startMs) / 1000;
+          if (base + Math.min(run, SESSION_CAP_SEC) >= target) {          // bottle full
+            const endMs = startMs + (target - base) * 1000;
+            mark();
+            update('timers', t.id, { ...closeSession(t, endMs), status: 'done', completedAt: new Date(endMs).toISOString() });
+            if (window.Notification?.permission === 'granted') new window.Notification('Bottle full', { body: `${t.title}: +${timerBonus(t)} XP` });
+            return;
+          }
+          if (run > SESSION_CAP_SEC) {                                  // left running too long
+            mark();
+            update('timers', t.id, { ...closeSession(t, startMs + SESSION_CAP_SEC * 1000), cappedAt: new Date().toISOString() });
+            return;
+          }
+        }
+        if (t.deadline && t.deadline < today) {                          // deadline passed
+          mark();
+          update('timers', t.id, { ...(t.runningSince ? closeSession(t, now) : {}), status: 'failed', failedAt: new Date().toISOString() });
+        }
+      });
+    };
+    check();
+    const iv = setInterval(check, 5000);
+    return () => clearInterval(iv);
+  }, [timers]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // One budget doc per expense category; a limit of 0 removes it
+  const setBudget = async (category, limit) => {
+    const existing = budgets.find(b => b.category === category);
+    if (!limit) { if (existing) await remove('budgets', existing.id); return; }
+    if (existing) await update('budgets', existing.id, { limit });
+    else await add('budgets', { category, limit });
+  };
+
   const logPayment = async (lead, stage, amount, date) => {
     if (finances.some(f => f.pipelineLeadId===lead.id && f.paymentStage===stage)) return;
     await add('finances', { type:'income', description:`${lead.businessName} — ${stage}`, amount:Number(amount), category:stage.includes('Retainer')?'Monthly Retainer':'Setup Fee', date:date||todayStr, pipelineLeadId:lead.id, paymentStage:stage });
@@ -1308,7 +1303,7 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr, goals, journal);
+  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers);
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -1327,6 +1322,7 @@ function App() {
     {id:'pipeline',  label:'Pipeline', icon:Icons.pipeline},
     {id:'habits',    label:'Habits',   icon:Icons.habits},
     {id:'todos',     label:'Tasks',    icon:Icons.tasks},
+    {id:'focus',     label:'Focus',    icon:Icons.hourglass},
     {id:'schedule',  label:'Schedule', icon:Icons.schedule},
     {id:'finance',   label:'Finance',  icon:Icons.finance},
     {id:'goals',     label:'Goals',    icon:Icons.goals},
@@ -1340,7 +1336,8 @@ function App() {
     const onKey = e => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       const n = Number(e.key);
-      if (n >= 1 && n <= navItems.length) { e.preventDefault(); setTab(navItems[n - 1].id); }
+      const idx = e.key === '0' ? 9 : n - 1;
+      if (e.key >= '0' && e.key <= '9' && navItems[idx]) { e.preventDefault(); setTab(navItems[idx].id); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1406,6 +1403,7 @@ function App() {
               }}>{Math.min(9,alerts.length)}</span>
             )}
           </button>
+          <FocusPill timers={timers} onOpen={() => setTab('focus')}/>
           {todayBriefing && (
             <button className="briefing-pill" onClick={() => setBriefingOpen(true)}>
               <span className="briefing-dot"/>
@@ -1434,12 +1432,13 @@ function App() {
       )}
 
       <main className="main">
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} habitsToday={habitsToday} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} paidLeads={paidLeads} openLeads={openLeads} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} todayTodos={todayTodos} todayDone={todayDone} journal={journal} onSaveJournal={saveJournal}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} habitsToday={habitsToday} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} paidLeads={paidLeads} openLeads={openLeads} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} todayTodos={todayTodos} todayDone={todayDone} journal={journal} onSaveJournal={saveJournal} timers={timers} onOpenFocus={()=>setTab('focus')}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
+        {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
-        {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
+        {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)} onAdd={add} todayStr={todayStr}/>}
@@ -1454,10 +1453,10 @@ function App() {
           </div>
         </div>
         {navItems.map((n,i) => (
-          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={`${n.label} (⌘${i+1})`}>
+          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={`${n.label} (⌘${(i+1)%10})`}>
             <span className="nav-icon"><n.icon /></span>
             <span className="nav-lbl">{n.label}</span>
-            <span className="nav-key">⌘{i+1}</span>
+            <span className="nav-key">⌘{(i+1)%10}</span>
           </button>
         ))}
         <div className="nav-foot">
@@ -1627,7 +1626,7 @@ function TideRow({ tag, color, text, compact }) {
   );
 }
 
-function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone, journal, onSaveJournal }) {
+function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone, journal, onSaveJournal, timers = [], onOpenFocus }) {
   // Wide layout has room for roughly eight months of history
   const weekCount = window.innerWidth >= 1024 ? 32 : 20;
   const weeks = getLast20Weeks(weekCount);
@@ -1705,6 +1704,28 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
 
       {/* Tide Log — one line each for business, personal, tomorrow */}
       <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
+
+      {/* Focus bottles */}
+      {timers.some(t => timerStatus(t, todayStr) === 'active') && (
+        <div className="card fade-in">
+          <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Focus</span>
+            <button className="link-btn" onClick={onOpenFocus}>Open</button>
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.65rem' }}>
+            {timers.filter(t => timerStatus(t, todayStr) === 'active').sort((a, b) => a.deadline.localeCompare(b.deadline)).slice(0, 4).map(t => {
+              const pct = timerElapsed(t, Date.now()) / timerTargetSec(t);
+              const days = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
+              return (
+                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#8b98f5' }}>
+                  <div className="row-between"><span>{t.runningSince ? '● ' : ''}{t.title}</span><span className={days <= 1 ? 'bad' : ''}>{days === 0 ? 'due today' : days === 1 ? 'tomorrow' : `${days}d`}</span></div>
+                  <div className="dash-focus-bar"><div style={{ width: `${pct * 100}%` }}/></div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       </div>
 
       <div className="dash-row wide">
@@ -2540,6 +2561,302 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   );
 }
 
+// ─── FOCUS TIMERS ─────────────────────────────────────────────────────────────
+// A timer is a bottle: it fills as you work, can be paused, and must be full
+// by its deadline. Rules are strict on purpose:
+//   - the target can only go up and the deadline can only come sooner
+//   - a single session is capped, so a timer left running can't fill itself
+//   - after the first few minutes a timer can't be deleted, only given up
+const FOCUS_CATS = [
+  { id:'Study', hex:'#8b98f5' },
+  { id:'Work',  hex:'#3fd1b8' },
+  { id:'Build', hex:'#e6c47c' },
+  { id:'Other', hex:'#e37c62' },
+];
+const FOCUS_HEX = Object.fromEntries(FOCUS_CATS.map(c => [c.id, c.hex]));
+const SESSION_CAP_SEC = 3 * 3600;       // longest single sitting that counts
+const DELETE_GRACE_MS = 10 * 60 * 1000; // window to delete a mistake
+
+const timerTargetSec = t => (Number(t.targetMinutes) || 0) * 60;
+const timerBonus = t => 20 + Math.round((Number(t.targetMinutes) || 0) / 3);
+const timerRunSec = (t, nowMs) => (t.runningSince ? Math.min(SESSION_CAP_SEC, Math.max(0, (nowMs - Date.parse(t.runningSince)) / 1000)) : 0);
+const timerElapsed = (t, nowMs) => Math.min(timerTargetSec(t), (Number(t.elapsedSec) || 0) + timerRunSec(t, nowMs));
+const timerStatus = (t, todayStr) => t.status === 'done' ? 'done'
+  : t.status === 'failed' || (t.deadline && t.deadline < todayStr) ? 'failed' : 'active';
+const fmtDur = sec => {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+};
+const fmtHM = sec => {
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? `${h}h${m ? ` ${m}m` : ''}` : `${m}m`;
+};
+
+// XP from focus: +1 per 10 minutes worked, plus a completion bonus;
+// a missed deadline costs the bonus you would have earned.
+function focusXP(timers, todayStr) {
+  const now = Date.now();
+  return timers.reduce((xp, t) => {
+    xp += Math.floor(timerElapsed(t, now) / 600);
+    const st = timerStatus(t, todayStr);
+    if (st === 'done') xp += timerBonus(t);
+    if (st === 'failed') xp -= timerBonus(t);
+    return xp;
+  }, 0);
+}
+
+// Seconds of focus that ended on each local day
+function focusByDay(timers) {
+  const days = {};
+  timers.forEach(t => (t.sessions || []).forEach(s => {
+    const d = localDateStr(new Date(s.end));
+    days[d] = (days[d] || 0) + (Number(s.sec) || 0);
+  }));
+  return days;
+}
+
+// The bottle: liquid level = progress, a moving surface while it runs
+function Bottle({ id, pct, color, running, done, failed }) {
+  const body = 'M49 8h22v14c0 5 3 8 8 12 11 9 19 19 19 35v104c0 13-9 21-22 21H44c-13 0-22-8-22-21V69c0-16 8-26 19-35 5-4 8-7 8-12z';
+  const top = 34, bottom = 194;
+  const y = bottom - (bottom - top) * Math.max(0, Math.min(1, pct));
+  return (
+    <svg className={`bottle ${running ? 'running' : ''} ${done ? 'done' : ''} ${failed ? 'failed' : ''}`} viewBox="0 0 120 200" style={{ '--liq': color }}>
+      <defs>
+        <clipPath id={`bottle-${id}`}><path d={body}/></clipPath>
+        <linearGradient id={`liq-${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={color} stopOpacity="0.95"/>
+          <stop offset="1" stopColor={color} stopOpacity="0.45"/>
+        </linearGradient>
+      </defs>
+      <g clipPath={`url(#bottle-${id})`}>
+        <rect x="0" y="0" width="120" height="200" fill="rgba(5,15,24,0.75)"/>
+        <g className="liquid" style={{ transform: `translateY(${y}px)` }}>
+          <path className="wave wave-back" d="M0 5 Q15 0 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={color} opacity="0.35"/>
+          <path className="wave wave-front" d="M0 5 Q15 10 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={`url(#liq-${id})`}/>
+          {running && [18, 44, 70, 92].map((x, i) => <circle key={i} className="bubble" cx={x + 6} cy="160" r={1.4 + (i % 2)} style={{ animationDelay: `${i * 0.7}s` }}/>)}
+        </g>
+        {[0.25, 0.5, 0.75].map(m => <line key={m} x1="24" x2="34" y1={bottom - (bottom - top) * m} y2={bottom - (bottom - top) * m} className="tick"/>)}
+      </g>
+      <path d={body} className="glass"/>
+      <path d="M33 72c0-10 4-17 10-23" className="shine"/>
+      <rect x="46" y="2" width="28" height="9" rx="3" className="cap"/>
+    </svg>
+  );
+}
+
+// Live pill in the header while a timer runs
+function FocusPill({ timers, onOpen }) {
+  const running = timers.find(t => t.runningSince && t.status !== 'done' && t.status !== 'failed');
+  const [, tick] = useState(0);
+  useEffect(() => { if (!running) return; const iv = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(iv); }, [running]);
+  if (!running) return null;
+  const el = timerElapsed(running, Date.now()), target = timerTargetSec(running);
+  return (
+    <button className="focus-pill" onClick={onOpen} style={{ '--liq': FOCUS_HEX[running.category] || '#8b98f5' }} title={`${running.title}: ${fmtHM(target - el)} to go`}>
+      <span className="focus-pill-fill" style={{ width: `${(el / target) * 100}%` }}/>
+      <span className="focus-pill-dot"/>{fmtDur(el)}<span className="focus-pill-title">{running.title}</span>
+    </button>
+  );
+}
+
+function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [filter, setFilter] = useState('active');
+  const [form, setForm] = useState(null);
+  const [, tick] = useState(0);
+  const anyRunning = timers.some(t => t.runningSince);
+  useEffect(() => { if (!anyRunning) return; const iv = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(iv); }, [anyRunning]);
+
+  const now = Date.now();
+  const withState = timers.map(t => ({ t, st: timerStatus(t, todayStr) }));
+  const counts = { active: 0, done: 0, failed: 0 };
+  withState.forEach(x => { counts[x.st]++; });
+  const shown = withState
+    .filter(x => filter === 'all' || x.st === filter)
+    .sort((a, b) => (b.t.runningSince ? 1 : 0) - (a.t.runningSince ? 1 : 0) || (a.t.deadline || '').localeCompare(b.t.deadline || ''));
+
+  const byDay = focusByDay(timers);
+  const running = timers.find(t => t.runningSince);
+  const runToday = running ? timerRunSec(running, now) : 0;
+  const todaySec = (byDay[todayStr] || 0) + runToday;
+  const monday = mondayOf(todayStr);
+  const weekSec = Object.entries(byDay).filter(([d]) => d >= monday).reduce((s, [, v]) => s + v, 0) + runToday;
+  const xpFromFocus = focusXP(timers, todayStr);
+  const atRisk = withState.filter(x => x.st === 'active').map(({ t }) => {
+    const left = timerTargetSec(t) - timerElapsed(t, now);
+    const days = Math.max(1, Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5) + 1);
+    return { t, perDay: left / days };
+  }).filter(x => x.perDay > 3 * 3600);
+
+  const giveUp = async t => {
+    if (await confirm({ message: `Give up on "${t.title}"? It counts as missed: −${timerBonus(t)} XP.`, label: 'Give up', danger: true })) {
+      onUpdate(t.id, { status: 'failed', failedAt: new Date().toISOString(), runningSince: null, elapsedSec: timerElapsed(t, Date.now()) });
+      setForm(null);
+    }
+  };
+  const remove = async t => {
+    if (await confirm({ message: `Delete "${t.title}"? This is only allowed right after creating it.`, label: 'Delete', danger: true })) { onDelete(t.id); setForm(null); }
+  };
+
+  return (
+    <div className="section focus">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Focus</div></div>
+        <div className="seg">
+          {[['active', `Active ${counts.active}`], ['done', `Done ${counts.done}`], ['failed', `Missed ${counts.failed}`], ['all', 'All']].map(([id, label]) => (
+            <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
+          ))}
+        </div>
+        <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Timer</button>
+      </div>
+
+      <div className="grid-2">
+        <div className="fin-tile"><span>Today</span><b>{fmtHM(todaySec)}</b><span className="fin-delta">{running ? 'running now' : 'focused'}</span></div>
+        <div className="fin-tile"><span>This week</span><b>{fmtHM(weekSec)}</b><span className="fin-delta">since Monday</span></div>
+        <div className="fin-tile"><span>XP from focus</span><b className={xpFromFocus < 0 ? 'bad' : 'good'}>{xpFromFocus >= 0 ? '+' : ''}{xpFromFocus}</b><span className="fin-delta">counts toward your level</span></div>
+        <div className="fin-tile"><span>Missed</span><b className={counts.failed ? 'bad' : ''}>{counts.failed}</b><span className="fin-delta">{counts.done} completed</span></div>
+      </div>
+
+      {atRisk.length > 0 && (
+        <ul className="fin-findings focus-warn">
+          {atRisk.map(({ t, perDay }) => <li key={t.id} className="danger">"{t.title}" now needs {fmtHM(perDay)} a day to finish by {fmtDate(t.deadline, { weekday:'short', month:'short', day:'numeric' })}. Start now.</li>)}
+        </ul>
+      )}
+
+      {shown.length === 0 ? (
+        <div className="card agenda-empty">{filter === 'active' ? 'No active timers. Set a target and a deadline, then fill the bottle.' : 'Nothing here yet.'}
+          {filter === 'active' && <> <button className="link-btn" onClick={() => setForm({})}>Create a timer</button></>}
+        </div>
+      ) : (
+        <div className="focus-grid">
+          {shown.map(({ t, st }) => {
+            const target = timerTargetSec(t), el = timerElapsed(t, now), left = target - el;
+            const color = FOCUS_HEX[t.category] || '#8b98f5';
+            const daysLeft = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
+            const perDay = st === 'active' ? left / Math.max(1, daysLeft + 1) : 0;
+            const runningNow = !!t.runningSince && st === 'active';
+            return (
+              <div key={t.id} className={`card focus-card ${st} ${runningNow ? 'is-running' : ''}`} style={{ '--liq': color }}>
+                <div className="focus-head">
+                  <div>
+                    <div className="focus-title">{t.title}</div>
+                    <div className="focus-meta">{t.category} · {fmtHM(target)} target</div>
+                  </div>
+                  <button className="icon-btn" title="Edit" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
+                </div>
+                <div className="focus-body">
+                  <Bottle id={t.id} pct={el / target} color={color} running={runningNow} done={st === 'done'} failed={st === 'failed'}/>
+                  <div className="focus-stats">
+                    <div className="focus-time">{fmtDur(el)}</div>
+                    <div className="focus-of">of {fmtDur(target)} · {Math.floor((el / target) * 100)}%</div>
+                    {st === 'active' && <>
+                      <div className="focus-line"><b>{fmtHM(left)}</b> to go</div>
+                      <div className={`focus-line ${daysLeft <= 1 ? 'bad' : ''}`}>
+                        Due {fmtDate(t.deadline, { weekday:'short', month:'short', day:'numeric' })} · {daysLeft === 0 ? 'today' : daysLeft === 1 ? 'tomorrow' : `${daysLeft} days`}
+                      </div>
+                      <div className={`focus-line ${perDay > 3 * 3600 ? 'bad' : perDay > 1.5 * 3600 ? 'warn' : ''}`}>{fmtHM(perDay)} a day needed</div>
+                    </>}
+                    {st === 'done' && <div className="focus-line good">Filled {t.completedAt ? fmtDate(localDateStr(new Date(t.completedAt)), { month:'short', day:'numeric' }) : ''} · +{timerBonus(t)} XP</div>}
+                    {st === 'failed' && <div className="focus-line bad">Missed · −{timerBonus(t)} XP</div>}
+                    {t.cappedAt && st === 'active' && <div className="focus-line warn">Last session stopped at the 3h cap.</div>}
+                  </div>
+                </div>
+                {st === 'active' && (
+                  <div className="focus-actions">
+                    {runningNow
+                      ? <button className="btn-ghost focus-go" onClick={() => onPause(t)}>❚❚ Pause</button>
+                      : <button className="btn-primary focus-go" onClick={() => onStart(t)}>▶ {el > 0 ? 'Resume' : 'Start'}</button>}
+                    <span className="focus-xp">+{timerBonus(t)} XP when full · −{timerBonus(t)} if missed</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {form !== null && (
+        <TimerModal data={form} todayStr={todayStr}
+          onSave={d => { form.id ? onUpdate(form.id, d) : onAdd(d); setForm(null); }}
+          onGiveUp={form.id && timerStatus(form, todayStr) === 'active' ? () => giveUp(form) : null}
+          onDelete={form.id && (!form.createdAt?.toDate || Date.now() - form.createdAt.toDate().getTime() < DELETE_GRACE_MS) && timerElapsed(form, Date.now()) < 60 ? () => remove(form) : null}
+          onClose={() => setForm(null)}/>
+      )}
+      {ConfirmUI}
+    </div>
+  );
+}
+
+function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
+  const editing = !!data.id;
+  const locked = editing && timerStatus(data, todayStr) !== 'active';
+  const minTarget = editing ? Number(data.targetMinutes) || 0 : 0;
+  const [title, setTitle] = useState(data.title || '');
+  const [category, setCategory] = useState(data.category || 'Study');
+  const [hours, setHours] = useState(data.targetMinutes ? Math.floor(data.targetMinutes / 60) : 2);
+  const [mins, setMins] = useState(data.targetMinutes ? data.targetMinutes % 60 : 0);
+  const [deadline, setDeadline] = useState(data.deadline || addDays(todayStr, 7));
+  const targetMinutes = (Number(hours) || 0) * 60 + (Number(mins) || 0);
+  const days = Math.round((parseLocal(deadline) - parseLocal(todayStr)) / 864e5) + 1;
+  const done = editing ? (Number(data.elapsedSec) || 0) / 60 : 0;
+  const perDay = days > 0 ? (targetMinutes - done) / days : Infinity;
+
+  const problems = [];
+  if (!title.trim()) problems.push('Give it a name.');
+  if (targetMinutes < 10) problems.push('Minimum is 10 minutes.');
+  if (editing && targetMinutes < minTarget) problems.push(`You can't lower the target below ${fmtHM(minTarget * 60)}.`);
+  if (!deadline || deadline < todayStr) problems.push('The deadline must be today or later.');
+  if (editing && deadline > data.deadline) problems.push(`You can't push the deadline past ${fmtDate(data.deadline, { month:'short', day:'numeric' })}.`);
+  if (perDay > 12 * 60) problems.push('That needs more than 12 hours a day. Be realistic.');
+
+  const bonus = timerBonus({ targetMinutes });
+  const presets = [[0, 30], [1, 0], [2, 0], [5, 0], [10, 0], [20, 0]];
+
+  return (
+    <Modal title={editing ? 'Edit Timer' : 'New Timer'} onClose={onClose}>
+      <Field label="What are you working on?">
+        <input className="input" autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. COMP 2201 exam prep" disabled={locked}/>
+      </Field>
+      <Field label="Type">
+        <div className="sched-cals">
+          {FOCUS_CATS.map(c => <button key={c.id} type="button" className={`sched-cal ${category === c.id ? 'on' : ''}`} style={{ '--c': c.hex }} onClick={() => !locked && setCategory(c.id)}><span className="dot"/>{c.id}</button>)}
+        </div>
+      </Field>
+      <Field label={editing ? `Target (can only go up from ${fmtHM(minTarget * 60)})` : 'Minimum time'}>
+        <div className="focus-target">
+          <input className="input" type="number" min="0" value={hours} onChange={e => setHours(e.target.value)} disabled={locked}/><span>h</span>
+          <input className="input" type="number" min="0" max="59" step="5" value={mins} onChange={e => setMins(e.target.value)} disabled={locked}/><span>m</span>
+        </div>
+        {!locked && <div className="sched-cals" style={{ marginTop: 8 }}>
+          {presets.filter(([h, m]) => h * 60 + m >= minTarget).map(([h, m]) => (
+            <button key={`${h}${m}`} type="button" className={`sched-cal ${targetMinutes === h * 60 + m ? 'on' : ''}`} style={{ '--c': '#8b98f5' }} onClick={() => { setHours(h); setMins(m); }}>{h ? `${h}h` : `${m}m`}</button>
+          ))}
+        </div>}
+      </Field>
+      <Field label={editing ? 'Deadline (can only come sooner)' : 'Must be finished by'}>
+        <input className="input" type="date" value={deadline} min={todayStr} max={editing ? data.deadline : undefined} onChange={e => setDeadline(e.target.value)} disabled={locked}/>
+      </Field>
+
+      {!locked && (
+        <div className="focus-preview">
+          <div><b className="good">+{bonus} XP</b> when the bottle is full, plus 1 XP for every 10 minutes.</div>
+          <div><b className="bad">−{bonus} XP</b> if it isn't full by the end of {deadline ? fmtDate(deadline, { weekday:'long', month:'short', day:'numeric' }) : 'the deadline'}.</div>
+          {days > 0 && targetMinutes > 0 && <div>That's about <b>{fmtHM(Math.max(0, perDay) * 60)}</b> a day.</div>}
+          {!editing && <div className="muted">Once it's set, the target can't go down and the deadline can't move later.</div>}
+        </div>
+      )}
+      {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
+
+      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
+      {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
+      {locked && <ModalFoot onClose={onClose}/>}
+    </Modal>
+  );
+}
+
 // ─── SCHEDULE ─────────────────────────────────────────────────────────────────
 // Three calendars (Work / School / Personal) that can be shown or hidden,
 // a week grid for the desktop and a day agenda for narrow screens.
@@ -2916,565 +3233,622 @@ function SchedModal({data, onSave, onDelete, onClose}) {
 
 
 // ─── FINANCE ──────────────────────────────────────────────────────────────────
-function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd,onUpdate,onDelete}) {
-  const [filter,setFilter]     = useState('all');
-  const [report,setReport]     = useState('overview');
-  const [form,setForm]         = useState(null);
-  const [meterOpen,setMeterOpen] = useState(false);
-  const [projMonths,setProjMonths] = useState(6);
-  const [finPage,setFinPage] = useState(0);
-  const [investAdvice,setInvestAdvice] = useState(null);
-  const [investLoading,setInvestLoading] = useState(false);
+// A strict monthly ledger. Everything is judged month by month against the
+// Level minimum profit; forecasts only count money that is contracted
+// (retainers) and averages include months where nothing came in.
+const monthOf    = ds => (ds || '').slice(0, 7);
+const addMonths  = (mk, n) => { const [y, m] = mk.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const monthName  = (mk, opts = { month:'long', year:'numeric' }) => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-US', opts); };
+const daysInMonth = mk => { const [y, m] = mk.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+const J = n => `${n < 0 ? '−' : ''}J$${Math.abs(Math.round(n)).toLocaleString()}`;
+const Jk = n => Math.abs(n) >= 1000 ? `${n < 0 ? '−' : ''}${Math.round(Math.abs(n) / 1000)}k` : `${Math.round(n)}`;
+const pctChange = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 100) : null);
+const amountOf = f => Number(f.amount) || 0;
+
+// The ledger's voice, one line per health level (best → worst)
+const LEDGER_LINES = [
+  'Profitable. Now protect it.',
+  "On track. Don't get comfortable.",
+  'Sloppy. Fix the leaks.',
+  'Too many leaks. This is how businesses die.',
+  'Stop spending. Start collecting.',
+];
+
+// Etched character art that sits behind a section. One character per section.
+function SectionGhost({ src }) {
+  return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
+}
+
+function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
   const { confirm, ConfirmUI } = useConfirm();
-  const FIN_PER_PAGE = 10;
-  const filtered = filter==='all' ? finances : finances.filter(f=>f.type===filter);
-  const finPageCount = Math.ceil(filtered.length / FIN_PER_PAGE);
-  const finPaged = filtered.slice(finPage*FIN_PER_PAGE,(finPage+1)*FIN_PER_PAGE);
-  const mrr = leads.filter(l=>l.status==='Paid'&&l.retainerAmount).reduce((s,l)=>s+(Number(l.retainerAmount)||0),0);
-  const emotionIdx = calcEmotionLevel(finances,leads,xp,level);
-  const emotion = EMOTION_LEVELS[emotionIdx];
-  const minTarget = minProfitForLevel(level); // doubles each level: L1=J$5k, L2=J$10k...
+  const todayStr  = localDateStr();
+  const thisMonth = monthOf(todayStr);
+  const today     = Number(todayStr.slice(8));
+  const [month, setMonth]   = useState(thisMonth);
+  const [view, setView]     = useState('overview');
+  const [form, setForm]     = useState(null);
+  const [txType, setTxType] = useState('all');
+  const [search, setSearch] = useState('');
+  const [horizon, setHorizon] = useState(6);
+  const [investAdvice, setInvestAdvice]   = useState(null);
+  const [investLoading, setInvestLoading] = useState(false);
 
-  // ── TIME RANGE TOGGLE ──────────────────────────────────────────
-  const [timeRange, setTimeRange] = useState('weekly'); // daily | weekly | biweekly | monthly
-
-  // ── BUILD CHART DATA for selected time range ────────────────────
-  const chartData = useMemo(() => {
-    if (!finances.length) return [];
-    const sorted = [...finances].sort((a,b) => (a.date||'').localeCompare(b.date||''));
-    const earliest = sorted[0]?.date || localDateStr();
-    const latest   = localDateStr();
-    const map = {};
-
-    const bucketKey = (dateStr) => {
-      const d = parseLocal(dateStr);
-      if (timeRange === 'daily') return dateStr;
-      if (timeRange === 'monthly') return dateStr.slice(0,7);
-      if (timeRange === 'weekly') {
-        // ISO week start (Monday)
-        const day = d.getDay() || 7;
-        const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
-        return localDateStr(mon);
-      }
-      if (timeRange === 'biweekly') {
-        // 2-week buckets from Jan 1 of the year
-        const jan1 = new Date(d.getFullYear(), 0, 1);
-        const week = Math.floor((d - jan1) / (7 * 86400000));
-        const biweek = Math.floor(week / 2);
-        const bwStart = new Date(jan1);
-        bwStart.setDate(jan1.getDate() + biweek * 14);
-        return localDateStr(bwStart);
-      }
-      return dateStr.slice(0,7);
-    };
-
-    sorted.forEach(f => {
+  // ── Month aggregates ───────────────────────────────────────────────────────
+  const byMonth = useMemo(() => {
+    const m = {};
+    finances.forEach(f => {
       if (!f.date) return;
-      const k = bucketKey(f.date);
-      if (!map[k]) map[k] = { label: k, income: 0, expenses: 0, profit: 0 };
-      if (f.type === 'income')  map[k].income   += Number(f.amount) || 0;
-      else                      map[k].expenses += Number(f.amount) || 0;
+      const k = monthOf(f.date);
+      m[k] = m[k] || { inc: 0, exp: 0, cats: {} };
+      if (f.type === 'income') m[k].inc += amountOf(f);
+      else { m[k].exp += amountOf(f); m[k].cats[f.category || 'Other'] = (m[k].cats[f.category || 'Other'] || 0) + amountOf(f); }
     });
-    const result = Object.values(map)
-      .sort((a,b) => a.label.localeCompare(b.label))
-      .map(m => ({ ...m, profit: m.income - m.expenses }));
+    return m;
+  }, [finances]);
+  const agg = k => byMonth[k] || { inc: 0, exp: 0, cats: {} };
 
-    // For daily/weekly: limit to last 30 / last 12 buckets to avoid clutter
-    if (timeRange === 'daily')    return result.slice(-30);
-    if (timeRange === 'weekly')   return result.slice(-12);
-    if (timeRange === 'biweekly') return result.slice(-12);
-    return result; // monthly — show all
-  }, [finances, timeRange]);
+  const cur = agg(month), prev = agg(addMonths(month, -1));
+  const net = cur.inc - cur.exp;
+  const target = minProfitForLevel(level);
+  const isCurrent = month === thisMonth;
+  const isFuture  = month > thisMonth;
+  const dim = daysInMonth(month);
+  const daysLeft = isCurrent ? dim - today : 0;
 
-  // ── RUNNING BALANCE (cumulative) for area chart ─────────────────
-  const runningBalance = useMemo(() => {
-    let running = 0;
-    return chartData.map(d => {
-      running += d.profit;
-      return { ...d, balance: running };
+  // Last three COMPLETE months; months with nothing logged count as zero
+  const last3 = [1, 2, 3].map(i => agg(addMonths(thisMonth, -i)));
+  const avgInc = last3.reduce((s, m) => s + m.inc, 0) / 3;
+  const avgExp = last3.reduce((s, m) => s + m.exp, 0) / 3;
+  const avgNet = avgInc - avgExp;
+  const cash = finances.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0);
+  const runway = avgExp > 0 ? Math.max(0, cash) / avgExp : Infinity;
+
+  // ── Clients: retainers and money owed ──────────────────────────────────────
+  const paidClients = leads.filter(l => l.status === 'Paid');
+  const mrr = paidClients.reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
+  const retainerIn = (l, mk) => !!(l.retainerLog || {})[mk] ||
+    finances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
+  const retainers = paidClients.filter(l => Number(l.retainerAmount) > 0)
+    .map(l => ({ l, amount: Number(l.retainerAmount), due: Number(l.retainerDueDay) || 1, got: retainerIn(l, thisMonth) }));
+  const overdueRet = retainers.filter(r => !r.got && r.due < today);
+  const pendingRet = retainers.filter(r => !r.got && r.due >= today);
+  const setupOwed = paidClients.map(l => {
+    const paid = finances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
+    return { l, due: Math.max(0, (Number(l.value) || 0) - paid) };
+  }).filter(x => x.due > 0);
+  const owed = overdueRet.reduce((s, r) => s + r.amount, 0) + setupOwed.reduce((s, x) => s + x.due, 0);
+
+  // ── Strict projection for the current month ───────────────────────────────
+  // Income: what's in, plus retainers still due (contracted money only).
+  // Expenses: what's out, plus the 3-month average pace for the days left.
+  const pendingIncome = isCurrent ? pendingRet.reduce((s, r) => s + r.amount, 0) : 0;
+  const projInc = cur.inc + pendingIncome;
+  const projExp = isCurrent ? cur.exp + avgExp * (daysLeft / dim) : cur.exp;
+  const projNet = projInc - projExp;
+  const judged  = isCurrent ? projNet : net;
+  const gap     = target - projNet;
+  const perDay  = isCurrent && daysLeft > 0 && gap > 0 ? gap / daysLeft : 0;
+
+  // ── The verdict ────────────────────────────────────────────────────────────
+  const findings = [];
+  const add = (lv, t) => findings.push({ lv, t });
+  const lastLog = finances.reduce((m, f) => (f.date && f.date > m ? f.date : m), '');
+  const sinceLog = lastLog ? Math.round((parseLocal(todayStr) - parseLocal(lastLog)) / 864e5) : null;
+  const lastIncome = finances.filter(f => f.type === 'income').reduce((m, f) => (f.date && f.date > m ? f.date : m), '');
+  const sinceIncome = lastIncome ? Math.round((parseLocal(todayStr) - parseLocal(lastIncome)) / 864e5) : null;
+
+  if (!finances.length) add('danger', "Nothing logged. Money you don't record is money you can't manage.");
+  else if (isCurrent && sinceLog >= 7) add('warn', `Nothing logged in ${sinceLog} days. Log every dollar the day it moves.`);
+
+  if (!isFuture) {
+    if (net >= target) add('ok', `${isCurrent ? 'Target already cleared' : 'Target met'}: ${J(net)} against the ${J(target)} Level ${level} minimum.`);
+    else if (isCurrent && projNet >= target) add('warn', `On course for the ${J(target)} minimum only if the ${J(pendingIncome)} in retainers still due actually arrives.`);
+    else if (isCurrent) add('danger', `At this pace you finish ${J(gap)} short of the ${J(target)} Level ${level} minimum. That's ${J(perDay)} more profit every day, starting today.`);
+    else add('danger', `Missed the Level ${level} minimum by ${J(target - net)}.`);
+  }
+  if (!isFuture && cur.inc === 0 && cur.exp > 0) add('danger', `${J(cur.exp)} spent and nothing earned in ${monthName(month, { month:'long' })}.`);
+  else if (cur.inc > 0 && net / cur.inc < 0.3) add('warn', `You keep ${Math.max(0, Math.round((net / cur.inc) * 100))}¢ of every dollar earned. Keep at least 30¢.`);
+  const expUp = pctChange(isCurrent ? projExp : cur.exp, prev.exp);
+  if (!isFuture && expUp !== null && expUp > 20) add('warn', `Spending ${isCurrent ? 'is heading' : 'was'} ${expUp}% higher than ${monthName(addMonths(month, -1), { month:'long' })}.`);
+
+  const budgetOf = cat => Number(budgets.find(b => b.category === cat)?.limit) || 0;
+  Object.entries(cur.cats).forEach(([cat, spent]) => {
+    const limit = budgetOf(cat);
+    if (!limit) return;
+    if (spent > limit) add('danger', `${cat}: ${J(spent)} spent against a ${J(limit)} budget. Over by ${J(spent - limit)}.`);
+    else if (isCurrent && spent > (limit * today) / dim * 1.15) add('warn', `${cat} is running ahead of its budget pace (${J(spent)} of ${J(limit)} with ${daysLeft} days left).`);
+  });
+  const unbudgeted = Object.entries(cur.cats).filter(([cat, v]) => v > 0 && !budgetOf(cat));
+  if (unbudgeted.length) add('warn', `${J(unbudgeted.reduce((s, [, v]) => s + v, 0))} spent on ${unbudgeted.map(([c]) => c).join(', ')} with no budget set.`);
+
+  // Present-tense problems only belong on the current month
+  if (isCurrent && overdueRet.length) add('danger', `${overdueRet.map(r => r.l.businessName).join(', ')} ${overdueRet.length === 1 ? 'owes' : 'owe'} this month's retainer (${J(overdueRet.reduce((s, r) => s + r.amount, 0))}). Chase it today.`);
+  if (isCurrent && setupOwed.length) add('warn', `Clients still owe ${J(setupOwed.reduce((s, x) => s + x.due, 0))} on project fees. Collect before you spend.`);
+  if (isCurrent && sinceIncome !== null && sinceIncome > 30) add('danger', `No income in ${sinceIncome} days.`);
+  if (isCurrent && avgExp > 0 && runway < 3) add('danger', `Cash covers ${runway.toFixed(1)} months of spending. You want 3 or more.`);
+
+  // Client concentration over the last 90 days
+  const since90 = addDays(todayStr, -90);
+  const recentByClient = {};
+  finances.filter(f => f.type === 'income' && f.date >= since90 && f.pipelineLeadId)
+    .forEach(f => { recentByClient[f.pipelineLeadId] = (recentByClient[f.pipelineLeadId] || 0) + amountOf(f); });
+  const recentIncome = finances.filter(f => f.type === 'income' && f.date >= since90).reduce((s, f) => s + amountOf(f), 0);
+  const [topId, topAmt] = Object.entries(recentByClient).sort((a, b) => b[1] - a[1])[0] || [];
+  if (isCurrent && topId && recentIncome > 0 && topAmt / recentIncome > 0.6) {
+    const name = leads.find(l => l.id === topId)?.businessName || 'One client';
+    add('warn', `${name} is ${Math.round((topAmt / recentIncome) * 100)}% of your income over 90 days. Lose them and you lose the business.`);
+  }
+
+  // Health: how close to target, minus every problem found
+  const dangers = findings.filter(f => f.lv === 'danger').length;
+  const warns   = findings.filter(f => f.lv === 'warn').length;
+  const ratio   = target > 0 ? judged / target : 1;
+  const score   = 50 + Math.max(-1, Math.min(1, ratio - 1)) * 32 - dangers * 12 - warns * 4 + (ratio >= 1 ? 12 : 0);
+  const healthIdx = score >= 78 ? 0 : score >= 60 ? 1 : score >= 42 ? 2 : score >= 25 ? 3 : 4;
+  const health = EMOTION_LEVELS[healthIdx];
+  findings.sort((a, b) => ({ danger: 0, warn: 1, ok: 2 }[a.lv] - { danger: 0, warn: 1, ok: 2 }[b.lv]));
+
+  // ── Charts ─────────────────────────────────────────────────────────────────
+  const paceData = useMemo(() => {
+    const daily = {};
+    finances.filter(f => monthOf(f.date) === month).forEach(f => {
+      const d = Number(f.date.slice(8));
+      daily[d] = (daily[d] || 0) + (f.type === 'income' ? amountOf(f) : -amountOf(f));
     });
-  }, [chartData]);
+    const lastActual = isCurrent ? today : isFuture ? 0 : dim;
+    let run = 0;
+    return Array.from({ length: dim }, (_, i) => {
+      const d = i + 1;
+      run += daily[d] || 0;
+      const row = { day: d, pace: Math.round((target * d) / dim) };
+      if (d <= lastActual) row.actual = run;
+      if (isCurrent && d >= today) row.projected = Math.round(net + ((projNet - net) * (d - today)) / Math.max(1, dim - today));
+      return row;
+    });
+  }, [finances, month, isCurrent, isFuture, today, dim, target, net, projNet]);
 
-  // Monthly aggregates (for projection — always monthly)
-  const monthly = useMemo(()=>{
-    const map={};
-    finances.forEach(f=>{const d=f.date?f.date.slice(0,7):new Date().toISOString().slice(0,7);if(!map[d])map[d]={month:d,income:0,expenses:0,profit:0};if(f.type==='income')map[d].income+=Number(f.amount)||0;else map[d].expenses+=Number(f.amount)||0;});
-    Object.values(map).forEach(m=>{m.profit=m.income-m.expenses;});
-    return Object.values(map).sort((a,b)=>a.month.localeCompare(b.month));
-  },[finances]);
+  const trend = Array.from({ length: 12 }, (_, i) => {
+    const mk = addMonths(thisMonth, i - 11), a = agg(mk);
+    return { mk, label: monthName(mk, { month:'short' }), income: a.inc, expenses: a.exp, net: a.inc - a.exp };
+  });
 
-  const proj = useMemo(()=>{
-    const today=new Date(); const recent=monthly.slice(-3);
-    const ai=recent.length>0?recent.reduce((s,m)=>s+m.income,0)/recent.length:0;
-    const ae=recent.length>0?recent.reduce((s,m)=>s+m.expenses,0)/recent.length:0;
-    return Array.from({length:projMonths},(_,i)=>{const d=new Date(today.getFullYear(),today.getMonth()+i+1,1);const p=ai+mrr;return{month:d.toISOString().slice(0,7),projected:Math.round(p),expenses:Math.round(ae),profit:Math.round(p-ae),minimum:minTarget};});
-  },[monthly,mrr,minTarget,projMonths]);
+  const expCats = Object.entries(cur.cats).sort((a, b) => b[1] - a[1]);
+  const maxCat = Math.max(1, ...expCats.map(([, v]) => v), ...expCats.map(([c]) => budgetOf(c)));
 
-  const cats = useMemo(()=>{
-    const map={};finances.filter(f=>f.type==='income').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});
-    return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);
-  },[finances]);
+  // ── Transactions ───────────────────────────────────────────────────────────
+  const q = search.trim().toLowerCase();
+  const txs = finances
+    .filter(f => (q ? true : monthOf(f.date) === month))
+    .filter(f => txType === 'all' || f.type === txType)
+    .filter(f => !q || [f.description, f.category, leads.find(l => l.id === f.pipelineLeadId)?.businessName].some(s => (s || '').toLowerCase().includes(q)))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const txGroups = [];
+  txs.forEach(f => { const g = txGroups[txGroups.length - 1]; if (g && g.date === f.date) g.items.push(f); else txGroups.push({ date: f.date, items: [f] }); });
 
-  // Shorten axis label based on time range
-  const fmtLabel = (label) => {
-    if (timeRange === 'daily')    return label.slice(5);        // MM-DD
-    if (timeRange === 'weekly')   return label.slice(5);        // MM-DD (week start)
-    if (timeRange === 'biweekly') return label.slice(5);        // MM-DD
-    return label.slice(0,7);                                    // YYYY-MM
+  const deleteForm = async () => {
+    if (await confirm({ message: `Delete "${form.description}" (${J(amountOf(form))})?`, label: 'Delete', danger: true })) { onDelete(form.id); setForm(null); }
   };
 
-  const tt={background:'rgba(6,16,26,0.96)',border:'1px solid rgba(28,171,151,0.25)',borderRadius:'10px',color:'#c4d3e0',fontSize:'11px'};
+  const tt = { background:'rgba(6,16,26,0.96)', border:'1px solid rgba(28,171,151,0.25)', borderRadius:'10px', color:'#c4d3e0', fontSize:'12px' };
+  const axis = { fill:'#59697a', fontSize:10 };
+  const Delta = ({ v, good = 'up' }) => v === null ? <span className="fin-delta">new</span>
+    : <span className={`fin-delta ${(v >= 0) === (good === 'up') ? 'good' : 'bad'}`}>{v >= 0 ? '▲' : '▼'} {Math.abs(v)}%</span>;
 
-  // ── TIME RANGE PICKER (shared between overview and breakdown) ───
-  const TimeRangePicker = () => (
-    <div style={{display:'flex',gap:3,flexWrap:'wrap'}}>
-      {[
-        {id:'daily',    label:'Daily'},
-        {id:'weekly',   label:'Weekly'},
-        {id:'biweekly', label:'Bi-Weekly'},
-        {id:'monthly',  label:'Monthly'},
-      ].map(r => (
-        <button key={r.id} className={`pill ${timeRange===r.id?'active':''}`}
-          style={{fontSize:'9px',padding:'0.2rem 0.55rem'}}
-          onClick={() => setTimeRange(r.id)}>
-          {r.label}
-        </button>
-      ))}
-    </div>
-  );
+  // ── Forecast (realistic) ───────────────────────────────────────────────────
+  const topRetainer = retainers.slice().sort((a, b) => b.amount - a.amount)[0];
+  const worstNet = avgNet - (topRetainer?.amount || 0);
+  const forecast = Array.from({ length: horizon }, (_, i) => ({
+    label: monthName(addMonths(thisMonth, i + 1), { month:'short' }),
+    expected: Math.round(cash + avgNet * (i + 1)),
+    worst: Math.round(cash + worstNet * (i + 1)),
+  }));
+  const basis = `${monthName(addMonths(thisMonth, -3), { month:'short' })}–${monthName(addMonths(thisMonth, -1), { month:'short' })}`;
 
   return (
-    <div className="section">
-      {/* EMOTION METER — hollow neon SVG face */}
-      {(() => {
-        const svgStr = EMOTION_SVG[emotion.svgKey]?.(emotion.color) || '';
-        return (
-          <div style={{
-            position:'relative', overflow:'hidden',
-            background:`linear-gradient(160deg, rgba(4,8,15,0.95), ${emotion.color}08)`,
-            border:`1px solid ${emotion.color}25`,
-            borderRadius:14, cursor:'pointer',
-            backdropFilter:'blur(12px)',
-          }} onClick={()=>setMeterOpen(!meterOpen)}>
-            {/* Top scan line */}
-            <div style={{position:'absolute',top:0,left:0,right:0,height:1,
-              background:`linear-gradient(90deg,transparent,${emotion.color},transparent)`,
-              opacity:0.7}}/>
+    <div className="section fin">
+      <SectionGhost src={kakuzuArt}/>
 
-            <div style={{padding:'1rem 1.125rem',position:'relative'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'1rem'}}>
-                {/* Hollow SVG face — glows brighter the better things are going,
-                    throbs faster and harder the worse they get */}
-                <div className={`emotion-face lv-${emotion.svgKey}`} style={{
-                  width:64, height:64, flexShrink:0, color: emotion.color,
-                }} dangerouslySetInnerHTML={{__html:svgStr}}/>
+      {/* Toolbar */}
+      <div className="sched-bar">
+        <div className="sched-range">
+          <button className="icon-btn" title="Previous month" onClick={() => setMonth(m => addMonths(m, -1))}><Icons.chevLeft size={15}/></button>
+          <button className="icon-btn" title="Next month" onClick={() => setMonth(m => addMonths(m, 1))} disabled={month >= thisMonth}><Icons.chevRight size={15}/></button>
+          <button className="btn-ghost sched-today" onClick={() => setMonth(thisMonth)} disabled={isCurrent}>This month</button>
+          <div className="sched-title">{monthName(month)}</div>
+        </div>
+        <div className="seg">
+          {[['overview','Overview'],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
+            <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
+          ))}
+        </div>
+        <button className="btn-primary" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}><Icons.plus size={14}/> Transaction</button>
+      </div>
 
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',fontWeight:300,
-                    letterSpacing:'0.3em',textTransform:'uppercase',
-                    color:emotion.color,opacity:0.7,marginBottom:4}}>
-                    Business Health
-                  </div>
-                  <div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:600,
-                    color:emotion.color,lineHeight:1,marginBottom:4,
-                    textShadow:`0 0 20px ${emotion.color}80`}}>
-                    {emotion.label}
-                  </div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'10px',fontWeight:300,
-                    color:'var(--mist-2)',letterSpacing:'0.04em'}}>
-                    {emotion.desc}
-                  </div>
-                </div>
+      {view === 'overview' && (<>
+        {/* The verdict */}
+        <div className="card fin-verdict span-8">
+          <div className="card-label">{isCurrent ? `${monthName(month, { month:'long' })} · month to date` : monthName(month)}</div>
+          <div className="fin-net-row">
+            <div>
+              <div className={`fin-net ${net >= 0 ? 'pos' : 'neg'}`}>{J(net)}</div>
+              <div className="fin-net-sub">net profit · {J(cur.inc)} in · {J(cur.exp)} out</div>
+            </div>
+            <div className="fin-target">
+              <div className="fin-target-num">{J(target)}</div>
+              <div className="fin-net-sub">Level {level} minimum</div>
+            </div>
+          </div>
+          <div className="fin-bar">
+            <div className="fin-bar-fill" style={{ width: `${Math.max(0, Math.min(100, (net / target) * 100))}%` }}/>
+            {isCurrent && <div className="fin-bar-proj" style={{ width: `${Math.max(0, Math.min(100, (projNet / target) * 100))}%` }}/>}
+            {isCurrent && <div className="fin-bar-today" style={{ left: `${(today / dim) * 100}%` }} title="Where you should be today"/>}
+          </div>
+          <div className="fin-bar-legend">
+            {isCurrent
+              ? <>Projected <b className={projNet >= target ? 'good' : 'bad'}>{J(projNet)}</b> · {daysLeft} day{daysLeft === 1 ? '' : 's'} left{perDay > 0 && <> · need <b className="bad">{J(perDay)}/day</b></>}</>
+              : <>{net >= target ? 'Target met' : `Short by ${J(target - net)}`}</>}
+          </div>
+          <ul className="fin-findings">
+            {findings.length === 0 && <li className="ok">Nothing to flag. Keep logging.</li>}
+            {findings.map((f, i) => <li key={i} className={f.lv}>{f.t}</li>)}
+          </ul>
+        </div>
 
-                {/* WiFi-style signal bars — single emotion color */}
-                <div style={{display:'flex',alignItems:'flex-end',gap:3,flexShrink:0,height:36}}>
-                  {EMOTION_LEVELS.map((_,i) => {
-                    const active = i <= (4 - emotionIdx);
-                    const h = 8 + i * 7;
-                    return (
-                      <div key={i} style={{
-                        width:5, height:h,
-                        borderRadius:2,
-                        background: active ? emotion.color : 'rgba(255,255,255,0.07)',
-                        boxShadow:  active ? `0 0 8px ${emotion.color}90` : 'none',
-                        transition: 'all 0.5s ease',
-                        alignSelf:  'flex-end',
-                      }}/>
-                    );
-                  })}
-                </div>
-              </div>
+        <div className="card fin-health span-4" style={{ '--hc': health.color }}>
+          <div className="fin-health-top">
+            <div className={`emotion-face lv-${health.svgKey}`} style={{ width:58, height:58, color: health.color }}
+              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[health.svgKey](health.color) }}/>
+            <div>
+              <div className="fin-health-label">{health.label}</div>
+              <div className="fin-health-line">{judged < 0 ? "You're bleeding money." : LEDGER_LINES[healthIdx]}</div>
+            </div>
+          </div>
+          <dl className="fin-kv">
+            <div><dt>Cash on hand</dt><dd className={cash < 0 ? 'bad' : ''}>{J(cash)}</dd></div>
+            <div><dt>Runway</dt><dd className={runway < 3 ? 'bad' : ''}>{runway === Infinity ? 'No burn' : `${runway.toFixed(1)} mo`}</dd></div>
+            <div><dt>Retainers (MRR)</dt><dd>{J(mrr)}/mo</dd></div>
+            <div><dt>Owed to you</dt><dd className={owed > 0 ? 'warn' : ''}>{J(owed)}</dd></div>
+            <div><dt>3-month avg net</dt><dd className={avgNet < target ? 'bad' : 'good'}>{J(avgNet)}</dd></div>
+          </dl>
+        </div>
 
-              {/* Mini metric strip */}
-              <div style={{display:'flex',gap:'0.75rem',marginTop:'0.75rem',
-                paddingTop:'0.625rem',borderTop:`1px solid ${emotion.color}15`,
-                flexWrap:'wrap'}}>
-                {[
-                  {l:'Profit',  v:`J$${profit.toLocaleString()}`,          c:profit>=0?'var(--bolt)':'#ff3030'},
-                  {l:'MRR',     v:`J$${mrr.toLocaleString()}/mo`,          c:'var(--bolt-lt)'},
-                  {l:'Clients', v:leads.filter(l=>l.status==='Paid').length, c:'var(--horizon)'},
-                  {l:'Pipeline',v:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length, c:'var(--mist-2)'},
-                ].map(m=>(
-                  <div key={m.l}>
-                    <div style={{fontFamily:'var(--fm)',fontSize:'7px',color:'var(--mist-3)',
-                      letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:2}}>{m.l}</div>
-                    <div style={{fontFamily:'var(--fe)',fontSize:'14px',fontWeight:600,
-                      color:m.c,lineHeight:1,textShadow:`0 0 8px ${m.c}60`}}>{m.v}</div>
+        <div className="grid-2">
+          <div className="fin-tile"><span>Income</span><b className="good">{J(cur.inc)}</b><Delta v={pctChange(cur.inc, prev.inc)}/></div>
+          <div className="fin-tile"><span>Expenses</span><b className="bad">{J(cur.exp)}</b><Delta v={pctChange(cur.exp, prev.exp)} good="down"/></div>
+          <div className="fin-tile"><span>Kept per J$1 earned</span><b>{cur.inc > 0 ? `${Math.round((net / cur.inc) * 100)}¢` : '—'}</b><span className="fin-delta">aim for 30¢+</span></div>
+          <div className="fin-tile"><span>Transactions</span><b>{finances.filter(f => monthOf(f.date) === month).length}</b><span className="fin-delta">{sinceLog === null ? 'none yet' : sinceLog === 0 ? 'logged today' : `last ${sinceLog}d ago`}</span></div>
+        </div>
+
+        <div className="card span-8">
+          <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Profit pace</span>
+            <span className="fin-legend"><i className="l-actual"/>Actual<i className="l-proj"/>Projected<i className="l-pace"/>Required pace</span>
+          </div>
+          <ResponsiveContainer width="100%" height={CHART_H(170)}>
+            <ComposedChart data={paceData} margin={{ left:0, right:8, top:6, bottom:0 }}>
+              <defs>
+                <linearGradient id="finAct" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.35}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <XAxis dataKey="day" tick={axis} interval={4}/>
+              <YAxis tick={axis} width={40} tickFormatter={Jk}/>
+              <Tooltip contentStyle={tt} formatter={v => J(v)} labelFormatter={d => `${monthName(month, { month:'short' })} ${d}`}/>
+              <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4" label={{ value:'Minimum', fill:'#d3a855', fontSize:10, position:'insideTopLeft' }}/>
+              <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)"/>
+              <Line type="linear" dataKey="pace" name="Required pace" stroke="rgba(211,168,85,0.45)" strokeWidth={1.5} dot={false}/>
+              <Area type="stepAfter" dataKey="actual" name="Actual" stroke="#3fd1b8" fill="url(#finAct)" strokeWidth={2} connectNulls={false}/>
+              <Line type="linear" dataKey="projected" name="Projected" stroke="#8b98f5" strokeDasharray="4 4" strokeWidth={2} dot={false}/>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="card span-4">
+          <div className="card-label">Where the money went</div>
+          {expCats.length === 0 ? <div className="agenda-empty small">No expenses in {monthName(month, { month:'long' })}.</div> : (
+            <div className="fin-cats">
+              {expCats.map(([cat, v]) => {
+                const limit = budgetOf(cat);
+                return (
+                  <div key={cat} className="fin-cat">
+                    <div className="row-between"><span>{cat}</span><span className={limit && v > limit ? 'bad' : ''}>{J(v)}{limit ? <em> / {J(limit)}</em> : ''}</span></div>
+                    <div className="fin-cat-bar">
+                      <div className={`fill ${limit && v > limit ? 'over' : ''}`} style={{ width: `${(v / maxCat) * 100}%` }}/>
+                      {limit > 0 && <div className="limit" style={{ left: `${(limit / maxCat) * 100}%` }}/>}
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+          {owed > 0 && (
+            <div className="fin-owed">
+              <div className="card-label" style={{ margin:'1.1rem 0 0.5rem' }}>Owed to you</div>
+              {overdueRet.map(r => <div key={r.l.id} className="row-between"><span>{r.l.businessName} · retainer</span><span className="bad">{J(r.amount)}</span></div>)}
+              {setupOwed.map(x => <div key={x.l.id} className="row-between"><span>{x.l.businessName} · project</span><span className="warn">{J(x.due)}</span></div>)}
+            </div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+            <span className="card-label" style={{ margin:0 }}>12 months · click a month to open it</span>
+            <span className="fin-legend"><i className="l-inc"/>Income<i className="l-exp"/>Expenses<i className="l-net"/>Net</span>
+          </div>
+          <ResponsiveContainer width="100%" height={CHART_H(150)}>
+            <ComposedChart data={trend} margin={{ left:0, right:8, top:6, bottom:0 }} onClick={e => e?.activePayload?.[0] && setMonth(e.activePayload[0].payload.mk)}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <XAxis dataKey="label" tick={axis}/>
+              <YAxis tick={axis} width={40} tickFormatter={Jk}/>
+              <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(28,171,151,0.06)' }}/>
+              <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4"/>
+              <Bar dataKey="income" name="Income" maxBarSize={22} radius={[3,3,0,0]}>
+                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#7bf4e0' : 'rgba(63,209,184,0.55)'}/>)}
+              </Bar>
+              <Bar dataKey="expenses" name="Expenses" maxBarSize={22} radius={[3,3,0,0]}>
+                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#e37c62' : 'rgba(227,124,98,0.5)'}/>)}
+              </Bar>
+              <Line type="monotone" dataKey="net" name="Net" stroke="#e6c47c" strokeWidth={2} dot={{ r:2.5 }}/>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Ledger */}
+        <div className="card fin-ledger">
+          <div className="fin-ledger-bar">
+            <span className="card-label" style={{ margin:0 }}>{q ? 'Search results · all months' : `Ledger · ${monthName(month, { month:'long' })}`}</span>
+            <div className="fin-ledger-tools">
+              <input className="input" value={search} onChange={e => setSearch(e.target.value)} placeholder="Search all transactions…"/>
+              <div className="seg">
+                {[['all','All'],['income','In'],['expense','Out']].map(([id, label]) => (
+                  <button key={id} className={txType === id ? 'on' : ''} onClick={() => setTxType(id)}>{label}</button>
                 ))}
               </div>
             </div>
-
-            {meterOpen && (
-              <div style={{borderTop:`1px solid ${emotion.color}15`,
-                padding:'0.875rem 1.125rem',display:'flex',flexDirection:'column',gap:'0.75rem'}}>
-                {/* MRR progress */}
-                <div>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',letterSpacing:'0.1em'}}>
-                      MRR vs Level Target
-                    </span>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:emotion.color}}>
-                      {minTarget>0?Math.round((mrr/minTarget)*100):0}%
-                    </span>
-                  </div>
-                  <div style={{height:'3px',background:'rgba(0,212,255,0.07)',borderRadius:99,overflow:'hidden',position:'relative'}}>
-                    <div style={{
-                      position:'absolute',inset:0,
-                      background:'repeating-linear-gradient(90deg,rgba(0,212,255,0.05) 0,rgba(0,212,255,0.05) 8px,transparent 8px,transparent 16px)',
-                    }}/>
-                    <div style={{height:'100%',width:`${Math.min(100,minTarget>0?(mrr/minTarget)*100:0)}%`,
-                      background:`linear-gradient(90deg,var(--bolt-2),${emotion.color})`,
-                      borderRadius:99,boxShadow:`0 0 8px ${emotion.color}80`,transition:'width 0.8s'}}/>
-                  </div>
-                  <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',marginTop:4}}>
-                    J${mrr.toLocaleString()} of J${minTarget.toLocaleString()} target
-                  </div>
+          </div>
+          {txGroups.length === 0
+            ? <div className="agenda-empty">{q ? 'No matches.' : `Nothing logged in ${monthName(month, { month:'long' })}.`} <button className="link-btn" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}>Log a transaction</button></div>
+            : txGroups.map(g => (
+              <div key={g.date} className="fin-day">
+                <div className="fin-day-head">
+                  <span>{g.date ? fmtDate(g.date, { weekday:'short', month:'short', day:'numeric', ...(q ? { year:'numeric' } : {}) }) : 'No date'}</span>
+                  <span>{J(g.items.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0))}</span>
                 </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Report tabs */}
-      <div className="tab-row">
-        {['overview','projection','breakdown','invest'].map(t=>(
-          <button key={t} className={`tab-btn ${report===t?'active':''}`} onClick={()=>setReport(t)}>
-            {t==='invest'?'⚡ Invest':t.charAt(0).toUpperCase()+t.slice(1)}
-          </button>
-        ))}
-      </div>
-
-      {/* Hero stats */}
-      <div className="grid-2">
-        <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar} color="var(--bolt)"/>
-        <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar} color="#ff6040"/>
-        <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}/mo`}        icon={Icons.trend}  color="var(--bolt-lt)"/>
-        <StatCard label={`${projMonths}M Proj.`} value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
-      </div>
-
-      {report==='overview' && (
-        <div className="chart-grid">
-          {/* Time range + view controls */}
-          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
-              <span className="card-label" style={{margin:0}}>Income vs Expenses</span>
-              <TimeRangePicker/>
-            </div>
-            <ResponsiveContainer width="100%" height={CHART_H(180)}>
-              <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}} barGap={2}>
-                <defs>
-                  <linearGradient id="incFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7bf4e0" stopOpacity={0.95}/>
-                    <stop offset="100%" stopColor="#0e6058" stopOpacity={0.85}/>
-                  </linearGradient>
-                  <linearGradient id="expFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#e37c62" stopOpacity={0.9}/>
-                    <stop offset="100%" stopColor="#8a3a2a" stopOpacity={0.8}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{fill:'rgba(28,171,151,0.05)'}}/>
-                <Bar dataKey="income"   fill="url(#incFill)" radius={[3,3,0,0]} name="Income"   maxBarSize={28} animationDuration={800} animationEasing="ease-out"/>
-                <Bar dataKey="expenses" fill="url(#expFill)" radius={[3,3,0,0]} name="Expenses" maxBarSize={28} animationDuration={800} animationEasing="ease-out"/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Running balance area chart */}
-          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
-              <span className="card-label" style={{margin:0}}>Running Balance</span>
-              <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)'}}>Cumulative profit over time</span>
-            </div>
-            <ResponsiveContainer width="100%" height={CHART_H(140)}>
-              <AreaChart data={runningBalance} margin={{left:0,right:4,top:4,bottom:0}}>
-                <defs>
-                  <linearGradient id="gb1" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#7bf4e0" stopOpacity={0.4}/>
-                    <stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
-                <Area type="monotone" dataKey="balance" stroke="#3fd1b8" fill="url(#gb1)" strokeWidth={2} name="Balance" dot={chartData.length<=14} animationDuration={1000} animationEasing="ease-out"/>
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Profit per period bars */}
-          <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
-            <div className="card-label" style={{marginBottom:'0.5rem'}}>Net Profit per Period</div>
-            <ResponsiveContainer width="100%" height={CHART_H(130)}>
-              <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
-                <defs>
-                  <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3ab88e" stopOpacity={0.95}/>
-                    <stop offset="100%" stopColor="#155e46" stopOpacity={0.85}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-                <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
-                <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{fill:'rgba(28,171,151,0.05)'}}/>
-                <Bar dataKey="profit" radius={[3,3,0,0]} name="Profit" maxBarSize={28}
-                  fill="url(#profitFill)" animationDuration={800} animationEasing="ease-out"/>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {report==='projection' && (
-        <div className="card fade-in">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'0.75rem'}}>
-            <div className="card-label" style={{margin:0}}>{projMonths}-Month Projection</div>
-            <div style={{display:'flex',gap:4}}>
-              {[3,6,12].map(m=>(
-                <button key={m} onClick={()=>setProjMonths(m)}
-                  className={`pill ${projMonths===m?'active':''}`}
-                  style={{padding:'0.2rem 0.5rem',fontSize:'9px'}}>
-                  {m}M
-                </button>
-              ))}
-            </div>
-          </div>
-          <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR.</div>
-          <ResponsiveContainer width="100%" height={CHART_H(160)}>
-            <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
-              <defs>
-                <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.35}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#d3a855" stopOpacity={0.28}/><stop offset="95%" stopColor="#d3a855" stopOpacity={0}/></linearGradient>
-                <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e37c62" stopOpacity={0.22}/><stop offset="95%" stopColor="#e37c62" stopOpacity={0}/></linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-              <XAxis dataKey="month" tick={{fill:'#59697a',fontSize:9}}/>
-              <YAxis tick={{fill:'#59697a',fontSize:9}} width={28} tickFormatter={v=>`${Math.round(v/1000)}k`}/>
-              <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
-              <Area type="monotone" dataKey="projected" stroke="#3fd1b8" fill="url(#g1)" name="Projected Income" strokeWidth={2} animationDuration={1000} animationEasing="ease-out"/>
-              <Area type="monotone" dataKey="profit"    stroke="#d3a855" fill="url(#g2)" name="Profit" strokeWidth={2} animationDuration={1000} animationEasing="ease-out"/>
-              <Area type="monotone" dataKey="expenses"  stroke="#e37c62" fill="url(#g3)" name="Expenses" strokeWidth={1.5} animationDuration={1000} animationEasing="ease-out"/>
-              <Area type="monotone" dataKey="minimum"   stroke="rgba(28,171,151,0.35)" fill="none" name="Min Target" strokeWidth={1} strokeDasharray="4 3" animationDuration={1000} animationEasing="ease-out"/>
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {report==='breakdown' && (() => {
-        const expCats=(()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
-        return (
-          <div className="chart-grid">
-            {/* Income vs Expenses trend for breakdown period */}
-            <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
-                <span className="card-label" style={{margin:0}}>Spending Trend</span>
-                <TimeRangePicker/>
-              </div>
-              <ResponsiveContainer width="100%" height={CHART_H(150)}>
-                <AreaChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
-                  <defs>
-                    <linearGradient id="gbd1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.3}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="gbd2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#e37c62" stopOpacity={0.22}/><stop offset="95%" stopColor="#e37c62" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
-                  <XAxis dataKey="label" tick={{fill:'#59697a',fontSize:8}} tickFormatter={fmtLabel}/>
-                  <YAxis tick={{fill:'#59697a',fontSize:9}} width={32} tickFormatter={v=>v>=1000?`${Math.round(v/1000)}k`:v}/>
-                  <Tooltip contentStyle={tt} formatter={v=>`J$${Number(v).toLocaleString()}`} labelFormatter={fmtLabel} cursor={{stroke:'rgba(28,171,151,0.25)'}}/>
-                  <Area type="monotone" dataKey="income"   stroke="#3fd1b8" fill="url(#gbd1)" strokeWidth={2} name="Income" animationDuration={1000} animationEasing="ease-out"/>
-                  <Area type="monotone" dataKey="expenses" stroke="#e37c62" fill="url(#gbd2)" strokeWidth={1.5} name="Expenses" animationDuration={1000} animationEasing="ease-out"/>
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="card fade-in">
-              <div className="card-label">Income by Category</div>
-              {cats.length===0?<Empty text="No income yet."/>:cats.map(c=>{
-                const pct=totalIncome>0?(c.value/totalIncome)*100:0;
-                return(<div key={c.name} style={{marginBottom:'0.75rem'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                    <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--bolt)'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
-                  </div>
-                  <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,var(--bolt-2),var(--bolt))',borderRadius:99}}/>
-                  </div>
-                </div>);
-              })}
-            </div>
-            <div className="card fade-in">
-              <div className="card-label">Expenses by Category</div>
-              {expCats.length===0?<Empty text="No expenses yet."/>:expCats.map(c=>{
-                const pct=totalExpenses>0?(c.value/totalExpenses)*100:0;
-                return(<div key={c.name} style={{marginBottom:'0.75rem'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
-                    <span style={{fontSize:'13px',fontWeight:500}}>{c.name}</span>
-                    <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#ff6040'}}>J${c.value.toLocaleString()} <span style={{color:'var(--mist-3)'}}>({Math.round(pct)}%)</span></span>
-                  </div>
-                  <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:99,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:`${pct}%`,background:'linear-gradient(90deg,#c02000,#ff6040)',borderRadius:99}}/>
-                  </div>
-                </div>);
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
-      {report==='invest' && (
-        <InvestAdvisor
-          profit={profit} mrr={mrr} totalIncome={totalIncome} totalExpenses={totalExpenses}
-          level={level} paidClients={leads.filter(l=>l.status==='Paid').length}
-          openLeads={leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length}
-          finances={finances}
-          advice={investAdvice} loading={investLoading}
-          onFetch={async()=>{
-            setInvestLoading(true);
-            try{
-              const r=await fetch('https://jaxon-rctv.onrender.com/invest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({profit,mrr,totalIncome,totalExpenses,level,paidClients:leads.filter(l=>l.status==='Paid').length,openLeads:leads.filter(l=>!['Paid','Flaked','Lost'].includes(l.status)).length,recentFinances:finances.slice(-20).map(f=>({type:f.type,amount:f.amount,category:f.category,date:f.date}))})});
-              const d=await r.json();setInvestAdvice(d);
-            }catch(e){console.error(e);}
-            setInvestLoading(false);
-          }}
-        />
-      )}
-
-      {/* Transaction filter + list */}
-      <div style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
-        <div className="tab-row" style={{flex:1}}>
-          {['all','income','expense'].map(t=>(
-            <button key={t} className={`tab-btn ${filter===t?'active':''}`} onClick={()=>{setFilter(t);setFinPage(0);}}>
-              {t==='all'?'All':t==='income'?'Income':'Expenses'}
-            </button>
-          ))}
-        </div>
-        <button className="btn-primary icon-only" onClick={()=>setForm({})}><Icons.plus size={15}/></button>
-      </div>
-
-      {filtered.length===0?<Empty text="No transactions yet."/>:(
-        <>
-          <div className="list">
-            {finPaged.map(f=>(
-              <div key={f.id} className="card fade-in" style={{display:'flex',alignItems:'center',gap:'0.625rem',padding:'0.875rem 1rem'}}>
-                <div style={{width:'3px',alignSelf:'stretch',borderRadius:'2px',flexShrink:0,minHeight:'28px',background:f.type==='income'?'var(--bolt)':'#ff6040'}}/>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:500,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.description}</div>
-                  <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)'}}>{f.category}{f.paymentStage?` · ${f.paymentStage}`:''} · {f.date}</div>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
-                  <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
-                  <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={async()=>{if(await confirm({message:`Delete "${f.description}"?`,label:'Delete',danger:true}))onDelete(f.id);}}><Icons.trash size={12}/></button>
-                </div>
+                {g.items.map(f => {
+                  const client = leads.find(l => l.id === f.pipelineLeadId);
+                  return (
+                    <button key={f.id} className={`fin-tx ${f.type}`} onClick={() => setForm(f)}>
+                      <span className="fin-tx-dot"/>
+                      <span className="fin-tx-main">
+                        <span className="fin-tx-desc">{f.description}</span>
+                        <span className="fin-tx-meta">{f.category}{client ? ` · ${client.businessName}` : ''}{f.paymentStage && f.paymentStage !== f.category ? ` · ${f.paymentStage}` : ''}</span>
+                      </span>
+                      <span className="fin-tx-amt">{f.type === 'income' ? '+' : '−'}{J(amountOf(f)).replace('−', '')}</span>
+                    </button>
+                  );
+                })}
               </div>
             ))}
-          </div>
-          {finPageCount>1&&(
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'0.4rem'}}>
-              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.max(0,p-1))} disabled={finPage===0}>←</button>
-              {Array.from({length:finPageCount},(_,i)=>(
-                <button key={i} className={`pill ${finPage===i?'active':''}`} style={{minWidth:28,justifyContent:'center',padding:'0.2rem 0.5rem'}} onClick={()=>setFinPage(i)}>{i+1}</button>
-              ))}
-              <button className="icon-btn" onClick={()=>setFinPage(p=>Math.min(finPageCount-1,p+1))} disabled={finPage===finPageCount-1}>→</button>
-            </div>
-          )}
-        </>
+        </div>
+      </>)}
+
+      {view === 'budgets' && (
+        <BudgetsView month={month} cats={cur.cats} last3={last3} budgets={budgets} avgInc={avgInc} target={target}
+          level={level} onSetBudget={onSetBudget} isCurrent={isCurrent} today={today} dim={dim}/>
       )}
 
-      {form!==null&&<FinanceModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+      {view === 'forecast' && (<>
+        <div className="card span-8">
+          <div className="row-between" style={{ marginBottom:'0.75rem' }}>
+            <span className="card-label" style={{ margin:0 }}>Cash on hand · next {horizon} months</span>
+            <div className="seg">{[3,6,12].map(m => <button key={m} className={horizon === m ? 'on' : ''} onClick={() => setHorizon(m)}>{m}M</button>)}</div>
+          </div>
+          <ResponsiveContainer width="100%" height={CHART_H(190)}>
+            <ComposedChart data={[{ label:'Now', expected: Math.round(cash), worst: Math.round(cash) }, ...forecast]} margin={{ left:0, right:8, top:6, bottom:0 }}>
+              <defs><linearGradient id="finExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.3}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <XAxis dataKey="label" tick={axis}/>
+              <YAxis tick={axis} width={44} tickFormatter={Jk}/>
+              <Tooltip contentStyle={tt} formatter={v => J(v)}/>
+              <ReferenceLine y={0} stroke="#e37c62" strokeDasharray="4 4"/>
+              <Area type="monotone" dataKey="expected" name="Expected" stroke="#3fd1b8" fill="url(#finExp)" strokeWidth={2}/>
+              <Line type="monotone" dataKey="worst" name={topRetainer ? `If ${topRetainer.l.businessName} leaves` : 'Worst case'} stroke="#e37c62" strokeDasharray="5 4" strokeWidth={2} dot={false}/>
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="card span-4">
+          <div className="card-label">The honest numbers</div>
+          <dl className="fin-kv">
+            <div><dt>Average month ({basis})</dt><dd className={avgNet >= target ? 'good' : 'bad'}>{J(avgNet)}</dd></div>
+            <div><dt>Level {level} minimum</dt><dd>{J(target)}</dd></div>
+            <div><dt>Monthly gap</dt><dd className={avgNet >= target ? 'good' : 'bad'}>{avgNet >= target ? 'None' : J(target - avgNet)}</dd></div>
+            <div><dt>Cash in {horizon} months</dt><dd className={forecast[horizon - 1].expected < 0 ? 'bad' : ''}>{J(forecast[horizon - 1].expected)}</dd></div>
+            {topRetainer && <div><dt>Without {topRetainer.l.businessName}</dt><dd className={worstNet < 0 ? 'bad' : 'warn'}>{J(worstNet)}/mo</dd></div>}
+          </dl>
+          <ul className="fin-assume">
+            <li>Based on {basis}, including any month where nothing came in.</li>
+            <li>Only signed retainers count. Deals still in negotiation don't.</li>
+            <li>Spending held at its 3-month average. It rarely goes down on its own.</li>
+          </ul>
+        </div>
+      </>)}
+
+      {view === 'invest' && (
+        <InvestAdvisor cash={cash} avgExp={avgExp} avgNet={avgNet} runway={runway} mrr={mrr} target={target}
+          advice={investAdvice} loading={investLoading}
+          onFetch={async () => {
+            setInvestLoading(true);
+            try {
+              const r = await fetch('https://jaxon-rctv.onrender.com/invest', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({
+                profit: cash, cashOnHand: cash, avgMonthlyNet: avgNet, avgMonthlyExpenses: avgExp, runwayMonths: runway === Infinity ? null : runway,
+                mrr, totalIncome: finances.filter(f => f.type === 'income').reduce((s, f) => s + amountOf(f), 0),
+                totalExpenses: finances.filter(f => f.type === 'expense').reduce((s, f) => s + amountOf(f), 0),
+                level, paidClients: paidClients.length, openLeads: leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status)).length,
+                recentFinances: finances.slice(0, 20).map(f => ({ type:f.type, amount:f.amount, category:f.category, date:f.date })),
+              }) });
+              setInvestAdvice(await r.json());
+            } catch (e) { console.error(e); }
+            setInvestLoading(false);
+          }}/>
+      )}
+
+      {form !== null && (
+        <FinanceModal data={form} leads={leads}
+          onSave={d => { d.id ? onUpdate(d.id, d) : onAdd(d); setForm(null); }}
+          onDelete={form.id ? deleteForm : null}
+          onClose={() => setForm(null)}/>
+      )}
       {ConfirmUI}
     </div>
   );
 }
 
-// ─── PIPELINE ─────────────────────────────────────────────────────────────────
-// ─── INVEST ADVISOR ────────────────────────────────────────────────────────────
-function InvestAdvisor({profit,mrr,totalIncome,totalExpenses,level,paidClients,openLeads,finances,advice,loading,onFetch}) {
-  const cashAvailable = Math.max(0, profit);
-  const monthlyBurn   = totalExpenses;
-  const runway        = monthlyBurn > 0 ? Math.floor(cashAvailable / monthlyBurn) : 99;
-  return (
-    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem'}}>
-      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(0,24,36,0.95),rgba(0,61,92,0.3))',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.25rem'}}>
-        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,var(--bolt),transparent)'}}/>
-        <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>Financial Position</div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'0.75rem',marginBottom:'1rem'}}>
-          {[{l:'Available Cash',v:`J$${cashAvailable.toLocaleString()}`,c:'var(--bolt)'},{l:'Monthly Burn',v:`J$${monthlyBurn.toLocaleString()}`,c:'#ff6040'},{l:'MRR',v:`J$${mrr.toLocaleString()}/mo`,c:'var(--bolt-lt)'},{l:'Runway',v:runway>=99?'Stable':`${runway}mo`,c:runway<3?'#ff6040':'var(--bolt)'}].map(s=>(
-            <div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem 0.75rem',border:'1px solid rgba(0,212,255,0.06)'}}>
-              <div style={{fontFamily:'var(--fm)',fontSize:'7.5px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginBottom:4}}>{s.l}</div>
-              <div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:s.c,lineHeight:1}}>{s.v}</div>
+function BudgetsView({ month, cats, last3, budgets, avgInc, target, level, onSetBudget, isCurrent, today, dim }) {
+  const [draft, setDraft] = useState({});
+  const all = [...new Set([...EXPENSE_CATS, ...Object.keys(cats), ...budgets.map(b => b.category)])];
+  const limitOf = c => Number(budgets.find(b => b.category === c)?.limit) || 0;
+  const avgOf = c => last3.reduce((s, m) => s + (m.cats[c] || 0), 0) / 3;
+  const totalLimit = all.reduce((s, c) => s + limitOf(c), 0);
+  const spent = Object.values(cats).reduce((s, v) => s + v, 0);
+  const allowed = Math.max(0, avgInc - target);        // what you can spend and still hit the minimum
+  const commit = c => {
+    if (draft[c] === undefined) return;
+    const v = Math.max(0, Math.round(Number(draft[c]) || 0));
+    onSetBudget(c, v);
+    setDraft(d => { const n = { ...d }; delete n[c]; return n; });
+  };
+  return (<>
+    <div className="card span-8">
+      <div className="card-label">Monthly budgets · {monthName(month)}</div>
+      <div className="fin-budgets">
+        <div className="fin-budget head"><span>Category</span><span>Spent</span><span>3-mo avg</span><span>Budget</span><span/></div>
+        {all.map(c => {
+          const s = cats[c] || 0, limit = limitOf(c);
+          const pace = isCurrent ? (limit * today) / dim : limit;
+          const status = !limit ? (s > 0 ? 'none' : '') : s > limit ? 'over' : s > pace * 1.15 ? 'ahead' : 'ok';
+          return (
+            <div key={c} className={`fin-budget ${status}`}>
+              <span className="name">{c}</span>
+              <span>{J(s)}</span>
+              <span className="muted">{J(avgOf(c))}</span>
+              <span>
+                <input className="input" type="number" min="0" placeholder="No limit"
+                  value={draft[c] !== undefined ? draft[c] : (limit || '')}
+                  onChange={e => setDraft(d => ({ ...d, [c]: e.target.value }))}
+                  onBlur={() => commit(c)} onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}/>
+              </span>
+              <span className="state">{{ over:'Over', ahead:'Too fast', ok:'On track', none:'No budget', '':'' }[status]}</span>
+              {limit > 0 && <div className="fin-cat-bar"><div className={`fill ${status === 'over' ? 'over' : ''}`} style={{ width: `${Math.min(100, (s / limit) * 100)}%` }}/></div>}
             </div>
-          ))}
-        </div>
-        <button className="btn-primary" style={{width:'100%',justifyContent:'center',opacity:loading?0.7:1}} onClick={onFetch} disabled={loading}>
-          {loading?'JAXON analysing...':'⚡ Get Smart Reinvestment Advice'}
-        </button>
+          );
+        })}
       </div>
-      {advice && (<>
-        <div className="card fade-in" style={{borderLeft:'3px solid var(--bolt)'}}>
-          <div className="card-label">JAXON Assessment</div>
-          <div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-0)',lineHeight:1.75,fontFamily:'var(--fe)'}}>{advice.summary}</div>
-        </div>
-        {advice.opportunities?.map((opp,i)=>(
-          <div key={i} className="card fade-in" style={{borderLeft:`3px solid ${opp.risk==='Low'?'var(--bolt)':opp.risk==='Medium'?'rgba(0,212,255,0.5)':'#ff6040'}`,background:'rgba(0,24,36,0.85)'}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'0.625rem'}}>
-              <div style={{fontFamily:'var(--fe)',fontSize:'17px',fontWeight:600,color:'var(--mist-0)',lineHeight:1.1}}>{opp.name}</div>
-              <span style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:600,padding:'0.15rem 0.5rem',borderRadius:99,textTransform:'uppercase',background:opp.risk==='Low'?'rgba(0,212,255,0.1)':'rgba(255,96,64,0.1)',color:opp.risk==='Low'?'var(--bolt)':'#ff6040',border:`1px solid ${opp.risk==='Low'?'rgba(0,212,255,0.3)':'rgba(255,96,64,0.3)'}`,flexShrink:0,marginLeft:'0.5rem'}}>{opp.risk} Risk</span>
-            </div>
-            <div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.65,marginBottom:'0.75rem'}}>{opp.description}</div>
-            {opp.firstStep&&<div style={{fontFamily:'var(--fm)',fontSize:'10.5px',color:'var(--bolt)',background:'rgba(0,95,138,0.1)',border:'1px solid rgba(0,136,200,0.15)',borderRadius:6,padding:'0.5rem 0.75rem'}}>→ {opp.firstStep}</div>}
-          </div>
-        ))}
-        {advice.warning&&<div style={{background:'rgba(255,96,64,0.07)',border:'1px solid rgba(255,96,64,0.2)',borderLeft:'3px solid #ff6040',borderRadius:'0 8px 8px 0',padding:'0.875rem',fontSize:'12.5px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.65}}><span style={{fontFamily:'var(--fm)',fontSize:'8px',color:'#ff6040',letterSpacing:'0.15em',textTransform:'uppercase',display:'block',marginBottom:4}}>⚠ Warning</span>{advice.warning}</div>}
-      </>)}
     </div>
-  );
+    <div className="card span-4">
+      <div className="card-label">Can you afford your budgets?</div>
+      <dl className="fin-kv">
+        <div><dt>Average monthly income</dt><dd>{J(avgInc)}</dd></div>
+        <div><dt>Level {level} minimum profit</dt><dd>{J(target)}</dd></div>
+        <div><dt>Most you can spend</dt><dd className={allowed <= 0 ? 'bad' : 'good'}>{J(allowed)}</dd></div>
+        <div><dt>Budgets total</dt><dd className={totalLimit > allowed ? 'bad' : ''}>{J(totalLimit)}</dd></div>
+        <div><dt>Spent this month</dt><dd className={spent > allowed ? 'bad' : ''}>{J(spent)}</dd></div>
+      </dl>
+      <ul className="fin-findings">
+        {allowed <= 0 && <li className="danger">Your average income doesn't cover the Level {level} minimum. Every dollar you spend makes it worse.</li>}
+        {allowed > 0 && totalLimit > allowed && <li className="danger">Your budgets allow {J(totalLimit - allowed)} more spending than you can afford.</li>}
+        {allowed > 0 && totalLimit === 0 && <li className="warn">No budgets set. Start with the categories you spent on last month.</li>}
+        {allowed > 0 && totalLimit > 0 && totalLimit <= allowed && <li className="ok">Budgets fit inside what you can afford. Now stick to them.</li>}
+      </ul>
+    </div>
+  </>);
 }
 
-// ─── FINANCE MODAL ──────────────────────────────────────────────────────────────
-function FinanceModal({data,onSave,onClose}) {
-  const [f,setF]=useState({type:'income',description:'',amount:'',category:INCOME_CATS[0],date:localDateStr(),...data});
-  const s=(k,v)=>setF(p=>({...p,[k]:v}));
-  const cats = f.type==='income'?INCOME_CATS:EXPENSE_CATS;
+function InvestAdvisor({cash,avgExp,avgNet,runway,mrr,target,advice,loading,onFetch}) {
+  const reserve = avgExp * 3;                         // 3 months of spending stays untouched
+  const investable = Math.max(0, cash - reserve);
+  return (<>
+    <div className="card span-8">
+      <div className="card-label">Before you invest a dollar</div>
+      <div className="fin-kv fin-kv-grid">
+        <div><dt>Cash on hand</dt><dd>{J(cash)}</dd></div>
+        <div><dt>Emergency reserve (3 mo)</dt><dd>{J(reserve)}</dd></div>
+        <div><dt>Free to invest</dt><dd className={investable > 0 ? 'good' : 'bad'}>{J(investable)}</dd></div>
+        <div><dt>Runway</dt><dd className={runway < 3 ? 'bad' : ''}>{runway === Infinity ? 'No burn' : `${runway.toFixed(1)} mo`}</dd></div>
+      </div>
+      <ul className="fin-findings">
+        {investable <= 0 && <li className="danger">Nothing to invest. Build three months of spending in cash first.</li>}
+        {investable > 0 && avgNet < target && <li className="warn">You have spare cash but the business isn't hitting its minimum. Invest in getting clients before anything else.</li>}
+        {investable > 0 && avgNet >= target && <li className="ok">Reserve covered and profit on target. Up to {J(investable)} can work for you.</li>}
+      </ul>
+      <button className="btn-primary" style={{ marginTop:'1rem', opacity: loading ? 0.7 : 1 }} onClick={onFetch} disabled={loading}>
+        {loading ? 'JAXON is analysing…' : '⚡ Ask JAXON for reinvestment advice'}
+      </button>
+    </div>
+    <div className="card span-4">
+      <div className="card-label">Recurring revenue</div>
+      <div className="fin-net pos" style={{ fontSize:32 }}>{J(mrr)}<span className="fin-net-sub"> /mo</span></div>
+      <div className="fin-net-sub" style={{ marginTop:'0.5rem' }}>{mrr >= target ? 'Retainers alone cover your minimum.' : `Retainers cover ${Math.round((mrr / target) * 100)}% of your minimum.`}</div>
+    </div>
+    {advice && (<>
+      <div className="card"><div className="card-label">JAXON's assessment</div><p className="fin-advice">{advice.summary}</p></div>
+      {advice.opportunities?.map((o, i) => (
+        <div key={i} className="card span-6">
+          <div className="row-between"><b className="fin-opp">{o.name}</b><span className={`badge ${o.risk === 'Low' ? 'badge-ai' : 'badge-danger'}`}>{o.risk} risk</span></div>
+          <p className="fin-advice" style={{ marginTop:'0.5rem' }}>{o.description}</p>
+          {o.firstStep && <div className="fin-step">→ {o.firstStep}</div>}
+        </div>
+      ))}
+      {advice.warning && <ul className="fin-findings"><li className="danger">{advice.warning}</li></ul>}
+    </>)}
+  </>);
+}
+
+function FinanceModal({data,leads,onSave,onDelete,onClose}) {
+  const [f, setF] = useState({ type:'expense', description:'', amount:'', category:'', date:localDateStr(), pipelineLeadId:'', ...data });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const cats = f.type === 'income' ? INCOME_CATS : EXPENSE_CATS;
+  const category = cats.includes(f.category) ? f.category : (f.category || cats[0]);
+  const valid = f.description.trim() && Number(f.amount) > 0 && f.date;
+  const setType = t => setF(p => ({ ...p, type: t, category: (t === 'income' ? INCOME_CATS : EXPENSE_CATS)[0], ...(t === 'expense' ? { pipelineLeadId: '' } : {}) }));
+  const save = () => {
+    if (!valid) return;
+    const out = { ...f, category, amount: Number(f.amount), description: f.description.trim() };
+    if (!out.pipelineLeadId) delete out.pipelineLeadId;
+    // Client payments carry their stage so retainers and balances owed update
+    else if (out.type === 'income' && PAYMENT_STAGES.includes(category)) out.paymentStage = category;
+    onSave(out);
+  };
   return (
-    <Modal title={data.id?'Edit Transaction':'New Transaction'} onClose={onClose}>
-      <div className="tab-row">
-        {['income','expense'].map(t=><button key={t} className={`tab-btn ${f.type===t?'active':''}`} onClick={()=>s('type',t)}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}
+    <Modal title={data.id ? 'Edit Transaction' : 'New Transaction'} onClose={onClose}>
+      <div className="seg seg-full">
+        <button className={f.type === 'expense' ? 'on' : ''} onClick={() => setType('expense')}>Money out</button>
+        <button className={f.type === 'income' ? 'on' : ''} onClick={() => setType('income')}>Money in</button>
       </div>
-      <Field label="Description"><input className="input" value={f.description} onChange={e=>s('description',e.target.value)} placeholder="e.g. D&D Wholesale payment"/></Field>
-      <div className="grid-2">
-        <Field label="Amount (J$)"><input className="input" type="number" value={f.amount} onChange={e=>s('amount',e.target.value)} placeholder="22500"/></Field>
-        <Field label="Date"><input className="input" type="date" value={f.date} onChange={e=>s('date',e.target.value)}/></Field>
+      <div className={`fin-amount ${f.type}`}>
+        <span>J$</span>
+        <input type="number" min="0" autoFocus value={f.amount} onChange={e => s('amount', e.target.value)} placeholder="0"/>
       </div>
-      <Field label="Category">
-        <select className="input" value={f.category} onChange={e=>s('category',e.target.value)}>
-          {cats.map(c=><option key={c}>{c}</option>)}
-        </select>
+      <Field label="What was it for?">
+        <input className="input" value={f.description} onChange={e => s('description', e.target.value)} placeholder={f.type === 'income' ? 'e.g. Island Pharmacy deposit' : 'e.g. Render hosting'}
+          onKeyDown={e => e.key === 'Enter' && save()}/>
       </Field>
-      <ModalFoot onClose={onClose} onSave={()=>f.description.trim()&&Number(f.amount)>0&&onSave(f)}/>
+      <Field label="Category">
+        <div className="sched-cals">
+          {cats.map(c => <button key={c} type="button" className={`sched-cal ${category === c ? 'on' : ''}`} style={{ '--c': f.type === 'income' ? '#3fd1b8' : '#e37c62' }} onClick={() => s('category', c)}><span className="dot"/>{c}</button>)}
+        </div>
+      </Field>
+      <div className="grid-2">
+        <Field label="Date"><input className="input" type="date" value={f.date} onChange={e => s('date', e.target.value)}/></Field>
+        {f.type === 'income' && (
+          <Field label="From client (optional)">
+            <select className="input" value={f.pipelineLeadId || ''} onChange={e => s('pipelineLeadId', e.target.value)}>
+              <option value="">None</option>
+              {leads.filter(l => l.status === 'Paid' || l.id === f.pipelineLeadId).map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete transaction</button>}
     </Modal>
   );
 }
