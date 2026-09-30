@@ -1019,7 +1019,7 @@ select.input {
   color: var(--teal-300); flex-shrink: 0;
 }
 
-.chat-bubble { max-width: 85%; padding: 0.6rem 0.9rem; font-size: 13px; line-height: 1.55; word-break: break-word; font-weight: 400; }
+.chat-bubble { max-width: 85%; padding: 0.6rem 0.9rem; font-size: 13px; line-height: 1.55; word-break: break-word; font-weight: 400; white-space: pre-wrap; }
 
 .chat-bubble.assistant {
   background: rgba(10,26,41,0.86);
@@ -1053,7 +1053,7 @@ select.input {
 
 .quick-btn:active { border-color: rgba(28,171,151,0.32); background: rgba(28,171,151,0.09); color: var(--teal-200); }
 
-.chat-input-row { display: flex; gap: 0.4rem; padding: 0.625rem 0.875rem; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+.chat-input-row { display: flex; align-items: flex-end; gap: 0.4rem; padding: 0.625rem 0.875rem; border-top: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
 
 .chat-input {
   flex: 1; background: rgba(6,16,26,0.87);
@@ -1063,6 +1063,7 @@ select.input {
   transition: border-color 0.2s;
 }
 
+.chat-input { resize: none; line-height: 1.45; min-height: 36px; max-height: 140px; field-sizing: content; }
 .chat-input:focus { border-color: rgba(28,171,151,0.48); box-shadow: 0 0 0 3px rgba(28,171,151,0.09); }
 .chat-input::placeholder { color: var(--ink-4); }
 .chat-input:disabled { opacity: 0.5; }
@@ -1162,8 +1163,219 @@ select.input {
   .xp-avatar { width: 46px; height: 46px; font-size: 18px; }
 }
 
-/* ─── LARGER VIEWPORTS (tablet / desktop testing) ─────────────────── */
-@media (min-width: 900px) {
-  body { display: flex; justify-content: center; background: var(--abyss-950); }
-  .app { min-height: 100vh; box-shadow: 0 0 0 1px rgba(255,255,255,0.05), 0 24px 80px rgba(0,0,0,0.5); }
+/* ─── LAYOUT HELPERS (mobile defaults) ───────────────────────────── */
+.nav-brand, .nav-foot, .nav-key, .page-title { display: none; }
+.dash-row   { display: flex; flex-direction: column; gap: 1rem; }
+.chart-grid { display: flex; flex-direction: column; gap: 0.75rem; }
+.sys-alerts { position: fixed; top: 0; left: 0; right: 0; z-index: 9990; }
+
+.alert-toast {
+  position: fixed; bottom: calc(var(--bh) + 5rem);
+  left: 1rem; right: 1rem; max-width: 440px; margin: 0 auto;
+}
+.vel-label { font-family: var(--fm); font-size: 7px; color: var(--ink-3); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 6px; line-height: 1.3; }
+.vel-value { font-family: var(--fe); font-size: 19px; font-weight: 700; line-height: 1; }
+.vel-sub   { font-family: var(--fm); font-size: 9px; color: var(--ink-3); margin-top: 3px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   DESKTOP — fullscreen Mac app (and any wide browser window)
+   The bottom tab bar becomes a left sidebar, content fills the screen
+   on a 12-column grid, and bottom sheets become centred dialogs.
+═══════════════════════════════════════════════════════════════════ */
+@media (min-width: 1024px) {
+  :root { --sw: 240px; --bh: 0px; --p: 1.5rem; --nh: 72px; }
+
+  body { font-size: 15px; }
+
+  /* Shell */
+  .app {
+    max-width: none; min-height: 100vh;
+    padding-left: var(--sw);
+    box-shadow: none;
+  }
+  .app::before { left: var(--sw); height: 60vh; }
+
+  .sys-alerts { left: var(--sw); }
+
+  /* Header — page title on the left, actions on the right */
+  .header { padding: 0 2.5rem; }
+  .header .brand { display: none; }
+  .page-title {
+    display: flex; align-items: center; gap: 0.75rem;
+    font-family: var(--fe); font-size: 24px; font-weight: 600;
+    color: var(--ink-0); letter-spacing: 0.005em;
+  }
+  .page-title-icon { display: flex; color: var(--teal-300); filter: drop-shadow(0 0 6px rgba(63,209,184,0.5)); }
+  .xp-chip { padding: 0.4rem 0.85rem; }
+  .xp-chip-lv, .xp-chip-xp { font-size: 11px; }
+  .briefing-pill { font-size: 10px; padding: 0.4rem 0.8rem; }
+
+  /* Sidebar */
+  .bottom-nav {
+    top: 0; bottom: 0; left: 0;
+    transform: none;
+    width: var(--sw); max-width: none; height: auto;
+    flex-direction: column; align-items: stretch; gap: 2px;
+    padding: 1.25rem 0.875rem 1rem;
+    background: rgba(4,11,19,0.95);
+    border-top: none;
+    border-right: 1px solid rgba(255,255,255,0.06);
+  }
+  .bottom-nav::before {
+    top: 0; bottom: 0; left: auto; right: -1px;
+    width: 1px; height: auto;
+    background: linear-gradient(180deg,
+      transparent 0%, rgba(28,171,151,0.35) 22%,
+      rgba(211,168,85,0.4) 50%,
+      rgba(28,171,151,0.35) 78%, transparent 100%);
+    background-size: 100% 220%;
+    animation: currentFlowY 9s linear infinite;
+  }
+  @keyframes currentFlowY {
+    0%   { background-position: 0 0%; }
+    100% { background-position: 0 -220%; }
+  }
+
+  .nav-brand {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.25rem 0.5rem 1.25rem; margin-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .nav-brand .brand-sub { font-size: 8px; }
+
+  .nav-btn {
+    flex: none; flex-direction: row; align-items: center; gap: 0.85rem;
+    padding: 0.7rem 0.8rem;
+    border-radius: var(--r2);
+    color: var(--ink-2);
+    transition: color 0.15s, background 0.15s;
+  }
+  .nav-btn:hover { background: rgba(255,255,255,0.035); color: var(--ink-0); }
+  .nav-btn.active {
+    color: var(--teal-100);
+    background: linear-gradient(90deg, rgba(28,171,151,0.17), rgba(28,171,151,0.03));
+    box-shadow: inset 2px 0 0 var(--teal-300);
+  }
+  .nav-btn.active::before { display: none; }
+  .nav-btn.active .nav-icon { transform: none; }
+  .nav-lbl {
+    flex: 1; text-align: left;
+    font-family: var(--fs); font-size: 14px; font-weight: 500;
+    letter-spacing: 0; text-transform: none;
+  }
+  .nav-key {
+    display: inline; font-family: var(--fm); font-size: 10px;
+    color: var(--ink-4); opacity: 0; transition: opacity 0.15s;
+  }
+  .nav-btn:hover .nav-key { opacity: 1; }
+
+  .nav-foot {
+    display: block; margin-top: auto;
+    padding: 1rem 0.625rem 0.25rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .nav-foot-lv { font-family: var(--fe); font-size: 16px; font-weight: 600; color: var(--ink-0); }
+  .nav-foot-xp { font-family: var(--fm); font-size: 10px; color: var(--ink-3); margin-top: 6px; }
+
+  /* Content grid */
+  .main { padding: 2rem 2.5rem 3rem; overflow: visible; }
+
+  .section {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 1.25rem; align-items: start;
+    max-width: 1680px; margin: 0 auto;
+    overflow: visible;
+  }
+  .section > * { grid-column: 1 / -1; min-width: 0; }
+  .section > .span-4 { grid-column: span 4; }
+  .section > .span-5 { grid-column: span 5; }
+  .section > .span-6 { grid-column: span 6; }
+  .section > .span-7 { grid-column: span 7; }
+  .section > .span-8 { grid-column: span 8; }
+  .section > [class*="span-"] { align-self: stretch; }
+
+  .section > .grid-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+  .section > .list {
+    display: grid; gap: 1rem; align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  }
+
+  .dash-row { display: grid; gap: 1.25rem; align-items: start; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+  .dash-row.wide { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
+  .dash-row .hcell { width: 15px; height: 15px; }
+
+  .chart-grid { display: grid; gap: 1.25rem; grid-template-columns: 1fr 1fr; }
+  .chart-grid > :first-child { grid-column: 1 / -1; }
+
+  .pill-row { flex-wrap: wrap; overflow: visible; }
+
+  /* Type scale for reading at desk distance */
+  .hero { padding: 2rem 2rem 1.85rem; }
+  .hero-eye   { font-size: 10px; }
+  .hero-big   { font-size: 52px; }
+  .hero-sub   { font-size: 12.5px; }
+  .card       { padding: 1.35rem 1.5rem; }
+  .card-label { font-size: 10px; }
+  .stat-card  { padding: 1.1rem 1.25rem; }
+  .stat-label { font-size: 9.5px; }
+  .stat-value { font-size: 30px; }
+  .xp-hero    { padding: 1.5rem 1.75rem; }
+  .xp-avatar  { width: 64px; height: 64px; font-size: 26px; }
+  .xp-name    { font-size: 24px; }
+  .xp-lvl-tag { font-size: 9.5px; }
+  .xp-pts     { font-size: 10.5px; }
+  .pill       { font-size: 10.5px; padding: 0.4rem 0.85rem; }
+  .tab-btn    { font-size: 13px; padding: 0.55rem 0.75rem; }
+  .badge      { font-size: 9px; }
+  .btn-primary, .btn-ghost { font-size: 13.5px; }
+  .input      { font-size: 14.5px; }
+  .empty      { padding: 4rem 1rem; font-size: 17px; }
+
+  /* Desktop hover affordances */
+  .icon-btn:hover { border-color: rgba(28,171,151,0.35); color: var(--ink-0); }
+  .danger-btn:hover { border-color: rgba(216,98,77,0.5); color: var(--coral-400); }
+  .pill:hover:not(.active) { border-color: rgba(255,255,255,0.18); color: var(--ink-1); }
+  .tab-btn:hover:not(.active) { color: var(--ink-1); }
+  .quick-btn:hover { border-color: rgba(28,171,151,0.32); color: var(--teal-200); }
+
+  /* Dialogs instead of bottom sheets */
+  .modal-overlay {
+    align-items: center; justify-content: center;
+    padding: 2rem;
+  }
+  .modal, .modal-tall {
+    max-width: 680px; max-height: 88vh;
+    border-radius: 22px;
+    border-top: 1px solid rgba(28,171,151,0.38);
+    padding: 0 1.75rem 1.75rem;
+    animation: dialogIn 0.22s cubic-bezier(0.22,1,0.36,1);
+  }
+  .modal-handle { display: none; }
+  .modal-head {
+    position: sticky; top: 0; z-index: 2;
+    padding-top: 1.25rem;
+    margin: 0 -1.75rem; padding-left: 1.75rem; padding-right: 1.75rem;
+    background: rgba(6,16,26,0.99);
+  }
+  @keyframes dialogIn { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
+
+  /* JAXON chat */
+  .fab { bottom: 1.75rem; right: 1.75rem; width: 58px; height: 58px; }
+  .chat-panel {
+    bottom: 6.5rem; right: 1.75rem; left: auto;
+    width: 440px; max-width: none;
+    height: min(660px, 76vh); max-height: none;
+  }
+  .chat-bubble { font-size: 14px; }
+
+  .error-toast { margin: 0.75rem 2.5rem 0; }
+  .alert-toast { left: auto; right: 1.75rem; bottom: 6.5rem; width: 420px; margin: 0; }
+
+  .vel-label { font-size: 9px; margin-bottom: 8px; }
+  .vel-value { font-size: 28px; }
+  .vel-sub   { font-size: 10.5px; margin-top: 5px; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgba(28,171,151,0.25); border: 2px solid transparent; background-clip: padding-box; }
 }

@@ -3,25 +3,71 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
+    "date-fns": "^3.3.1",
+    "firebase": "^10.7.0",
+    "lucide-react": "^0.383.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-scripts": "5.0.1",
-    "firebase": "^10.7.0",
-    "recharts": "^2.10.0",
-    "lucide-react": "^0.383.0",
-    "date-fns": "^3.3.1"
+    "recharts": "^2.10.0"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "DISABLE_ESLINT_PLUGIN=true react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "electron": "electron .",
+    "electron:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
+    "app:build": "npm run build && electron-builder --mac",
+    "app:install": "npm run app:build && rm -rf \"/Applications/JCommerce Console.app\" && cp -R \"dist/mac/JCommerce Console.app\" /Applications/"
   },
   "eslintConfig": {
-    "extends": ["react-app"]
+    "extends": [
+      "react-app"
+    ]
   },
   "browserslist": {
-    "production": [">0.2%", "not dead", "not op_mini all"],
-    "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "electron": "^44.5.0",
+    "electron-builder": "^26.15.3"
+  },
+  "description": "JCommerce Founder Console",
+  "author": "Jadan Spencer",
+  "main": "electron/main.js",
+  "build": {
+    "appId": "com.jcommerce.console",
+    "productName": "JCommerce Console",
+    "directories": {
+      "output": "dist",
+      "buildResources": "electron"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "!node_modules/**/*"
+    ],
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "electron/icon.png",
+      "target": [
+        "dmg",
+        "dir"
+      ],
+      "identity": null
+    }
   }
 }

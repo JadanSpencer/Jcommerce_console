@@ -47,6 +47,7 @@ const Icons = {
   loader:    () => <Icon d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />,
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
+  filter:    () => <Icon d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
   alert:     () => <Icon d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />,
 };
 
@@ -197,8 +198,27 @@ function localDateStr(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Parse a YYYY-MM-DD string as LOCAL midnight. new Date('YYYY-MM-DD') parses
+// as UTC, which lands on the previous day anywhere west of Greenwich.
+function parseLocal(dateStr) {
+  return new Date(`${dateStr}T00:00:00`);
+}
+
+function addDays(dateStr, n) {
+  const d = parseLocal(dateStr);
+  d.setDate(d.getDate() + n);
+  return localDateStr(d);
+}
+
+function mondayOf(dateStr) {
+  const d = parseLocal(dateStr);
+  const dow = d.getDay();
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return localDateStr(d);
+}
+
 function calcTodoXP(todos, todayStr) {
-  const yesterday = localDateStr(new Date(new Date(todayStr) - 86400000));
+  const yesterday = addDays(todayStr, -1);
   let xp = 0;
 
   // REWARD: +5 XP for every todo completed on any past day (not today)
@@ -234,9 +254,9 @@ function getWeekDates() {
   return DAYS.map((_,i) => { const d = new Date(monday); d.setDate(monday.getDate()+i); return localDateStr(d); });
 }
 
-function getLast20Weeks() {
+function getLast20Weeks(count = 20) {
   const weeks = []; const today = new Date();
-  for (let w = 19; w >= 0; w--) {
+  for (let w = count - 1; w >= 0; w--) {
     const days = []; const monday = new Date(today); const dow = today.getDay();
     monday.setDate(today.getDate() - (dow===0?6:dow-1) - w*7);
     for (let d = 0; d < 7; d++) { const day = new Date(monday); day.setDate(monday.getDate()+d); days.push(localDateStr(day)); }
@@ -245,7 +265,7 @@ function getLast20Weeks() {
   return weeks;
 }
 
-function calcXP(habits, leads, todos, todayStr) {
+function calcXP(habits, leads, todos, todayStr, goals = [], journal = []) {
   let xp = 0;
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
   habits.forEach(h => {
@@ -257,18 +277,20 @@ function calcXP(habits, leads, todos, todayStr) {
     // Walk every past day from creation up to (not including) today
     // and deduct 10 XP for each day it was missed
     // Cap at 90 days to avoid huge lookback on very old habits
-    const start = new Date(createdStr);
-    const today = new Date(todayStr);
     const msPerDay = 86400000;
-    const daysBack = Math.min(90, Math.floor((today - start) / msPerDay));
+    const daysBack = Math.min(90, Math.round((parseLocal(todayStr) - parseLocal(createdStr)) / msPerDay));
     for (let i = 1; i <= daysBack; i++) {
-      const d = localDateStr(new Date(today - i * msPerDay));
+      const d = addDays(todayStr, -i);
       if (d < createdStr) break; // habit didn't exist yet
       if (!h.completions?.[d]) xp -= 10; // missed that day — deduct
     }
   });
   leads.filter(l => l.status==='Paid').forEach(() => { xp += 200; });
   xp += calcTodoXP(todos, todayStr);
+  // Bonuses derived from stored data so they survive a restart:
+  // +100 per completed goal, +15 per Tide Log entry
+  xp += goals.filter(g => Number(g.target) > 0 && Number(g.current) >= Number(g.target)).length * 100;
+  xp += journal.length * 15;
   return Math.max(0, xp);
 }
 
@@ -301,14 +323,21 @@ function urlBase64ToUint8Array(base64String) {
   return Uint8Array.from({length: raw.length}, (_, i) => raw.charCodeAt(i));
 }
 
-function useNotifications() {
-  const [permission, setPermission] = useState(Notification?.permission || 'default');
-  const [swReady, setSwReady]       = useState(false);
-  const [subbed, setSubbed]         = useState(false);
+// Set by electron/preload.js when running as the installed Mac app
+const DESKTOP = typeof window !== 'undefined' ? window.desktop : undefined;
 
-  // Register service worker on mount
+// Charts get more vertical room on wide (desktop) layouts
+const CHART_H = h => (window.innerWidth >= 1024 ? Math.round(h * 1.6) : h);
+
+function useNotifications() {
+  const [permission, setPermission] = useState(window.Notification?.permission || 'default');
+  const [swReady, setSwReady]       = useState(false);
+  const [subbed, setSubbed]         = useState(!!DESKTOP);
+
+  // Register service worker on mount (web only — the desktop app shows
+  // native notifications for new alerts instead of Web Push)
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
+    if (DESKTOP || !('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register('/service-worker.js')
       .then(reg => {
         setSwReady(true);
@@ -328,7 +357,7 @@ function useNotifications() {
     // 1. Ask for notification permission
     const result = await Notification.requestPermission();
     setPermission(result);
-    if (result !== 'granted') return result;
+    if (result !== 'granted' || DESKTOP) return result;
 
     // 2. Subscribe to Web Push
     try {
@@ -382,7 +411,8 @@ function useSystemHealth() {
       // 1. Ping JAXON server
       let jaxon = 'unknown', jaxonMsg = '';
       try {
-        const r = await fetch('https://jaxon-rctv.onrender.com/', { signal: AbortSignal.timeout(8000) });
+        // Render's free tier can take ~30-50s to wake from sleep
+        const r = await fetch('https://jaxon-rctv.onrender.com/', { signal: AbortSignal.timeout(60000) });
         if (r.ok) { jaxon = 'ok'; }
         else { jaxon = 'error'; jaxonMsg = `HTTP ${r.status}`; }
       } catch (e) {
@@ -390,30 +420,10 @@ function useSystemHealth() {
         jaxonMsg = e.name === 'TimeoutError' ? 'Timed out (Render may be sleeping)' : e.message;
       }
 
-      // 2. Check Anthropic via a minimal API call
-      let anthropic = 'unknown', anthropicMsg = '';
-      try {
-        const r = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model:'claude-haiku-4-5', max_tokens:1, messages:[{role:'user',content:'ping'}] }),
-          signal: AbortSignal.timeout(10000),
-        });
-        const d = await r.json();
-        if (r.ok) { anthropic = 'ok'; }
-        else if (d?.error?.type === 'authentication_error') { anthropic = 'error'; anthropicMsg = 'Invalid API key'; }
-        else if (d?.error?.message?.toLowerCase().includes('credit') ||
-                 d?.error?.message?.toLowerCase().includes('billing') ||
-                 r.status === 529) {
-          anthropic = 'out_of_credits';
-          anthropicMsg = d?.error?.message || 'Out of credits / billing issue';
-        } else {
-          anthropic = 'error'; anthropicMsg = d?.error?.message || `HTTP ${r.status}`;
-        }
-      } catch (e) {
-        anthropic = 'error';
-        anthropicMsg = e.name === 'TimeoutError' ? 'API timed out' : e.message;
-      }
+      // 2. Anthropic credit status can't be checked from here: the API needs a
+      // key and rejects browser origins (CORS), so a direct call always failed
+      // and showed a permanent false alarm. JAXON's server owns that key.
+      const anthropic = 'unknown', anthropicMsg = '';
 
       if (!cancelled) {
         setHealth({ jaxon, jaxonMsg, anthropic, anthropicMsg, lastChecked: new Date() });
@@ -464,7 +474,7 @@ function SystemAlertBanner({ health }) {
   if (!alerts.length) return null;
 
   return (
-    <div style={{ position:'fixed', top:0, left:0, right:0, zIndex:9990 }}>
+    <div className="sys-alerts">
       {alerts.map(a => (
         <div key={a.id} style={{
           display:'flex', alignItems:'flex-start', gap:'0.75rem',
@@ -491,10 +501,14 @@ function SystemAlertBanner({ health }) {
 
 // ─── LEVEL UP SPLASH ─────────────────────────────────────────────────────────
 function LevelUpSplash({ level, onDismiss }) {
+  // Keep the latest callback in a ref so parent re-renders (every Firestore
+  // snapshot) don't keep restarting the auto-dismiss timer
+  const dismissRef = useRef(onDismiss);
+  dismissRef.current = onDismiss;
   useEffect(() => {
-    const t = setTimeout(onDismiss, 4000);
+    const t = setTimeout(() => dismissRef.current(), 4000);
     return () => clearTimeout(t);
-  }, [onDismiss]);
+  }, []);
 
   return (
     <>
@@ -558,7 +572,7 @@ function LevelUpSplash({ level, onDismiss }) {
       <div style={{
         fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-4)',
         letterSpacing:'0.1em',
-      }}>Tap to continue</div>
+      }}>Click to continue</div>
     </div>
     </>
   );
@@ -642,7 +656,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
   ];
 
   return (
-    <div style={{
+    <div className="span-7" style={{
       position: 'relative', overflow: 'hidden',
       background: 'linear-gradient(160deg, rgba(0,24,36,0.95) 0%, rgba(0,61,92,0.2) 100%)',
       border: '1px solid rgba(0,212,255,0.12)',
@@ -653,9 +667,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
         background:'linear-gradient(90deg,transparent,var(--bolt-3),var(--bolt),var(--bolt-3),transparent)',
         opacity:0.6}}/>
 
-      <div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,
-        letterSpacing:'0.3em',textTransform:'uppercase',
-        color:'var(--bolt)',opacity:0.7,marginBottom:'0.625rem'}}>
+      <div className="card-label" style={{marginBottom:'0.75rem'}}>
         ⚡ Business Velocity
       </div>
 
@@ -667,19 +679,11 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
             borderRadius:10, padding:'0.75rem 0.625rem',
             position:'relative',overflow:'hidden',
           }}>
-            <div style={{fontFamily:'var(--fm)',fontSize:'7px',color:'var(--mist-3)',
-              letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:6,lineHeight:1.3}}>
-              {m.label}
-            </div>
-            <div style={{fontFamily:'var(--fe)',fontSize:'19px',fontWeight:700,
-              color:m.color,lineHeight:1,
-              textShadow:`0 0 16px ${m.color}60`}}>
+            <div className="vel-label">{m.label}</div>
+            <div className="vel-value" style={{color:m.color,textShadow:`0 0 16px ${m.color}60`}}>
               {m.value}
             </div>
-            <div style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)',
-              marginTop:3}}>
-              {m.sub}
-            </div>
+            <div className="vel-sub">{m.sub}</div>
             {m.delta !== null && (
               <div style={{
                 position:'absolute',top:'0.5rem',right:'0.5rem',
@@ -731,11 +735,7 @@ function AlertBanner({ alerts }) {
   }[cur.type] || 'var(--bolt)';
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 'calc(var(--bh) + 5rem)',
-      left: '1rem', right: '1rem',
-      maxWidth: 440, margin: '0 auto',
+    <div className="alert-toast" style={{
       background: 'rgba(4,8,15,0.98)',
       border: `1px solid ${typeColor}33`,
       borderTop: `2px solid ${typeColor}`,
@@ -991,7 +991,6 @@ export default function App() {
   const [schedule, setSchedule] = useState([]);
   const [finances, setFinances] = useState([]);
   const [goals, setGoals]       = useState([]);
-  const [xpBonus, setXpBonus]   = useState(0);
   const [todos, setTodos]       = useState([]);
   const [queue, setQueue]       = useState([]);
   const [logs, setLogs]         = useState([]);
@@ -1150,6 +1149,7 @@ export default function App() {
     // Use already-imported firebase functions
     // Simple query — no composite index required
     // Client-side filter for seen:false and dismissed set
+    let initialSnapshot = true;
     const unsub = onSnapshot(
       query(collection(db, 'alerts'), orderBy('createdAt', 'desc'), limit(30)),
       snap => {
@@ -1157,6 +1157,17 @@ export default function App() {
           .map(d => ({ id: d.id, ...d.data() }))
           .filter(a => !a.seen && !dismissed.has(a.id));
         setAlerts(fresh);
+        // Desktop app: raise a native macOS notification for alerts that
+        // arrive while the app is open (stands in for Web Push)
+        if (DESKTOP && !initialSnapshot && window.Notification?.permission === 'granted') {
+          snap.docChanges()
+            .filter(c => c.type === 'added' && !c.doc.data().seen)
+            .forEach(c => {
+              const a = c.doc.data();
+              new window.Notification(a.title || 'JAXON', { body: a.body || a.message || '' });
+            });
+        }
+        initialSnapshot = false;
       },
       err => {
         console.warn('Alerts listener error:', err.message);
@@ -1190,7 +1201,6 @@ export default function App() {
       await update('journal', todayJournal.id, data);
     } else {
       await add('journal', { ...data, date: todayStr });
-      setXpBonus(b => b + 15);
     }
   };
 
@@ -1209,14 +1219,16 @@ export default function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr) + xpBonus;
+  const xp = calcXP(habits, leads, todos, todayStr, goals, journal);
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
   useEffect(() => {
-    if (prevLevel !== null && level > prevLevel) setShowLevelUp(true);
+    // Only celebrate real level-ups — not the jump from L1 to your actual
+    // level while data is still loading behind the splash screen
+    if (!loading && prevLevel !== null && level > prevLevel) setShowLevelUp(true);
     setPrevLevel(level);
-  }, [level]);
+  }, [level, loading]);
   const todayTodos = todos.filter(t=>t.addedDate===todayStr);
   const todayDone  = todayTodos.filter(t=>t.doneOn?.[todayStr]);
   const todayBriefing = briefings.find(b=>b.date===todayStr) || null;
@@ -1232,6 +1244,18 @@ export default function App() {
     {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon},
     {id:'clients',   label:'Clients',  icon:Icons.briefcase},
   ];
+  const currentNav = navItems.find(n => n.id === tab) || navItems[0];
+
+  // ⌘1 – ⌘9 jump between sections
+  useEffect(() => {
+    const onKey = e => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const n = Number(e.key);
+      if (n >= 1 && n <= navItems.length) { e.preventDefault(); setTab(navItems[n - 1].id); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []); // navItems is static
 
   if (loading) return (
     <div className="splash">
@@ -1260,11 +1284,15 @@ export default function App() {
             <div className="brand-sub">Founder Console</div>
           </div>
         </div>
+        <div className="page-title">
+          <span className="page-title-icon"><currentNav.icon /></span>
+          <span>{currentNav.label}</span>
+        </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
           <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(0,212,255,0.2)',color:'var(--bolt)'}}>📄</button>
           <button
             onClick={requestPermission}
-            title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on — tap to enable push':'Tap to enable notifications'}
+            title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
             style={{
               position:'relative',background:'none',
               border:`1px solid ${notifSubbed?'rgba(0,212,255,0.35)':'rgba(255,255,255,0.08)'}`,
@@ -1322,19 +1350,31 @@ export default function App() {
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance finances={finances} leads={leads} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)}/>}
-        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)} onGoalComplete={g=>setXpBonus(b=>b+100)}/>}
+        {tab==='goals'    && <Goals goals={goals} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} onUpdateLead={(id,d)=>update('leads',id,d)} onAdd={add} todayStr={todayStr}/>}
       </main>
 
       <nav className="bottom-nav">
+        <div className="nav-brand">
+          <div className="brand-gem">J</div>
+          <div>
+            <div className="brand-name">JCommerce</div>
+            <div className="brand-sub">Founder Console</div>
+          </div>
+        </div>
         {navItems.map((n,i) => (
-          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}}>
+          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={`${n.label} (⌘${i+1})`}>
             <span className="nav-icon"><n.icon /></span>
             <span className="nav-lbl">{n.label}</span>
-            {tab===n.id && <span className="nav-pip"/>}
+            <span className="nav-key">⌘{i+1}</span>
           </button>
         ))}
+        <div className="nav-foot">
+          <div className="nav-foot-lv">Level {level}</div>
+          <div className="xp-track"><div className="xp-fill" style={{width:`${progress*100}%`}}/></div>
+          <div className="nav-foot-xp">{xpInLevel} / 500 XP</div>
+        </div>
       </nav>
 
       {/* Briefing Modal */}
@@ -1498,7 +1538,9 @@ function TideRow({ tag, color, text, compact }) {
 }
 
 function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, totalExpenses, profit, paidLeads, openLeads, todayStr, xp, level, progress, xpInLevel, onToggleHabit, onToggleTodo, todayTodos, todayDone, journal, onSaveJournal }) {
-  const weeks = getLast20Weeks();
+  // Wide layout has room for roughly eight months of history
+  const weekCount = window.innerWidth >= 1024 ? 32 : 20;
+  const weeks = getLast20Weeks(weekCount);
   const allDates = weeks.flat();
   const habitHeatmap = allDates.map(date => {
     const done = habits.filter(h=>h.completions?.[date]).length;
@@ -1509,7 +1551,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
   return (
     <div className="section">
       {/* XP Hero */}
-      <div className="xp-hero" style={{'--prog':`${progress*100}%`}}>
+      <div className="xp-hero span-5" style={{'--prog':`${progress*100}%`}}>
         <div className="xp-avatar">J</div>
         <div style={{flex:1,minWidth:0}}>
           <div className="xp-name">Jadan Spencer</div>
@@ -1534,6 +1576,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
         <StatCard label="Habits Today"  value={`${habitsToday}%`}                   icon={Icons.flame}   color="var(--horizon)" />
       </div>
 
+      <div className="dash-row">
       {/* Today habits quick */}
       {habits.length > 0 && (
         <div className="card fade-in">
@@ -1572,10 +1615,12 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
 
       {/* Tide Log — one line each for business, personal, tomorrow */}
       <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
+      </div>
 
+      <div className="dash-row wide">
       {/* Heatmap */}
       <div className="card fade-in">
-        <div className="card-label">Consistency — 20 Weeks</div>
+        <div className="card-label">Consistency — {weekCount} Weeks</div>
         <div style={{overflowX:'auto'}}>
           <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
             {weeks.map((week,wi) => (
@@ -1599,7 +1644,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
       {leads.length > 0 && (
         <div className="card fade-in">
           <div className="card-label">Pipeline</div>
-          <ResponsiveContainer width="100%" height={140}>
+          <ResponsiveContainer width="100%" height={CHART_H(140)}>
             <BarChart data={LEAD_STATUSES.map(s=>({name:s,count:leads.filter(l=>l.status===s).length})).filter(d=>d.count>0)} margin={{left:0,right:0,top:4,bottom:0}}>
               <defs>
                 <linearGradient id="pipelineFill" x1="0" y1="0" x2="0" y2="1">
@@ -1616,6 +1661,7 @@ function Dashboard({ leads, habits, finances, todos, habitsToday, totalIncome, t
           </ResponsiveContainer>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -1733,8 +1779,8 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
         <button
           className={`btn-ghost ${showFilters?'active':''}`}
           style={{flexShrink:0,position:'relative',padding:'0.5rem 0.75rem'}}
-          onClick={()=>setShowFilters(v=>!v)}>
-          <Icons.target size={14}/>
+          onClick={()=>setShowFilters(v=>!v)} title="Filters">
+          <Icons.filter size={14}/>
           {activeFilters>0 && (
             <span style={{position:'absolute',top:-4,right:-4,background:'#1adb8a',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{activeFilters}</span>
           )}
@@ -2124,7 +2170,7 @@ function LeadModal({data,onSave,onClose}) {
 function PaymentModal({lead,existing,onLog,onUpdateEntry,onClose}) {
   const [stage,setStage]=useState(PAYMENT_STAGES[0]);
   const [amount,setAmount]=useState('');
-  const [date,setDate]=useState(new Date().toISOString().slice(0,10));
+  const [date,setDate]=useState(localDateStr());
   return (
     <Modal title={`Log Payment — ${lead.businessName}`} onClose={onClose}>
       {existing.length>0&&(
@@ -2173,7 +2219,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
     let s = 0; const today = new Date();
     for (let i = 0; i < 365; i++) {
       const d = new Date(today); d.setDate(today.getDate()-i);
-      const k = d.toISOString().slice(0,10);
+      const k = localDateStr(d);
       if (h.completions?.[k]) s++; else if (i>0) break;
     }
     return s;
@@ -2231,7 +2277,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                 </div>
                 {isOpen && (
                   <div className="habit-body">
-                    <div className="card-label" style={{marginBottom:'0.5rem'}}>20-Week History — tap to toggle past days</div>
+                    <div className="card-label" style={{marginBottom:'0.5rem'}}>20-Week History — click to toggle past days</div>
                     <div style={{overflowX:'auto'}}>
                       <div style={{display:'flex',gap:'3px',minWidth:'max-content'}}>
                         {weeks.map((week,wi) => (
@@ -2290,14 +2336,14 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const doneCount   = todayTasks.filter(t=>t.doneOn?.[todayStr]).length;
   const taskCount   = todayTasks.length;
   const underMin    = taskCount < 5;
-  const yesterday   = new Date(new Date(todayStr)-86400000).toISOString().slice(0,10);
+  const yesterday   = addDays(todayStr, -1);
   const missedYest  = todos.filter(t=>t.addedDate===yesterday&&!t.doneOn?.[yesterday]).length;
   const quickAdd    = () => { if(!newTitle.trim())return; onAdd({title:newTitle.trim(),note:''}); setNewTitle(''); };
   const sorted = [...todayTasks.filter(t=>!t.doneOn?.[todayStr]),...todayTasks.filter(t=>t.doneOn?.[todayStr])];
 
   return (
     <div className="section">
-      <div className="hero" style={{position:'relative'}}>
+      <div className="hero span-8" style={{position:'relative'}}>
         {/* Emotion face — right side of hero container */}
         {(() => {
           const met5 = doneCount >= 5;
@@ -2323,7 +2369,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
         </div>
       </div>
 
-      <div className="xp-rules">
+      <div className="xp-rules span-4">
         {[{l:'+5 XP',d:'Per task done',c:'#1adb8a'},{l:'-10 XP',d:'Per missed task',c:'#ff6040'},{l:'Goal 10',d:'Tasks/day',c:'#7b6cf5'},{l:'Min 5',d:'Or -10 XP',c:'#f0c060'}].map(r => (
           <div key={r.l} style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
             <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:r.c,flexShrink:0}}>{r.l}</span>
@@ -2365,7 +2411,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
                   {t.doneOn?.[todayStr] && <span style={{fontFamily:'var(--fm)',fontSize:'10px',color:'#7b6cf5'}}>+5</span>}
                   <button className="icon-btn" onClick={()=>setForm(t)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={()=>onDelete(t.id)}><Icons.trash size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={()=>handleDeleteTodo(t.id,t.title)}><Icons.trash size={12}/></button>
                 </div>
               </div>
             </div>
@@ -2384,7 +2430,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                     {t.doneOn?.[todayStr] ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
                   </button>
                   <span style={{flex:1,minWidth:0,fontSize:'13.5px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:t.doneOn?.[todayStr]?'var(--mist-2)':'var(--mist-1)',textDecoration:t.doneOn?.[todayStr]?'line-through':'none'}}>{t.title}</span>
-                  <button className="icon-btn danger-btn" onClick={()=>onDelete(t.id)}><Icons.trash size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={()=>handleDeleteTodo(t.id,t.title)}><Icons.trash size={12}/></button>
                 </div>
               </div>
             ))}
@@ -2447,6 +2493,8 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
   // Check if a block should appear in a given week offset + day
   const blockAppliesToWeek = (b, dayName) => {
     const targetDate = getDateForDay(dayName);
+    // One-off: only in the week that contains its date
+    if (b.recurrence === 'once') return !b.startDate || mondayOf(targetDate) === mondayOf(b.startDate);
     const startDate  = b.startDate || '2000-01-01';
     const endDate    = b.endDate   || '2099-12-31';
     if (targetDate < startDate || targetDate > endDate) return false;
@@ -2455,14 +2503,9 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
       case 'weekly':    return true; // every week, same day
       case 'biweekly': {
         // Biweekly: count weeks from startDate
-        const start = new Date(startDate);
-        const target = new Date(targetDate);
-        const weekDiff = Math.round((target - start) / (7 * 86400000));
+        const weekDiff = Math.round((parseLocal(mondayOf(targetDate)) - parseLocal(mondayOf(startDate))) / (7 * 86400000));
         return weekDiff >= 0 && weekDiff % 2 === 0;
       }
-      case 'once':
-        // One-off: only on the exact startDate week
-        return targetDate === startDate || b.day === dayName;
       case 'period':
         // Runs every week within startDate→endDate
         return true;
@@ -2474,7 +2517,7 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
   const getUrgencyGlow = (b, dayName) => {
     if (!b.startDate || b.acknowledged) return 0;
     const targetDate = getDateForDay(dayName);
-    const daysUntil  = Math.ceil((new Date(targetDate) - new Date(todayStr)) / 86400000);
+    const daysUntil  = Math.round((parseLocal(targetDate) - parseLocal(todayStr)) / 86400000);
     if (daysUntil < 0)  return 0;   // past
     if (daysUntil === 0) return 1;  // today — max glow
     if (daysUntil <= 2) return 0.7;
@@ -2759,7 +2802,7 @@ function Schedule({schedule,onAdd,onUpdate,onDelete}) {
               </div>
               <div style={{ fontFamily:'var(--fm)', fontSize:'9px', color:'var(--mist-4)',
                 marginTop:'0.5rem', textAlign:'center', letterSpacing:'0.08em' }}>
-                TAP ANY SLOT TO ADD · TAP BLOCK TO EDIT · RED = CLASH
+                CLICK ANY SLOT TO ADD · CLICK BLOCK TO EDIT · RED = CLASH
               </div>
             </div>
           </div>
@@ -2842,7 +2885,11 @@ function SchedModal({data, activeSched, onSave, onClose}) {
 
       <div className="grid-2">
         <Field label={f.recurrence === 'once' ? 'Date' : f.recurrence === 'period' ? 'Start Date' : 'From Date'}>
-          <input className="input" type="date" value={f.startDate} onChange={e => s('startDate', e.target.value)}/>
+          <input className="input" type="date" value={f.startDate} onChange={e => {
+            const v = e.target.value;
+            s('startDate', v);
+            if (f.recurrence === 'once' && v) { const dow = parseLocal(v).getDay(); s('day', DAYS[dow === 0 ? 6 : dow - 1]); }
+          }}/>
         </Field>
         {(f.recurrence === 'period') && (
           <Field label="End Date">
@@ -2867,7 +2914,8 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
   const [finPage,setFinPage] = useState(0);
   const [investAdvice,setInvestAdvice] = useState(null);
   const [investLoading,setInvestLoading] = useState(false);
-  const FIN_PER_PAGE = 8;
+  const { confirm, ConfirmUI } = useConfirm();
+  const FIN_PER_PAGE = 10;
   const filtered = filter==='all' ? finances : finances.filter(f=>f.type===filter);
   const finPageCount = Math.ceil(filtered.length / FIN_PER_PAGE);
   const finPaged = filtered.slice(finPage*FIN_PER_PAGE,(finPage+1)*FIN_PER_PAGE);
@@ -2888,7 +2936,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
     const map = {};
 
     const bucketKey = (dateStr) => {
-      const d = new Date(dateStr);
+      const d = parseLocal(dateStr);
       if (timeRange === 'daily') return dateStr;
       if (timeRange === 'monthly') return dateStr.slice(0,7);
       if (timeRange === 'weekly') {
@@ -3112,18 +3160,18 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
         <StatCard label="Income"   value={`J$${totalIncome.toLocaleString()}`}   icon={Icons.dollar} color="var(--bolt)"/>
         <StatCard label="Expenses" value={`J$${totalExpenses.toLocaleString()}`} icon={Icons.dollar} color="#ff6040"/>
         <StatCard label="MRR"      value={`J$${mrr.toLocaleString()}/mo`}        icon={Icons.trend}  color="var(--bolt-lt)"/>
-        <StatCard label="6M Proj." value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
+        <StatCard label={`${projMonths}M Proj.`} value={`J$${proj.reduce((s,p)=>s+p.profit,0).toLocaleString()}`} icon={Icons.barChart} color="var(--bolt-pale)"/>
       </div>
 
       {report==='overview' && (
-        <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+        <div className="chart-grid">
           {/* Time range + view controls */}
           <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
               <span className="card-label" style={{margin:0}}>Income vs Expenses</span>
               <TimeRangePicker/>
             </div>
-            <ResponsiveContainer width="100%" height={180}>
+            <ResponsiveContainer width="100%" height={CHART_H(180)}>
               <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}} barGap={2}>
                 <defs>
                   <linearGradient id="incFill" x1="0" y1="0" x2="0" y2="1">
@@ -3151,7 +3199,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
               <span className="card-label" style={{margin:0}}>Running Balance</span>
               <span style={{fontFamily:'var(--fm)',fontSize:'9px',color:'var(--mist-3)'}}>Cumulative profit over time</span>
             </div>
-            <ResponsiveContainer width="100%" height={140}>
+            <ResponsiveContainer width="100%" height={CHART_H(140)}>
               <AreaChart data={runningBalance} margin={{left:0,right:4,top:4,bottom:0}}>
                 <defs>
                   <linearGradient id="gb1" x1="0" y1="0" x2="0" y2="1">
@@ -3171,7 +3219,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
           {/* Profit per period bars */}
           <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
             <div className="card-label" style={{marginBottom:'0.5rem'}}>Net Profit per Period</div>
-            <ResponsiveContainer width="100%" height={130}>
+            <ResponsiveContainer width="100%" height={CHART_H(130)}>
               <BarChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
                 <defs>
                   <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
@@ -3206,7 +3254,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
             </div>
           </div>
           <div style={{fontSize:'11px',color:'var(--mist-2)',marginBottom:'0.75rem'}}>Based on last 3 months avg + MRR.</div>
-          <ResponsiveContainer width="100%" height={160}>
+          <ResponsiveContainer width="100%" height={CHART_H(160)}>
             <AreaChart data={proj} margin={{left:0,right:4,top:4,bottom:0}}>
               <defs>
                 <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.35}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
@@ -3229,14 +3277,14 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
       {report==='breakdown' && (() => {
         const expCats=(()=>{const map={};finances.filter(f=>f.type==='expense').forEach(f=>{const c=f.category||'Other';map[c]=(map[c]||0)+(Number(f.amount)||0);});return Object.entries(map).map(([name,value])=>({name,value})).sort((a,b)=>b.value-a.value);})();
         return (
-          <div style={{display:'flex',flexDirection:'column',gap:'0.75rem'}}>
+          <div className="chart-grid">
             {/* Income vs Expenses trend for breakdown period */}
             <div className="card fade-in" style={{padding:'0.75rem 1rem'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.5rem'}}>
                 <span className="card-label" style={{margin:0}}>Spending Trend</span>
                 <TimeRangePicker/>
               </div>
-              <ResponsiveContainer width="100%" height={150}>
+              <ResponsiveContainer width="100%" height={CHART_H(150)}>
                 <AreaChart data={chartData} margin={{left:0,right:4,top:4,bottom:0}}>
                   <defs>
                     <linearGradient id="gbd1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.3}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
@@ -3328,7 +3376,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
                 <div style={{display:'flex',alignItems:'center',gap:'0.35rem',flexShrink:0}}>
                   <div style={{fontFamily:'var(--fm)',fontWeight:600,fontSize:'13px',color:f.type==='income'?'var(--bolt)':'#ff6040',whiteSpace:'nowrap'}}>{f.type==='income'?'+':'-'}J${Number(f.amount).toLocaleString()}</div>
                   <button className="icon-btn" onClick={()=>setForm(f)}><Icons.edit size={12}/></button>
-                  <button className="icon-btn danger-btn" onClick={async()=>{if(window.confirm('Delete this transaction?'))onDelete(f.id);}}><Icons.trash size={12}/></button>
+                  <button className="icon-btn danger-btn" onClick={async()=>{if(await confirm({message:`Delete "${f.description}"?`,label:'Delete',danger:true}))onDelete(f.id);}}><Icons.trash size={12}/></button>
                 </div>
               </div>
             ))}
@@ -3346,6 +3394,7 @@ function Finance({finances,leads,totalIncome,totalExpenses,profit,xp,level,onAdd
       )}
 
       {form!==null&&<FinanceModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
+      {ConfirmUI}
     </div>
   );
 }
@@ -3510,8 +3559,9 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
   const [clientTab, setClientTab] = useState('overview'); // overview | retainer
   const [editProduct, setEditProduct] = useState(false);
 
-  const client        = paidClients.find(c => c.id === sel);
-  const clientFin     = finances.filter(f => f.pipelineLeadId === sel);
+  // Fall back to the first client if the selection is empty or no longer paid
+  const client        = paidClients.find(c => c.id === sel) || paidClients[0];
+  const clientFin     = finances.filter(f => f.pipelineLeadId === client?.id);
   const totalReceived = clientFin.reduce((s, f) => s + (Number(f.amount) || 0), 0);
 
   // ── RETAINER TOGGLE ───────────────────────────────────────────────────────
@@ -3570,7 +3620,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
         <div className="pill-row">
           {paidClients.map(c => (
             <button key={c.id}
-              className={`pill ${sel === c.id ? 'active' : ''}`}
+              className={`pill ${client?.id === c.id ? 'active' : ''}`}
               onClick={() => { setSel(c.id); setClientTab('overview'); }}>
               {c.businessName}
             </button>
@@ -3652,7 +3702,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
         {clientTab === 'overview' && (<>
           {/* Tech Stack */}
           {client.product?.techStack && (
-            <div className="card">
+            <div className="card span-6">
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.875rem' }}>
                 <div className="card-label" style={{ margin: 0 }}>Tech Stack & Links</div>
                 <button className="icon-btn" onClick={() => setEditProduct(true)}><Icons.edit size={12}/></button>
@@ -3687,7 +3737,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
             </div>
           )}
           {!client.product?.techStack && (
-            <div className="card" style={{ textAlign: 'center', padding: '1.5rem' }}>
+            <div className="card span-6" style={{ textAlign: 'center', padding: '1.5rem' }}>
               <div style={{ color: 'var(--mist-3)', marginBottom: '0.75rem', fontSize: '13px' }}>
                 No product details yet
               </div>
@@ -3699,7 +3749,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
 
           {/* Platforms */}
           {client.product?.platforms?.length > 0 && (
-            <div className="card">
+            <div className="card span-6">
               <div className="card-label">Online Platforms</div>
               {client.product.platforms.map((p, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
@@ -3721,7 +3771,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
 
           {/* Monthly Costs */}
           {client.product?.monthlyCosts?.length > 0 && (
-            <div className="card">
+            <div className="card span-6">
               <div className="card-label">Monthly Running Costs</div>
               {client.product.monthlyCosts.map((c, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between',
@@ -3745,7 +3795,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
 
           {/* Credentials */}
           {client.product?.credentials?.length > 0 && (
-            <div className="card">
+            <div className="card span-6">
               <div className="card-label">Credentials & Access</div>
               {client.product.credentials.map((c, i) => (
                 <div key={i} style={{ background: 'rgba(0,24,36,0.7)',
@@ -3761,7 +3811,7 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
           )}
 
           {/* Payment History */}
-          <div className="card">
+          <div className="card span-6">
             <div className="card-label">Payment History</div>
             {clientFin.length === 0
               ? <div style={{ fontSize: '13px', color: 'var(--mist-3)', fontStyle: 'italic' }}>No payments logged.</div>
@@ -3820,6 +3870,91 @@ function ClientManagement({ leads, finances, onUpdateLead, onAdd, todayStr }) {
           onClose={() => setEditProduct(false)} />
       )}
     </div>
+  );
+}
+
+// ─── PRODUCT MODAL ────────────────────────────────────────────────────────────
+// Edits client.product: { type, techStack:{...}, platforms[], monthlyCosts[], credentials[] }
+const TECH_FIELDS = [
+  ['framework','Framework','React, Next.js…'], ['hosting','Hosting','Render, Vercel…'],
+  ['renderService','Render Service',''],       ['database','Database','Firebase, Supabase…'],
+  ['domain','Domain','example.com'],           ['domainCost','Domain Cost','US$12/yr'],
+  ['apis','APIs Used','WhatsApp, Stripe…'],    ['liveUrl','Live URL','https://'],
+  ['repoUrl','GitHub Repo','https://github.com/…'], ['adminUrl','Admin Panel','https://'],
+];
+
+function ProductModal({ client, onSave, onClose }) {
+  const p = client.product || {};
+  const [type, setType]           = useState(p.type || '');
+  const [tech, setTech]           = useState({ ...(p.techStack || {}) });
+  const [platforms, setPlatforms] = useState(p.platforms || []);
+  const [costs, setCosts]         = useState(p.monthlyCosts || []);
+  const [creds, setCreds]         = useState(p.credentials || []);
+
+  const editRow = (setter, i, k, v) => setter(rows => rows.map((r, j) => j === i ? { ...r, [k]: v } : r));
+  const dropRow = (setter, i) => setter(rows => rows.filter((_, j) => j !== i));
+  const rowBox  = { display:'flex', gap:'0.5rem', alignItems:'flex-start', marginBottom:'0.5rem' };
+
+  const save = () => {
+    const clean = rows => rows.filter(r => Object.values(r).some(v => String(v ?? '').trim()));
+    onSave({
+      type: type.trim(),
+      techStack: Object.fromEntries(Object.entries(tech).filter(([, v]) => String(v ?? '').trim())),
+      platforms: clean(platforms),
+      monthlyCosts: clean(costs).map(c => ({ ...c, amount: Number(c.amount) || 0 })),
+      credentials: clean(creds),
+    });
+  };
+
+  return (
+    <Modal title={`Product — ${client.businessName}`} onClose={onClose}>
+      <Field label="Product Type"><input className="input" value={type} onChange={e=>setType(e.target.value)} placeholder="Website, ordering app, WhatsApp bot…"/></Field>
+
+      <div className="card-label" style={{margin:'0.25rem 0 0'}}>Tech Stack & Links</div>
+      <div className="grid-2">
+        {TECH_FIELDS.map(([k, label, ph]) => (
+          <Field key={k} label={label}>
+            <input className="input" value={tech[k] || ''} onChange={e=>setTech(t=>({...t,[k]:e.target.value}))} placeholder={ph}/>
+          </Field>
+        ))}
+      </div>
+
+      <div className="card-label" style={{margin:'0.25rem 0 0'}}>Online Platforms</div>
+      {platforms.map((r, i) => (
+        <div key={i} style={rowBox}>
+          <input className="input" style={{flex:1}} value={r.name||''} onChange={e=>editRow(setPlatforms,i,'name',e.target.value)} placeholder="Name"/>
+          <input className="input" style={{flex:1}} value={r.role||''} onChange={e=>editRow(setPlatforms,i,'role',e.target.value)} placeholder="Role"/>
+          <input className="input" style={{flex:1.4}} value={r.url||''} onChange={e=>editRow(setPlatforms,i,'url',e.target.value)} placeholder="https://"/>
+          <button className="icon-btn danger-btn" style={{marginTop:6}} onClick={()=>dropRow(setPlatforms,i)}><Icons.close size={12}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setPlatforms(r=>[...r,{name:'',role:'',url:''}])}><Icons.plus size={13}/> Add Platform</button>
+
+      <div className="card-label" style={{margin:'0.25rem 0 0'}}>Monthly Running Costs</div>
+      {costs.map((r, i) => (
+        <div key={i} style={rowBox}>
+          <input className="input" style={{flex:2}} value={r.name||''} onChange={e=>editRow(setCosts,i,'name',e.target.value)} placeholder="Service"/>
+          <input className="input" style={{flex:1}} type="number" value={r.amount??''} onChange={e=>editRow(setCosts,i,'amount',e.target.value)} placeholder="Amount"/>
+          <select className="input" style={{flex:0.8}} value={r.currency||'JMD'} onChange={e=>editRow(setCosts,i,'currency',e.target.value)}>
+            <option value="JMD">JMD</option><option value="USD">USD</option>
+          </select>
+          <button className="icon-btn danger-btn" style={{marginTop:6}} onClick={()=>dropRow(setCosts,i)}><Icons.close size={12}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCosts(r=>[...r,{name:'',amount:'',currency:'JMD'}])}><Icons.plus size={13}/> Add Cost</button>
+
+      <div className="card-label" style={{margin:'0.25rem 0 0'}}>Credentials & Access</div>
+      {creds.map((r, i) => (
+        <div key={i} style={rowBox}>
+          <input className="input" style={{flex:1}} value={r.service||''} onChange={e=>editRow(setCreds,i,'service',e.target.value)} placeholder="Service"/>
+          <textarea className="input" style={{flex:2,minHeight:44,resize:'vertical'}} value={r.details||''} onChange={e=>editRow(setCreds,i,'details',e.target.value)} placeholder="Login / notes"/>
+          <button className="icon-btn danger-btn" style={{marginTop:6}} onClick={()=>dropRow(setCreds,i)}><Icons.close size={12}/></button>
+        </div>
+      ))}
+      <button className="btn-ghost" style={{justifyContent:'center'}} onClick={()=>setCreds(r=>[...r,{service:'',details:''}])}><Icons.plus size={13}/> Add Credential</button>
+
+      <ModalFoot onClose={onClose} onSave={save}/>
+    </Modal>
   );
 }
 
@@ -3940,7 +4075,7 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
         </div>
         {messages.length===0&&(<div className="chat-quick">{quickPrompts.map((p,i)=>(<button key={i} className="quick-btn" onClick={()=>send(p)}>{p}</button>))}</div>)}
         <div className="chat-input-row">
-          <input className="chat-input" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&send()} placeholder="Ask JAXON..." disabled={loading}/>
+          <textarea className="chat-input" rows={1} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}} placeholder="Ask JAXON… (Shift+Enter for a new line)" disabled={loading}/>
           <button className="chat-send" onClick={()=>send()} disabled={loading||!input.trim()}><Icons.send size={14}/></button>
         </div>
       </div>
@@ -3952,7 +4087,11 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
 
 
 function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
-  const nextNum=()=>{const yr=new Date().getFullYear();const ex=finances.filter(f=>f.invoiceNumber).map(f=>parseInt((f.invoiceNumber?.split('-').pop())||0));const mx=ex.length>0?Math.max(...ex):0;return `JC-${yr}-${String(mx+1).padStart(3,'0')}`;};
+  // Invoices aren't stored in Firestore, so remember the last number issued
+  // on this machine; otherwise every invoice would be JC-YYYY-001
+  const INV_KEY='jc_last_invoice_number';
+  const lastIssued=()=>{try{return localStorage.getItem(INV_KEY)||'';}catch{return '';}};
+  const nextNum=()=>{const yr=new Date().getFullYear();const ex=[...finances.map(f=>f.invoiceNumber),lastIssued()].filter(n=>n&&n.startsWith(`JC-${yr}-`)).map(n=>parseInt(n.split('-').pop())||0);const mx=ex.length>0?Math.max(...ex):0;return `JC-${yr}-${String(mx+1).padStart(3,'0')}`;};
   const [inv,setInv]=useState({
     invoiceNumber: nextNum(),
     date: localDateStr(),
@@ -4007,7 +4146,7 @@ function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
   const cur         = (inv.currency === 'USD') ? 'USD $' : 'J$';
   const fmt         = n => `${cur}${Number(n).toLocaleString()}`;
 
-  const generatePDF = () => {
+  const generatePDF = async () => {
     const statusColor = {
       'PAYMENT DUE':'#1a7f5a','DEPOSIT DUE':'#b45309','BALANCE DUE':'#7c3aed',
       'PAID IN FULL':'#166534','QUOTE':'#1e40af','RETAINER DUE':'#0f766e',
@@ -4116,13 +4255,23 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
 
 </body></html>`;
 
+    const baseName = `${inv.invoiceNumber}-${(inv.clientName||'invoice').replace(/\s+/g,'-')}`;
+    const markIssued = () => { try { localStorage.setItem(INV_KEY, inv.invoiceNumber); } catch {} };
+
+    // Desktop app: render a real PDF and ask where to save it
+    if (DESKTOP?.saveInvoicePdf) {
+      const r = await DESKTOP.saveInvoicePdf(html, `${baseName}.pdf`);
+      if (r?.ok) markIssued();
+      return;
+    }
     const blob = new Blob([html], {type:'text/html'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${inv.invoiceNumber}-${(inv.clientName||'invoice').replace(/\s+/g,'-')}.html`;
+    a.download = `${baseName}.html`;
     a.click();
     URL.revokeObjectURL(url);
+    markIssued();
   };
   return(
     <Modal title="Invoice Generator" onClose={onClose}>
@@ -4144,7 +4293,7 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
       </div>
       <div style={{background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
       <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
-      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 Download Invoice</button>
+      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 {DESKTOP ? 'Save Invoice PDF' : 'Download Invoice'}</button>
       <ModalFoot onClose={onClose}/>
       </>
     </Modal>
