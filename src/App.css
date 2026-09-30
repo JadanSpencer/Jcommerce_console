@@ -141,7 +141,7 @@
 
 /* ─── RESET ───────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { height: 100%; overflow-x: hidden; -webkit-tap-highlight-color: transparent; }
+html { height: 100%; overflow-x: clip; -webkit-tap-highlight-color: transparent; }
 
 body {
   font-family: var(--fs);
@@ -152,7 +152,7 @@ body {
   overscroll-behavior: none;
   line-height: 1.55;
   min-height: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 #root { min-height: 100vh; display: flex; flex-direction: column; }
@@ -225,7 +225,7 @@ input::placeholder, textarea::placeholder {
   margin: 0 auto; min-height: 100vh;
   display: flex; flex-direction: column;
   background: var(--abyss-900);
-  position: relative; overflow-x: hidden;
+  position: relative; overflow-x: clip;
 }
 
 @media (min-width: 640px) {
@@ -435,7 +435,7 @@ input::placeholder, textarea::placeholder {
 .nav-pip  { display: none; }
 
 /* ─── SECTION ─────────────────────────────────────────────────────── */
-.section { display: flex; flex-direction: column; gap: 1rem; width: 100%; overflow-x: hidden; }
+.section { display: flex; flex-direction: column; gap: 1rem; width: 100%; overflow-x: clip; }
 
 /* ─── FADE IN ─────────────────────────────────────────────────────── */
 .fade-in { animation: riseUp 0.4s cubic-bezier(0.22,1,0.36,1) both; }
