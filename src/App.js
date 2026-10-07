@@ -209,7 +209,8 @@ function getLast20Weeks(count = 20) {
   return weeks;
 }
 
-function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = []) {
+const XP_PER_MOVE = 10;
+function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = []) {
   let xp = 0;
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
   habits.forEach(h => {
@@ -240,6 +241,8 @@ function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers
   xp += new Set(ventureChecks.map(c => c.date)).size * 10;
   // +5 per syllabus topic that is backed by focus time on that course
   xp += studyXP(courses, timers, todayStr);
+  // +10 per venture move finished
+  xp += ventureItems.filter(i => i.kind === 'move' && i.done).length * XP_PER_MOVE;
   xp += journal.length * 15;
   xp += focusXP(timers, todayStr);
   return Math.max(0, xp);
@@ -336,7 +339,7 @@ function urlBase64ToUint8Array(base64String) {
 const DESKTOP = typeof window !== 'undefined' ? window.desktop : undefined;
 
 // Charts get more vertical room on wide (desktop) layouts
-const CHART_H = h => (window.innerWidth >= 1024 ? Math.round(h * 1.6) : h);
+const CHART_H = h => (window.innerWidth >= 760 ? Math.round(h * 1.6) : h);
 
 function useNotifications() {
   const [permission, setPermission] = useState(window.Notification?.permission || 'default');
@@ -1118,6 +1121,15 @@ function App() {
   const [tab, setTab] = useState('dashboard');
   // Each section wears its own colours
   const theme = useMemo(() => applyTheme(tab), [tab]);
+  // Sidebar: can be minimised to icons (⌘B). It minimises itself when the
+  // window gets narrow, so the content keeps its room.
+  const [winW, setWinW] = useState(window.innerWidth);
+  const [navPref, setNavPref] = useState(() => { try { return localStorage.getItem('jc_nav_min') === '1'; } catch { return false; } });
+  useEffect(() => { const f = () => setWinW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []);
+  const navForced = winW >= 760 && winW < 1100;
+  const navMin = winW >= 760 && (navPref || navForced);
+  const toggleNav = () => setNavPref(v => { try { localStorage.setItem('jc_nav_min', v ? '0' : '1'); } catch {} return !v; });
+  useEffect(() => { document.documentElement.classList.toggle('nav-min', navMin); }, [navMin]);
   const [leads, setLeads]       = useState([]);
   const [habits, setHabits]     = useState([]);
   const [schedule, setSchedule] = useState([]);
@@ -1438,7 +1450,7 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses);
+  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems);
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -1502,6 +1514,7 @@ function App() {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       const n = Number(e.key);
       if (e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(o => !o); return; }
+      if (e.key.toLowerCase() === 'b') { e.preventDefault(); toggleNav(); return; }
       const idx = e.key === '0' ? 9 : n - 1;
       if (e.key >= '0' && e.key <= '9' && navItems[idx]) { e.preventDefault(); setTab(navItems[idx].id); }
     };
@@ -1645,8 +1658,15 @@ function App() {
             {i < 10 && <span className="nav-key">⌘{(i+1)%10}</span>}
           </button>
         ))}
-        <div className="nav-foot">
-          <div className="nav-foot-lv">Level {level}</div>
+        {!navForced && (
+          <button className="nav-toggle" onClick={toggleNav} title={navMin ? 'Show the sidebar (⌘B)' : 'Minimise the sidebar (⌘B)'}>
+            <span className="nav-icon"><Icon d={navMin ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'}/></span>
+            <span className="nav-lbl">Minimise</span>
+            <span className="nav-key">⌘B</span>
+          </button>
+        )}
+        <div className="nav-foot" title={`Level ${level} · ${xpInLevel} / 500 XP`}>
+          <div className="nav-foot-lv">{navMin ? `L${level}` : `Level ${level}`}</div>
           <div className="xp-track"><div className="xp-fill" style={{width:`${progress*100}%`}}/></div>
           <div className="nav-foot-xp">{xpInLevel} / 500 XP</div>
         </div>
@@ -1930,7 +1950,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
     : dangerCount ? 'Handle the red items first. Everything else can wait.'
     : moves.length ? 'On track. Keep the streak going.' : 'All clear. Use the time to find new clients.';
 
-  const weekCount = window.innerWidth >= 1024 ? 26 : 16;
+  const weekCount = window.innerWidth >= 760 ? 26 : 16;
   const weeks = getLast20Weeks(weekCount);
 
   return (
@@ -3732,7 +3752,7 @@ function layoutDay(blocks) {
 function Schedule({schedule,onAdd,onUpdate,onDelete}) {
   const { confirm, ConfirmUI } = useConfirm();
   const todayStr = localDateStr();
-  const [view, setView]     = useState(window.innerWidth >= 1024 ? 'week' : 'day');
+  const [view, setView]     = useState(window.innerWidth >= 760 ? 'week' : 'day');
   const [monday, setMonday] = useState(mondayOf(todayStr));
   const [sel, setSel]       = useState(todayStr);
   const [form, setForm]     = useState(null);
@@ -5894,7 +5914,8 @@ function ventureHealth(v, d, { services, items, todayStr }) {
 
   let today = null;
   const hasOrders = !!money?.ok && money.orders.length + money.payments.length > 0;
-  if (hasOrders) {
+  // Before launch, whatever is in the database is test data: no alarms from it.
+  if (hasOrders && v.stage === 'Live') {
     today = ventureStats(money, parseLocal(todayStr).getTime());
     const stuck = money.payments.filter(p => p.status === 'pending' && now - p.createdAt > 20 * 60000 && now - p.createdAt < 3 * 86400000);
     if (stuck.length) add('warn', `${stuck.length} card payment${s1(stuck.length)} started in the last 3 days never completed (${J(stuck.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}). Abandoned, or a webhook problem?`);
@@ -5909,7 +5930,7 @@ function ventureHealth(v, d, { services, items, todayStr }) {
   } else if (money && !money.ok) add('danger', `Couldn't read live data: ${money.error}`);
 
   // The plan and the bills
-  const moves = items.filter(i => i.kind === 'move' && !i.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  const moves = items.filter(i => i.kind === 'move' && !i.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999') || byCreated(a, b));
   const overdue = moves.filter(m => m.due && m.due < todayStr);
   if (overdue.length) add('danger', `${overdue.length} move${s1(overdue.length)} past ${overdue.length === 1 ? 'its' : 'their'} date: ${overdue.slice(0, 3).map(m => m.title).join(', ')}${overdue.length > 3 ? '…' : ''}.`);
   moves.filter(m => m.due === todayStr).forEach(m => add('warn', `Due today: ${m.title}.`));
@@ -5920,7 +5941,7 @@ function ventureHealth(v, d, { services, items, todayStr }) {
   });
   if (!moves.length && v.stage !== 'Paused') add('warn', 'No next move written down. A venture with no next step is standing still.');
 
-  if (!findings.length) add('ok', hasOrders ? 'Money, keys, code and plan all look clean.' : 'Nothing needs you right now.');
+  if (!findings.length) add('ok', today ? 'Money, keys, code and plan all look clean.' : 'Nothing needs you right now.');
   const order = { danger: 0, warn: 1, ok: 2 };
   findings.sort((a, b) => order[a.lv] - order[b.lv]);
   const issues = findings.filter(f => f.lv !== 'ok');
@@ -6004,7 +6025,7 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
   const totalIssues = list.reduce((s, v) => s + health[v.id].issues.length, 0);
   const totalMonthly = list.reduce((s, v) => s + health[v.id].monthly, 0);
   const cutToday = list.reduce((s, v) => s + (health[v.id].today?.platform || 0), 0);
-  const anyOrders = list.some(v => health[v.id].hasOrders);
+  const anyOrders = list.some(v => health[v.id].today);
   const unchecked = list.filter(v => v.stage !== 'Paused' && !checkedToday(v));
   const across = list.flatMap(v => health[v.id].issues.map(f => ({ ...f, v }))).sort((a, b) => (a.lv === 'danger' ? 0 : 1) - (b.lv === 'danger' ? 0 : 1));
   const horizon = addDays(todayStr, 14);
@@ -6117,11 +6138,13 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
   };
   const openDoc = async file => { const r = await api.doc(v.dir, file); setDoc({ file, text: r.ok ? r.text : r.error }); };
 
-  const { findings, today, hasOrders, moves, monthly } = h;
+  const { findings, hasOrders, moves, monthly } = h;
+  const live = !!h.today;
+  const today = hasOrders ? ventureStats(money, parseLocal(todayStr).getTime()) : null;
   const now = Date.now();
   const win = hasOrders ? ventureStats(money, now - range * 86400000) : null;
   const streak = (() => { const days = new Set(checks.map(c => c.date)); let n = 0, day = days.has(todayStr) ? todayStr : addDays(todayStr, -1); while (days.has(day)) { n++; day = addDays(day, -1); } return n; })();
-  const markChecked = () => onSaveCheck({ date: todayStr, issues: h.issues.length, orders: today?.placed ?? null, platform: today?.platform ?? null });
+  const markChecked = () => onSaveCheck({ date: todayStr, issues: h.issues.length, orders: live ? today.placed : null, platform: live ? today.platform : null });
 
   const chart = hasOrders ? Array.from({ length: 14 }, (_, i) => {
     const day = addDays(todayStr, i - 13);
@@ -6161,6 +6184,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
           <div className="tk-title">{m.title}</div>
           {(m.note || m.sentOn === todayStr) && <div className="tk-note">{m.sentOn === todayStr ? 'In today\'s tasks' : ''}{m.note && m.sentOn === todayStr ? ' · ' : ''}{m.note}</div>}
         </div>
+        {m.done && <span className="tk-xp">+{XP_PER_MOVE}</span>}
         {!m.done && n !== null && <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n < 0 ? `${-n}d late` : n === 0 ? 'today' : n === 1 ? 'tomorrow' : `${n} days`}</span>}
         {!m.done && m.sentOn !== todayStr && <button className="btn-ghost tk-carry" onClick={() => toTasks(m)}>Do today</button>}
         <button className="icon-btn" onClick={() => setItemForm({ ...m })}><Icons.edit size={12}/></button>
@@ -6188,7 +6212,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
 
       {view === 'overview' && (<>
         <div className="grid-2">
-          {hasOrders ? (<>
+          {live ? (<>
             <div className="fin-tile"><span>Orders today</span><b>{today.placed}</b><span className="fin-delta">{today.delivered} delivered · {today.active} live</span></div>
             <div className="fin-tile"><span>Your cut today</span><b className="good">{J(today.platform)}</b><span className="fin-delta">of {J(today.fees)} in fees</span></div>
             <div className="fin-tile"><span>Card payments today</span><b>{J(today.cardPaid.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}</b><span className="fin-delta">{today.cardPaid.length} paid · {today.cardPending.length} pending</span></div>
@@ -6267,7 +6291,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
             <div className="card-label" style={{ margin: '1rem 0 0.4rem' }}>Done · {doneMoves.length}</div>
             {doneMoves.slice(0, 8).map(moveRow)}
           </>)}
-          <div className="goal-hint" style={{ marginTop: '0.75rem' }}>"Do today" copies a move into today's Tasks, where it earns XP like any other task. Tick it here when the move itself is finished.</div>
+          <div className="goal-hint" style={{ marginTop: '0.75rem' }}>Finishing a move is worth +{XP_PER_MOVE} XP. "Do today" also copies it into today's Tasks, so it counts toward your five.</div>
         </div>
         <div className="card span-5">
           <div className="card-label">Log · decisions and what happened</div>
@@ -6284,7 +6308,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
 
       {view === 'money' && hasOrders && (<>
           <div className="row-between">
-            <span className="fin-delta">Read-only, straight from {v.name}'s database · {ago(money.fetchedAt)}</span>
+            <span className="fin-delta">{live ? `Read-only, straight from ${v.name}'s database` : <b className="warn">Test data · {v.name} is not live yet, so none of this counts</b>} · {ago(money.fetchedAt)}</span>
             <div className="seg">{[[1,'Today'],[7,'7 days'],[30,'30 days']].map(([n, l]) => <button key={n} className={range === n ? 'on' : ''} onClick={() => setRange(n)}>{l}</button>)}</div>
           </div>
           {(() => { const s = range === 1 ? today : win; return (<>
@@ -6506,7 +6530,7 @@ function VentureModal({ data, todayStr, onPick, onSave, onDelete, onClose }) {
   const save = () => { if (!f.name.trim()) return; const { createdAt, ...rest } = f; onSave({ ...rest, name: f.name.trim(), tagline: (f.tagline || '').trim() }); };
   return (
     <Modal title={data.id ? `Edit ${data.name}` : 'New Venture'} onClose={onClose}>
-      <Field label="Name"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Dorm Dash"/></Field>
+      <Field label="Name"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Runner"/></Field>
       <Field label="What it is, in one line"><input className="input" value={f.tagline} onChange={e => s('tagline', e.target.value)} placeholder="Campus food delivery for UWI Mona"/></Field>
       <div className="grid-2">
         <Field label="Stage"><select className="input" value={f.stage} onChange={e => s('stage', e.target.value)}>{VENTURE_STAGES.map(x => <option key={x}>{x}</option>)}</select></Field>

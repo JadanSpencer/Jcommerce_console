@@ -1,9 +1,10 @@
 // electron/main.js
 // Desktop shell for JCommerce Console. Serves the CRA build over app:// so the
 // absolute paths CRA emits (/static/..., /service-worker.js) resolve correctly.
-const { app, BrowserWindow, Menu, protocol, net, shell, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, shell, ipcMain, dialog, screen } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
+const fsSync = require('fs');
 const { pathToFileURL } = require('url');
 const venture = require('./venture');
 
@@ -17,13 +18,27 @@ protocol.registerSchemesAsPrivileged([
 
 let win;
 
+// Last window size and position, kept between launches
+const BOUNDS_FILE = () => path.join(app.getPath('userData'), 'window.json');
+function loadBounds() {
+  try {
+    const saved = JSON.parse(fsSync.readFileSync(BOUNDS_FILE(), 'utf8'));
+    const b = saved.bounds;
+    const onScreen = screen.getAllDisplays().some(d => b.x < d.bounds.x + d.bounds.width - 80 && b.x + b.width > d.bounds.x + 80 && b.y >= d.bounds.y && b.y < d.bounds.y + d.bounds.height - 80);
+    return onScreen && b.width >= 380 && b.height >= 560 ? saved : null;
+  } catch { return null; }
+}
+
 function createWindow() {
+  // A normal, resizable window. It reopens at the size and place you left it;
+  // the first time it fills the screen (not macOS fullscreen: green button or ⌃⌘F for that).
+  const saved = loadBounds();
   win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1100,
-    minHeight: 700,
-    fullscreen: true,
+    ...(saved?.bounds || {}),
+    minWidth: 380,
+    minHeight: 560,
     backgroundColor: '#0c0506',
     title: 'JCommerce Console',
     show: false,
@@ -34,7 +49,10 @@ function createWindow() {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  win.once('ready-to-show', () => { if (!saved || saved.maximized) win.maximize(); win.show(); });
+  win.on('close', () => {
+    try { fsSync.writeFileSync(BOUNDS_FILE(), JSON.stringify({ bounds: win.getNormalBounds(), maximized: win.isMaximized() })); } catch {}
+  });
 
   // External links (target="_blank", wa.me, client websites) open in the default browser
   win.webContents.setWindowOpenHandler(({ url }) => {

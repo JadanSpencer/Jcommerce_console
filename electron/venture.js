@@ -1,5 +1,5 @@
 // electron/venture.js
-// Read-only window into another project folder (a "venture", e.g. Dorm Dash).
+// Read-only window into another project folder (a "venture", e.g. Runner).
 // Everything here looks; nothing changes the other project:
 //   - repo + package overview, docs, and an inventory of secrets (masked)
 //   - a fixed list of safe check commands (no deploys), output streamed back

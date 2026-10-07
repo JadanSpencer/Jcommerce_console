@@ -1698,7 +1698,7 @@ select.input {
 .pl-done { font-size: 12px; padding: 0.45rem 0.9rem; }
 
 /* ─── NARROW SCREENS (phone / small window) ───────────────────────── */
-@media (max-width: 1023px) {
+@media (max-width: 759px) {
   .sched-title { font-size: 17px; }
   .fin-budgets { overflow-x: auto; }
   .fin-budget { min-width: 560px; }
@@ -1740,7 +1740,7 @@ select.input {
    The bottom tab bar becomes a left sidebar, content fills the screen
    on a 12-column grid, and bottom sheets become centred dialogs.
 ═══════════════════════════════════════════════════════════════════ */
-@media (min-width: 1024px) {
+@media (min-width: 760px) {
   :root { --sw: 240px; --bh: 0px; --p: 1.5rem; --nh: 72px; }
 
   body { font-size: 15px; }
@@ -1945,7 +1945,7 @@ select.input {
 }
 
 /* ─── 1024–1279px: stack the side-by-side cards ───────────────────── */
-@media (min-width: 1024px) and (max-width: 1279px) {
+@media (min-width: 760px) and (max-width: 1279px) {
   :root { --sw: 212px; }
   .section > :is(.span-3, .span-4, .span-5, .span-6, .span-7, .span-8, .span-9) { grid-column: 1 / -1; }
   .section > .cl-list { grid-column: span 5; }
@@ -2015,7 +2015,7 @@ select.input {
 }
 @keyframes toastIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
 @keyframes toastOut { to { opacity: 0; transform: translateY(6px); } }
-@media (min-width: 1024px) { .toasts { left: calc(50% + var(--sw) / 2); } }
+@media (min-width: 760px) { .toasts { left: calc(50% + var(--sw) / 2); } }
 
 .xp-pops { position: fixed; top: calc(var(--nh) - 6px); right: 2.5rem; z-index: 460; pointer-events: none; }
 .xp-pop {
@@ -2107,7 +2107,7 @@ select.input {
 /* Brand mark and sidebar, gilded */
 .brand-gem { border-color: var(--gold-400); background: linear-gradient(155deg, rgba(var(--p4),0.25), rgba(40,10,14,0.6)); box-shadow: 0 0 14px rgba(212,166,74,0.18), inset 0 0 10px rgba(var(--p4),0.25); }
 .brand-gem::before { color: var(--gold-200); }
-@media (min-width: 1024px) {
+@media (min-width: 760px) {
   .bottom-nav { background: linear-gradient(180deg, rgba(var(--b1),0.97), rgba(var(--b0),0.98)); }
   .nav-btn.active { color: var(--gold-200); background: linear-gradient(90deg, rgba(var(--p4),0.24), rgba(var(--p4),0.03)); box-shadow: inset 2px 0 0 var(--gold-400); }
   .nav-btn.active .nav-icon { filter: drop-shadow(0 0 6px rgba(var(--p3),0.75)); }
@@ -2268,4 +2268,41 @@ body { transition: background-color 0.6s ease; }
   .vt-add { grid-template-columns: 1fr auto; }
   .vt-add input[type="date"] { grid-column: 1 / -1; grid-row: 2; }
   .vt-grid { grid-template-columns: 1fr; }
+}
+
+/* ─── Sidebar minimised to icons (⌘B, or by itself on a narrow window) ─ */
+.nav-toggle { display: none; }
+@media (min-width: 760px) {
+  :root.nav-min { --sw: 68px; }
+  .bottom-nav { transition: width 0.22s ease, padding 0.22s ease; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .bottom-nav::-webkit-scrollbar { display: none; }
+  .app { transition: padding-left 0.22s ease; }
+  .nav-toggle {
+    display: flex; align-items: center; gap: 0.85rem; flex: none; cursor: pointer;
+    margin-top: auto; padding: 0.6rem 0.8rem; border: none; background: none;
+    border-radius: var(--r2); color: var(--ink-3); font: inherit; transition: color 0.15s, background 0.15s;
+  }
+  .nav-toggle:hover { background: rgba(255,255,255,0.035); color: var(--ink-0); }
+  .nav-toggle .nav-key { opacity: 1; }
+  .nav-toggle + .nav-foot { margin-top: 0.5rem; }
+  .nav-min .bottom-nav { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .nav-min .nav-brand { justify-content: center; padding-left: 0; padding-right: 0; }
+  .nav-min .nav-brand > div:not(.brand-gem), .nav-min .nav-lbl, .nav-min .nav-key, .nav-min .nav-foot-xp { display: none; }
+  .nav-min .nav-btn, .nav-min .nav-toggle { justify-content: center; padding-left: 0; padding-right: 0; gap: 0; }
+  .nav-min .nav-foot { padding-left: 0; padding-right: 0; text-align: center; }
+  .nav-min .nav-foot-lv { font-size: 13px; }
+  .nav-min .nav-foot .xp-track { margin-top: 6px; }
+}
+/* Short windows: tighten the sidebar so every section stays reachable */
+@media (min-width: 760px) and (max-height: 760px) {
+  .nav-btn { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+  .nav-brand { padding-bottom: 0.8rem; margin-bottom: 0.4rem; }
+}
+/* Narrow windows: the tab bar scrolls sideways instead of squeezing 12 tabs */
+@media (max-width: 759px) {
+  .bottom-nav { overflow-x: auto; justify-content: flex-start; scrollbar-width: none; }
+  .bottom-nav::-webkit-scrollbar { display: none; }
+  .bottom-nav .nav-btn { flex: 0 0 auto; min-width: 58px; }
+  .vt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .vt-tabs button { flex: none; }
 }
