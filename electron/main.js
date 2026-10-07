@@ -23,7 +23,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     fullscreen: true,
-    backgroundColor: '#060b17',
+    backgroundColor: '#0c0506',
     title: 'JCommerce Console',
     show: false,
     webPreferences: {

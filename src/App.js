@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import kakuzuArt from './assets/ghosts/kakuzu.webp';
 import uchihaArt from './assets/ghosts/uchiha.webp';
+import akazaArt from './assets/ghosts/akaza.webp';
 
 // ─── CUSTOM SVG ICONS (no lucide — proper hand-crafted icons) ─────────────────
 const Icon = ({ d, size = 20, stroke = 'currentColor', fill = 'none', strokeWidth = 1.6 }) => (
@@ -56,6 +57,7 @@ const Icons = {
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
   logout:    () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
+  search:    () => <Icon d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35" />,
   hourglass: () => <Icon d="M6 2h12M6 22h12M17 2v3.5a5 5 0 0 1-2.2 4.1L12 12l-2.8-2.4A5 5 0 0 1 7 5.5V2M7 22v-3.5a5 5 0 0 1 2.2-4.1L12 12l2.8 2.4a5 5 0 0 1 2.2 4.1V22" />,
   filter:    () => <Icon d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
   alert:     () => <Icon d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0zM12 9v4M12 17h.01" />,
@@ -64,16 +66,16 @@ const Icons = {
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const LEAD_STATUSES = ['New','Contacted','Demo Sent','Negotiating','Paid','Flaked','Lost'];
 const STATUS_COLOR = {
-  New:'#3a4860', Contacted:'#00d4ff', 'Demo Sent':'#f0c060',
-  Negotiating:'#e8a030', Paid:'#1adb8a', Flaked:'#ff6040', Lost:'#ff6040'
+  New:'#3a4860', Contacted:'#e63946', 'Demo Sent':'#f0c060',
+  Negotiating:'#e8a030', Paid:'#1adb8a', Flaked:'#ff5a36', Lost:'#ff5a36'
 };
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const EXPENSE_CATS = ['Hosting','AI API','Tools','Transport','Food','Education','Other'];
 const INCOME_CATS = ['Setup Fee','First Deposit','Second Deposit','Monthly Retainer','Completion Fee','Freelance','Other'];
 const GOAL_CATS = ['Revenue','Clients','Skills','Health','Personal'];
 const BLOCK_COLORS = {
-  Work:'#00d4ff', Coding:'#f0c060', Outreach:'#1adb8a',
-  University:'#7b6cf5', Rest:'#1e2a3f', Personal:'#ff8040', Other:'#ff6040'
+  Work:'#e63946', Coding:'#f0c060', Outreach:'#1adb8a',
+  University:'#7b6cf5', Rest:'#1e2a3f', Personal:'#ff8040', Other:'#ff5a36'
 };
 const PAYMENT_STAGES = ['First Deposit','Second Deposit','Completion Fee','Monthly Retainer'];
 
@@ -124,11 +126,11 @@ const EMOTION_SVG = {
 };
 
 const EMOTION_LEVELS = [
-  { svgKey:'thriving',   label:'Thriving',   color:'#00d4ff', bg:'rgba(0,212,255,0.07)',   desc:'Ahead of target — keep going' },
-  { svgKey:'good',       label:'Good',        color:'#40e8ff', bg:'rgba(64,232,255,0.07)',  desc:'On track' },
-  { svgKey:'watchout',   label:'Watch Out',   color:'#f0c060', bg:'rgba(240,192,96,0.07)',  desc:'Needs attention' },
-  { svgKey:'struggling', label:'Struggling',  color:'#ff8040', bg:'rgba(255,128,64,0.08)',  desc:'Pull up your socks' },
-  { svgKey:'danger',     label:'Danger',      color:'#ff3030', bg:'rgba(255,48,48,0.08)',   desc:'Critical — act now' },
+  { svgKey:'thriving',   label:'Thriving',   color:'#f2ddab', bg:'rgba(242,221,171,0.07)', desc:'Ahead of target — keep going' },
+  { svgKey:'good',       label:'Good',        color:'#e6c47c', bg:'rgba(230,196,124,0.07)', desc:'On track' },
+  { svgKey:'watchout',   label:'Watch Out',   color:'#ff9a4a', bg:'rgba(255,154,74,0.07)',  desc:'Needs attention' },
+  { svgKey:'struggling', label:'Struggling',  color:'#ff5a36', bg:'rgba(255,90,54,0.08)',   desc:'Pull up your socks' },
+  { svgKey:'danger',     label:'Danger',      color:'#ff2d3d', bg:'rgba(255,45,61,0.08)',   desc:'Critical — act now' },
 ];
 
 // ─── LOCAL DATE (not UTC) ─────────────────────────────────────────────────────
@@ -421,7 +423,7 @@ function SystemAlertBanner({ health }) {
   if (health.anthropic === 'out_of_credits' && !dismissed.has('anthropic_credits')) {
     alerts.push({
       id: 'anthropic_credits',
-      color: '#ff6040',
+      color: '#ff5a36',
       icon: '⚠',
       title: 'Anthropic out of credits',
       body: 'JAXON and the chat will not work until you top up at console.anthropic.com → Billing',
@@ -496,7 +498,7 @@ function LevelUpSplash({ level, onDismiss }) {
     `}</style>
     <div onClick={onDismiss} style={{
       position:'fixed',inset:0,zIndex:9998,
-      background:'rgba(0,5,15,0.92)',
+      background:'rgba(6,2,3,0.92)',
       display:'flex',flexDirection:'column',
       alignItems:'center',justifyContent:'center',
       backdropFilter:'blur(12px)',
@@ -506,7 +508,7 @@ function LevelUpSplash({ level, onDismiss }) {
       {/* Ring burst */}
       <div style={{
         position:'absolute',width:260,height:260,
-        border:'2px solid rgba(0,212,255,0.3)',
+        border:'2px solid rgba(230,57,70,0.3)',
         borderRadius:'50%',
         animation:'ringBurst 1.2s ease-out forwards',
       }}/>
@@ -518,10 +520,10 @@ function LevelUpSplash({ level, onDismiss }) {
       }}/>
       <div style={{
         width:96,height:96,borderRadius:'50%',
-        background:'linear-gradient(135deg,rgba(0,95,138,0.6),rgba(0,212,255,0.15))',
+        background:'linear-gradient(135deg,rgba(122,19,30,0.6),rgba(230,57,70,0.15))',
         border:'2px solid var(--bolt)',
         display:'flex',alignItems:'center',justifyContent:'center',
-        boxShadow:'0 0 40px rgba(0,212,255,0.5),0 0 80px rgba(0,212,255,0.2)',
+        boxShadow:'0 0 40px rgba(230,57,70,0.5),0 0 80px rgba(230,57,70,0.2)',
         marginBottom:'1.5rem',
         fontSize:'36px',fontWeight:900,fontFamily:'var(--fe)',
         color:'var(--bolt)',
@@ -536,7 +538,7 @@ function LevelUpSplash({ level, onDismiss }) {
       <div style={{
         fontFamily:'var(--fe)',fontSize:'36px',fontWeight:700,
         color:'var(--mist-0)',letterSpacing:'-0.02em',lineHeight:1,
-        textShadow:'0 0 30px rgba(0,212,255,0.4)',marginBottom:'0.5rem',
+        textShadow:'0 0 30px rgba(230,57,70,0.4)',marginBottom:'0.5rem',
       }}>Level {level}</div>
       <div style={{
         fontFamily:'var(--fm)',fontSize:'12px',color:'var(--mist-2)',
@@ -612,7 +614,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
       value: `J$${rev7.toLocaleString()}`,
       sub: 'last 7 days',
       delta: revDelta,
-      color: rev7 >= rev14 ? 'var(--bolt)' : '#ff6040',
+      color: rev7 >= rev14 ? 'var(--bolt)' : '#ff5a36',
     },
     {
       label: 'Lead Velocity',
@@ -626,15 +628,15 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
       value: `${consistency}%`,
       sub: '7-day streak rate',
       delta: null,
-      color: consistency >= 70 ? 'var(--bolt)' : consistency >= 40 ? 'var(--horizon)' : '#ff6040',
+      color: consistency >= 70 ? 'var(--bolt)' : consistency >= 40 ? 'var(--horizon)' : '#ff5a36',
     },
   ];
 
   return (
     <div className="span-7" style={{
       position: 'relative', overflow: 'hidden',
-      background: 'linear-gradient(160deg, rgba(0,24,36,0.95) 0%, rgba(0,61,92,0.2) 100%)',
-      border: '1px solid rgba(0,212,255,0.12)',
+      background: 'linear-gradient(160deg, rgba(20,8,9,0.95) 0%, rgba(58,18,22,0.2) 100%)',
+      border: '1px solid rgba(230,57,70,0.12)',
       borderRadius: 14, padding: '1.125rem',
     }}>
       {/* Top lightning line */}
@@ -650,7 +652,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
         {metrics.map(m => (
           <div key={m.label} style={{
             background:'rgba(0,0,0,0.35)',
-            border:'1px solid rgba(0,212,255,0.07)',
+            border:'1px solid rgba(230,57,70,0.07)',
             borderRadius:10, padding:'0.75rem 0.625rem',
             position:'relative',overflow:'hidden',
           }}>
@@ -663,9 +665,9 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
               <div style={{
                 position:'absolute',top:'0.5rem',right:'0.5rem',
                 fontFamily:'var(--fm)',fontSize:'8px',fontWeight:600,
-                color: m.delta >= 0 ? 'var(--bolt)' : '#ff6040',
-                background: m.delta >= 0 ? 'rgba(0,212,255,0.1)' : 'rgba(255,96,64,0.1)',
-                border: `1px solid ${m.delta>=0?'rgba(0,212,255,0.25)':'rgba(255,96,64,0.25)'}`,
+                color: m.delta >= 0 ? 'var(--bolt)' : '#ff5a36',
+                background: m.delta >= 0 ? 'rgba(230,57,70,0.1)' : 'rgba(255,90,54,0.1)',
+                border: `1px solid ${m.delta>=0?'rgba(230,57,70,0.25)':'rgba(255,90,54,0.25)'}`,
                 borderRadius:99, padding:'1px 5px',
               }}>
                 {m.delta >= 0 ? '+' : ''}{m.delta}%
@@ -705,13 +707,13 @@ function AlertBanner({ alerts }) {
   const typeColor = {
     MORNING_WAKE_UP: 'var(--bolt)',
     RESEARCH_FINDING: 'var(--bolt-lt)',
-    OVERDUE: '#ff6040',
+    OVERDUE: '#ff5a36',
     DUE_SOON: 'var(--horizon)',
   }[cur.type] || 'var(--bolt)';
 
   return (
     <div className="alert-toast" style={{
-      background: 'rgba(4,8,15,0.98)',
+      background: 'rgba(9,4,5,0.98)',
       border: `1px solid ${typeColor}33`,
       borderTop: `2px solid ${typeColor}`,
       borderRadius: 12,
@@ -816,7 +818,7 @@ function Particles() {
     const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; init(); };
 
     // Bioluminescent palette — teal current, a rarer violet glow, a trace of amber
-    const GLOWS = ['#0e6058', '#1cab97', '#3fd1b8', '#7bf4e0', '#6d7ef2', '#d3a855'];
+    const GLOWS = ['#7a131e', '#c8202f', '#e63946', '#ff7a3d', '#d3a855', '#f2ddab'];
 
     let motes = [];   // slow-drifting bioluminescent plankton
     let bubbles = []; // quietly rising bubbles
@@ -836,7 +838,7 @@ function Particles() {
           y: rand(0, canvas.height),
           r: rand(0.6, 2.2),
           drift: rand(-0.12, 0.12),
-          rise: rand(0.03, 0.1),
+          rise: rand(0.12, 0.42),
           blink: rand(0, Math.PI * 2),
           blinkSpeed: rand(0.008, 0.02),
           shade: GLOWS[Math.floor(Math.random() * GLOWS.length)],
@@ -889,9 +891,9 @@ function Particles() {
         if (c.y - c.width > canvas.height) c.y = -c.width;
         const sway = Math.sin(c.phase) * 30;
         const grd = ctx.createLinearGradient(0, c.y - c.width, 0, c.y + c.width);
-        grd.addColorStop(0, 'rgba(28,171,151,0)');
-        grd.addColorStop(0.5, hexToRgba('#1cab97', c.alpha));
-        grd.addColorStop(1, 'rgba(28,171,151,0)');
+        grd.addColorStop(0, 'rgba(200,32,47,0)');
+        grd.addColorStop(0.5, hexToRgba('#d3a855', c.alpha * 0.7));
+        grd.addColorStop(1, 'rgba(200,32,47,0)');
         ctx.save();
         ctx.translate(sway, 0);
         ctx.fillStyle = grd;
@@ -908,10 +910,10 @@ function Particles() {
         if (m.x < -10) m.x = canvas.width + 10;
         if (m.x > canvas.width + 10) m.x = -10;
 
-        const alpha = 0.25 + Math.sin(m.blink) * 0.2;
+        const alpha = Math.max(0, 0.3 + Math.sin(m.blink) * 0.22 + (Math.random() < 0.02 ? 0.3 : 0)); // flicker
         const glow = m.r * 5;
         const grd = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, glow);
-        grd.addColorStop(0, hexToRgba('#eefffb', alpha));
+        grd.addColorStop(0, hexToRgba('#fff1d6', alpha));
         grd.addColorStop(0.4, hexToRgba(m.shade, alpha * 0.65));
         grd.addColorStop(1, hexToRgba(m.shade, 0));
         ctx.beginPath();
@@ -928,14 +930,14 @@ function Particles() {
 
         ctx.beginPath();
         ctx.arc(bx, b.y, b.r, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba('#7bf4e0', b.alpha);
+        ctx.strokeStyle = hexToRgba('#e6c47c', b.alpha);
         ctx.lineWidth = 0.8;
         ctx.stroke();
 
         // faint inner highlight
         ctx.beginPath();
         ctx.arc(bx - b.r * 0.3, b.y - b.r * 0.3, b.r * 0.3, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba('#eefffb', b.alpha * 0.8);
+        ctx.fillStyle = hexToRgba('#fff4ef', b.alpha * 0.8);
         ctx.fill();
 
         if (b.y < -10) bubbles[idx] = spawnBubble(false);
@@ -1055,6 +1057,9 @@ function App() {
   const [journal, setJournal]   = useState([]);
   const [budgets, setBudgets]   = useState([]);
   const [timers, setTimers]     = useState([]);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [toasts, setToasts]     = useState([]);
+  const [xpPops, setXpPops]     = useState([]);
   const [alerts, setAlerts]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
@@ -1378,11 +1383,40 @@ function App() {
   ];
   const currentNav = navItems.find(n => n.id === tab) || navItems[0];
 
+  const toast = (text, tone = 'ok') => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t.slice(-2), { id, text, tone }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2800);
+  };
+  // Every XP change floats up from the XP chip, so wins and losses are felt
+  const prevXp = useRef(null);
+  useEffect(() => {
+    if (loading) { prevXp.current = xp; return; }
+    const before = prevXp.current;
+    prevXp.current = xp;
+    if (before === null || before === xp) return;
+    const id = Date.now() + Math.random();
+    setXpPops(p => [...p.slice(-3), { id, d: xp - before }]);
+    setTimeout(() => setXpPops(p => p.filter(x => x.id !== id)), 1900);
+  }, [xp, loading]);
+  const paletteRun = {
+    nav: id => { setTab(id); },
+    toast,
+    addFinance: d => { add('finances', d); return `Logged ${d.type === 'income' ? '+' : '−'}${J(d.amount)} · ${d.category}`; },
+    addTodo: title => { add('todos', { title, note: '', doneOn: {}, addedDate: todayStr }); return `Task added: ${title}`; },
+    addLead: name => { add('leads', { businessName: name, status: 'New', priority: 'medium', value: '', nextAction: 'First contact', nextActionDate: todayStr, source: 'Manual' }); return `Lead added: ${name}`; },
+    toggleHabit: h => { toggleHabit(h, todayStr); return `${h.completions?.[todayStr] ? 'Unticked' : 'Ticked'}: ${h.name}`; },
+    toggleTodo: t => { toggleTodo(t); return `${t.doneOn?.[todayStr] ? 'Reopened' : 'Done'}: ${t.title}`; },
+    startTimer: t => { startTimer(t); return `Started: ${t.title}`; },
+    pauseTimer: t => { pauseTimer(t); return `Paused: ${t.title}`; },
+  };
+
   // ⌘1 – ⌘9 jump between sections
   useEffect(() => {
     const onKey = e => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       const n = Number(e.key);
+      if (e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen(o => !o); return; }
       const idx = e.key === '0' ? 9 : n - 1;
       if (e.key >= '0' && e.key <= '9' && navItems[idx]) { e.preventDefault(); setTab(navItems[idx].id); }
     };
@@ -1422,33 +1456,36 @@ function App() {
           <span>{currentNav.label}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(0,212,255,0.2)',color:'var(--bolt)'}}>📄</button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(230,57,70,0.2)',color:'var(--bolt)'}}>📄</button>
           <button
             onClick={requestPermission}
             title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
             style={{
               position:'relative',background:'none',
-              border:`1px solid ${notifSubbed?'rgba(0,212,255,0.35)':'rgba(255,255,255,0.08)'}`,
+              border:`1px solid ${notifSubbed?'rgba(230,57,70,0.35)':'rgba(255,255,255,0.08)'}`,
               cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',
               width:32,height:32,
               color:notifSubbed?'var(--bolt)':notifPerm==='granted'?'var(--bolt-3)':'var(--mist-3)',
               borderRadius:'var(--r1)',
-              boxShadow:notifSubbed?'0 0 8px rgba(0,212,255,0.3)':'none',
+              boxShadow:notifSubbed?'0 0 8px rgba(230,57,70,0.3)':'none',
               flexShrink:0,
             }}>
             <Icons.bell size={15}/>
             {alerts.length > 0 && (
               <span style={{
                 position:'absolute',top:-3,right:-3,
-                background:'#ff6040',color:'white',
+                background:'#ff5a36',color:'white',
                 borderRadius:'50%',width:15,height:15,
                 fontSize:'8px',fontWeight:700,lineHeight:1,
                 display:'flex',alignItems:'center',justifyContent:'center',
                 border:'1.5px solid var(--lake-1)',
-                boxShadow:'0 0 6px rgba(255,96,64,0.7)',
+                boxShadow:'0 0 6px rgba(255,90,54,0.7)',
               }}>{Math.min(9,alerts.length)}</span>
             )}
+          </button>
+          <button className="cmdk-btn" onClick={() => setPaletteOpen(true)} title="Command bar (⌘K)">
+            <Icons.search size={14}/><span>Log or find anything</span><kbd>⌘K</kbd>
           </button>
           <FocusPill timers={timers} onOpen={() => setTab('focus')}/>
           {todayBriefing && (
@@ -1543,6 +1580,17 @@ function App() {
 
       {/* Shortcut: invoice icon in header */}
 
+      {paletteOpen && (
+        <CommandPalette sections={navItems} leads={leads} habits={habits} timers={timers} todos={todos} todayStr={todayStr}
+          run={paletteRun} onClose={() => setPaletteOpen(false)}/>
+      )}
+      <div className="toasts" aria-live="polite">
+        {toasts.map(t => <div key={t.id} className={`toast ${t.tone}`}>{t.text}</div>)}
+      </div>
+      <div className="xp-pops" aria-hidden="true">
+        {xpPops.map(p => <span key={p.id} className={`xp-pop ${p.d > 0 ? 'up' : 'down'}`}>{p.d > 0 ? '+' : ''}{p.d} XP</span>)}
+      </div>
+
       {/* JAXON Floating Chat */}
       <JaxonFloat leads={leads} habits={habits} finances={finances} goals={goals} todos={todos} schedule={schedule} totalIncome={totalIncome} totalExpenses={totalExpenses} profit={profit} xp={xp} level={level} todayStr={todayStr} paidLeads={paidLeads} openLeads={openLeads}/>
     </div>
@@ -1616,7 +1664,7 @@ function TideLog({ journal, todayStr, onSave }) {
       {!editing && today && (
         <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
           <TideRow tag="BIZ"  color="var(--bolt)"    text={today.biz}/>
-          <TideRow tag="LIFE" color="var(--lume-400, #8b98f5)" text={today.life}/>
+          <TideRow tag="LIFE" color="var(--lume-400, #ff9a4a)" text={today.life}/>
           <TideRow tag="NEXT" color="var(--horizon)" text={today.next}/>
           <button className="btn-ghost" style={{ alignSelf:'flex-start', marginTop:'0.125rem', fontSize:'11px', padding:'0.35rem 0.75rem' }} onClick={startEdit}>
             Edit today's entry
@@ -1648,7 +1696,7 @@ function TideLog({ journal, todayStr, onSave }) {
               </div>
               <div style={{ display:'flex', flexDirection:'column', gap:'0.3rem' }}>
                 {j.biz  && <TideRow tag="BIZ"  color="var(--bolt)"    text={j.biz}  compact/>}
-                {j.life && <TideRow tag="LIFE" color="var(--lume-400, #8b98f5)" text={j.life} compact/>}
+                {j.life && <TideRow tag="LIFE" color="var(--lume-400, #ff9a4a)" text={j.life} compact/>}
                 {j.next && <TideRow tag="NEXT" color="var(--horizon)" text={j.next} compact/>}
               </div>
             </div>
@@ -1877,7 +1925,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
             const done = !!t.doneOn?.[todayStr];
             return (
               <div key={t.id} className={`home-check ${done ? 'done' : ''}`}>
-                <button className="check-btn" onClick={() => onToggleTodo(t)} style={{ color: done ? '#8b98f5' : 'var(--mist-3)' }}>{done ? <Icons.check size={20}/> : <Icons.circle size={20}/>}</button>
+                <button className="check-btn" onClick={() => onToggleTodo(t)} style={{ color: done ? '#ff9a4a' : 'var(--mist-3)' }}>{done ? <Icons.check size={20}/> : <Icons.circle size={20}/>}</button>
                 <span className="home-check-title">{t.starred ? '★ ' : ''}{t.title}</span>
               </div>
             );
@@ -1896,7 +1944,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
               const pct = timerElapsed(t, Date.now()) / timerTargetSec(t);
               const d = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
               return (
-                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#8b98f5' }}>
+                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#ff9a4a' }}>
                   <div className="row-between"><span>{t.runningSince ? '● ' : ''}{t.title}</span><span className={d <= 1 ? 'bad' : ''}>{d === 0 ? 'today' : d === 1 ? 'tomorrow' : `${d}d`}</span></div>
                   <div className="dash-focus-bar"><div style={{ width: `${pct * 100}%` }}/></div>
                 </div>
@@ -2220,7 +2268,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                 onClick={()=>setDialIdx(i=>Math.max(0,i-1))} disabled={dialIdx===0}>
                 ← Prev
               </button>
-              <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff6040'}}
+              <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff5a36'}}
                 onClick={()=>setDialIdx(i=>Math.min(dialQueue.length-1,i+1))}>
                 Skip →
               </button>
@@ -2256,7 +2304,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         <span style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
                         <span className="badge" style={{background:`${STATUS_COLOR[l.status]}18`,color:STATUS_COLOR[l.status],border:`1px solid ${STATUS_COLOR[l.status]}28`}}>{l.status}</span>
                         {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
-                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff6040',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
+                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff5a36',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
                         {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
                         {!['Paid','Flaked','Lost'].includes(l.status) && l.nextActionDate && l.nextActionDate <= todayStr && <span className="badge badge-danger">Follow up{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' today'}</span>}
                         {!['Paid','Flaked','Lost'].includes(l.status) && !l.nextActionDate && <span className="badge" style={{background:'rgba(230,196,124,0.1)',color:'var(--gold-300)',border:'1px solid rgba(230,196,124,0.3)'}}>No next step</span>}
@@ -2356,7 +2404,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                           }}>
                           📄 Invoice
                         </button>
-                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(0,212,255,0.25)',color:'var(--bolt)',background:'rgba(0,212,255,0.05)'}}
+                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(230,57,70,0.25)',color:'var(--bolt)',background:'rgba(230,57,70,0.05)'}}
                           onClick={async ()=>{
                             const prompt = `LEAD ANALYSIS REQUEST\n\nBusiness: ${l.businessName}\nStatus: ${l.status}\nLocation: ${l.location||'Jamaica'}\nValue: J$${Number(l.value||0).toLocaleString()}\nPhone: ${l.phone||'Not found'}\nNotes: ${l.notes||'None'}\nLast action: ${l.nextAction||'None'} on ${l.nextActionDate||'N/A'}\nOutreach draft: ${l.outreachDraft||'None'}\n\nAs my business AI, analyse this lead and tell me:\n1. What is the best next move right now?\n2. What should I say to them?\n3. What is the probability of closing?\n4. Any red flags?`;
                             window._openJaxonChat && window._openJaxonChat(prompt);
@@ -2478,7 +2526,7 @@ function PaymentModal({lead,existing,onLog,onUpdateEntry,onClose}) {
           <div className="card-label" style={{margin:0,marginBottom:'0.5rem'}}>Existing Payments</div>
           {existing.map(p=>(
             <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'0.25rem 0',
-              fontSize:'12px',borderBottom:'1px solid rgba(0,212,255,0.06)'}}>
+              fontSize:'12px',borderBottom:'1px solid rgba(230,57,70,0.06)'}}>
               <span style={{fontFamily:'var(--fm)',color:'var(--mist-2)'}}>{p.paymentStage}</span>
               <span style={{fontFamily:'var(--fm)',color:'#1adb8a',fontWeight:600}}>J${Number(p.amount).toLocaleString()}</span>
             </div>
@@ -2719,7 +2767,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           const done = !!t.doneOn?.[todayStr];
           return (
             <div key={t.id} className={`tk-row ${done ? 'done' : ''}`}>
-              <button className="check-btn" onClick={() => onToggle(t)} style={{ color: done ? '#8b98f5' : 'var(--mist-3)' }}>
+              <button className="check-btn" onClick={() => onToggle(t)} style={{ color: done ? '#ff9a4a' : 'var(--mist-3)' }}>
                 {done ? <Icons.check size={22}/> : <Icons.circle size={22}/>}
               </button>
               <button className={`tk-star ${t.starred ? 'on' : ''}`} onClick={() => onUpdate(t.id, { starred: !t.starred })} title="Important">★</button>
@@ -2772,10 +2820,10 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 //   - a single session is capped, so a timer left running can't fill itself
 //   - after the first few minutes a timer can't be deleted, only given up
 const FOCUS_CATS = [
-  { id:'Study', hex:'#8b98f5' },
-  { id:'Work',  hex:'#3fd1b8' },
-  { id:'Build', hex:'#e6c47c' },
-  { id:'Other', hex:'#e37c62' },
+  { id:'Study', hex:'#e6c47c' },
+  { id:'Work',  hex:'#e63946' },
+  { id:'Build', hex:'#ff9a4a' },
+  { id:'Other', hex:'#b89f8b' },
 ];
 const FOCUS_HEX = Object.fromEntries(FOCUS_CATS.map(c => [c.id, c.hex]));
 const SESSION_CAP_SEC = 3 * 3600;       // longest single sitting that counts
@@ -2835,7 +2883,7 @@ function Bottle({ id, pct, color, running, done, failed }) {
         </linearGradient>
       </defs>
       <g clipPath={`url(#bottle-${id})`}>
-        <rect x="0" y="0" width="120" height="200" fill="rgba(5,15,24,0.75)"/>
+        <rect x="0" y="0" width="120" height="200" fill="rgba(12,5,6,0.75)"/>
         <g className="liquid" style={{ transform: `translateY(${y}px)` }}>
           <path className="wave wave-back" d="M0 5 Q15 0 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={color} opacity="0.35"/>
           <path className="wave wave-front" d="M0 5 Q15 10 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={`url(#liq-${id})`}/>
@@ -2858,7 +2906,7 @@ function FocusPill({ timers, onOpen }) {
   if (!running) return null;
   const el = timerElapsed(running, Date.now()), target = timerTargetSec(running);
   return (
-    <button className="focus-pill" onClick={onOpen} style={{ '--liq': FOCUS_HEX[running.category] || '#8b98f5' }} title={`${running.title}: ${fmtHM(target - el)} to go`}>
+    <button className="focus-pill" onClick={onOpen} style={{ '--liq': FOCUS_HEX[running.category] || '#ff9a4a' }} title={`${running.title}: ${fmtHM(target - el)} to go`}>
       <span className="focus-pill-fill" style={{ width: `${(el / target) * 100}%` }}/>
       <span className="focus-pill-dot"/>{fmtDur(el)}<span className="focus-pill-title">{running.title}</span>
     </button>
@@ -2906,6 +2954,7 @@ function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }
 
   return (
     <div className="section focus">
+      <SectionGhost src={akazaArt}/>
       <div className="sched-bar">
         <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Focus</div></div>
         <div className="seg">
@@ -2937,7 +2986,7 @@ function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }
         <div className="focus-grid">
           {shown.map(({ t, st }) => {
             const target = timerTargetSec(t), el = timerElapsed(t, now), left = target - el;
-            const color = FOCUS_HEX[t.category] || '#8b98f5';
+            const color = FOCUS_HEX[t.category] || '#ff9a4a';
             const daysLeft = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
             const perDay = st === 'active' ? left / Math.max(1, daysLeft + 1) : 0;
             const runningNow = !!t.runningSince && st === 'active';
@@ -3035,7 +3084,7 @@ function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
         </div>
         {!locked && <div className="sched-cals" style={{ marginTop: 8 }}>
           {presets.filter(([h, m]) => h * 60 + m >= minTarget).map(([h, m]) => (
-            <button key={`${h}${m}`} type="button" className={`sched-cal ${targetMinutes === h * 60 + m ? 'on' : ''}`} style={{ '--c': '#8b98f5' }} onClick={() => { setHours(h); setMins(m); }}>{h ? `${h}h` : `${m}m`}</button>
+            <button key={`${h}${m}`} type="button" className={`sched-cal ${targetMinutes === h * 60 + m ? 'on' : ''}`} style={{ '--c': '#ff9a4a' }} onClick={() => { setHours(h); setMins(m); }}>{h ? `${h}h` : `${m}m`}</button>
           ))}
         </div>}
       </Field>
@@ -3065,9 +3114,9 @@ function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
 // Three calendars (Work / School / Personal) that can be shown or hidden,
 // a week grid for the desktop and a day agenda for narrow screens.
 const SCHED_CALS = [
-  { id:'Work',     hex:'#3fd1b8' },
-  { id:'School',   hex:'#8b98f5' },
-  { id:'Personal', hex:'#e6c47c' },
+  { id:'Work',     hex:'#e63946' },
+  { id:'School',   hex:'#e6c47c' },
+  { id:'Personal', hex:'#ff9a4a' },
 ];
 const SCHED_HEX = Object.fromEntries(SCHED_CALS.map(c => [c.id, c.hex]));
 const HOUR_PX = 56;
@@ -3651,8 +3700,8 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
     if (await confirm({ message: `Delete "${form.description}" (${J(amountOf(form))})?`, label: 'Delete', danger: true })) { onDelete(form.id); setForm(null); }
   };
 
-  const tt = { background:'rgba(6,16,26,0.96)', border:'1px solid rgba(28,171,151,0.25)', borderRadius:'10px', color:'#c4d3e0', fontSize:'12px' };
-  const axis = { fill:'#59697a', fontSize:10 };
+  const tt = { background:'rgba(15,7,8,0.96)', border:'1px solid rgba(200,32,47,0.25)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
+  const axis = { fill:'#7f6758', fontSize:10 };
   const Delta = ({ v, good = 'up' }) => v === null ? <span className="fin-delta">new</span>
     : <span className={`fin-delta ${(v >= 0) === (good === 'up') ? 'good' : 'bad'}`}>{v >= 0 ? '▲' : '▼'} {Math.abs(v)}%</span>;
 
@@ -3749,17 +3798,17 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           <ResponsiveContainer width="100%" height={CHART_H(170)}>
             <ComposedChart data={paceData} margin={{ left:0, right:8, top:6, bottom:0 }}>
               <defs>
-                <linearGradient id="finAct" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.35}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient>
+                <linearGradient id="finAct" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f2ddab" stopOpacity={0.35}/><stop offset="95%" stopColor="#f2ddab" stopOpacity={0}/></linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
               <XAxis dataKey="day" tick={axis} interval={4}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)} labelFormatter={d => `${monthName(month, { month:'short' })} ${d}`}/>
               <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4" label={{ value:'Minimum', fill:'#d3a855', fontSize:10, position:'insideTopLeft' }}/>
               <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)"/>
               <Line type="linear" dataKey="pace" name="Required pace" stroke="rgba(211,168,85,0.45)" strokeWidth={1.5} dot={false}/>
-              <Area type="stepAfter" dataKey="actual" name="Actual" stroke="#3fd1b8" fill="url(#finAct)" strokeWidth={2} connectNulls={false}/>
-              <Line type="linear" dataKey="projected" name="Projected" stroke="#8b98f5" strokeDasharray="4 4" strokeWidth={2} dot={false}/>
+              <Area type="stepAfter" dataKey="actual" name="Actual" stroke="#e6c47c" fill="url(#finAct)" strokeWidth={2} connectNulls={false}/>
+              <Line type="linear" dataKey="projected" name="Projected" stroke="#ff9a4a" strokeDasharray="4 4" strokeWidth={2} dot={false}/>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -3798,16 +3847,16 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           </div>
           <ResponsiveContainer width="100%" height={CHART_H(150)}>
             <ComposedChart data={trend} margin={{ left:0, right:8, top:6, bottom:0 }} onClick={e => e?.activePayload?.[0] && setMonth(e.activePayload[0].payload.mk)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
               <XAxis dataKey="label" tick={axis}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
-              <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(28,171,151,0.06)' }}/>
+              <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(200,32,47,0.06)' }}/>
               <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4"/>
               <Bar dataKey="income" name="Income" maxBarSize={22} radius={[3,3,0,0]}>
-                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#7bf4e0' : 'rgba(63,209,184,0.55)'}/>)}
+                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#f2ddab' : 'rgba(212,166,74,0.6)'}/>)}
               </Bar>
               <Bar dataKey="expenses" name="Expenses" maxBarSize={22} radius={[3,3,0,0]}>
-                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#e37c62' : 'rgba(227,124,98,0.5)'}/>)}
+                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#ff6a45' : 'rgba(255,106,69,0.5)'}/>)}
               </Bar>
               <Line type="monotone" dataKey="net" name="Net" stroke="#e6c47c" strokeWidth={2} dot={{ r:2.5 }}/>
             </ComposedChart>
@@ -3866,14 +3915,14 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           </div>
           <ResponsiveContainer width="100%" height={CHART_H(190)}>
             <ComposedChart data={[{ label:'Now', expected: Math.round(cash), worst: Math.round(cash) }, ...forecast]} margin={{ left:0, right:8, top:6, bottom:0 }}>
-              <defs><linearGradient id="finExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#7bf4e0" stopOpacity={0.3}/><stop offset="95%" stopColor="#7bf4e0" stopOpacity={0}/></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(28,171,151,0.07)"/>
+              <defs><linearGradient id="finExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f2ddab" stopOpacity={0.3}/><stop offset="95%" stopColor="#f2ddab" stopOpacity={0}/></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
               <XAxis dataKey="label" tick={axis}/>
               <YAxis tick={axis} width={44} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)}/>
-              <ReferenceLine y={0} stroke="#e37c62" strokeDasharray="4 4"/>
-              <Area type="monotone" dataKey="expected" name="Expected" stroke="#3fd1b8" fill="url(#finExp)" strokeWidth={2}/>
-              <Line type="monotone" dataKey="worst" name={topRetainer ? `If ${topRetainer.l.businessName} leaves` : 'Worst case'} stroke="#e37c62" strokeDasharray="5 4" strokeWidth={2} dot={false}/>
+              <ReferenceLine y={0} stroke="#ff6a45" strokeDasharray="4 4"/>
+              <Area type="monotone" dataKey="expected" name="Expected" stroke="#e6c47c" fill="url(#finExp)" strokeWidth={2}/>
+              <Line type="monotone" dataKey="worst" name={topRetainer ? `If ${topRetainer.l.businessName} leaves` : 'Worst case'} stroke="#ff6a45" strokeDasharray="5 4" strokeWidth={2} dot={false}/>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -4055,7 +4104,7 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
       </Field>
       <Field label="Category">
         <div className="sched-cals">
-          {cats.map(c => <button key={c} type="button" className={`sched-cal ${category === c ? 'on' : ''}`} style={{ '--c': f.type === 'income' ? '#3fd1b8' : '#e37c62' }} onClick={() => s('category', c)}><span className="dot"/>{c}</button>)}
+          {cats.map(c => <button key={c} type="button" className={`sched-cal ${category === c ? 'on' : ''}`} style={{ '--c': f.type === 'income' ? '#e63946' : '#ff6a45' }} onClick={() => s('category', c)}><span className="dot"/>{c}</button>)}
         </div>
       </Field>
       <div className="grid-2">
@@ -4230,7 +4279,7 @@ function GoalModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
       <Field label="What does it measure?">
         <div className="sched-cals">
           {GOAL_KINDS.map(x => (
-            <button key={x.id} type="button" className={`sched-cal ${kind === x.id ? 'on' : ''}`} style={{ '--c': x.auto ? '#3fd1b8' : '#e6c47c' }}
+            <button key={x.id} type="button" className={`sched-cal ${kind === x.id ? 'on' : ''}`} style={{ '--c': x.auto ? '#e63946' : '#e6c47c' }}
               onClick={() => !editing && setKind(x.id)} disabled={editing && kind !== x.id}><span className="dot"/>{x.label}</button>
           ))}
         </div>
@@ -4259,9 +4308,9 @@ function GoalModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
 // A client is a lead with status "Paid". clientStatus (Active / Paused /
 // Churned) controls whether their retainer is counted and chased.
 const CLIENT_STATES = [
-  { id:'Active',  hex:'#3fd1b8' },
-  { id:'Paused',  hex:'#e6c47c' },
-  { id:'Churned', hex:'#e37c62' },
+  { id:'Active',  hex:'#e6c47c' },
+  { id:'Paused',  hex:'#b89f8b' },
+  { id:'Churned', hex:'#ff5a36' },
 ];
 const CLIENT_HEX = Object.fromEntries(CLIENT_STATES.map(c => [c.id, c.hex]));
 const clientState = l => l.clientStatus || 'Active';
@@ -4759,26 +4808,26 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
   const todayBriefing=briefings.find(b=>b.date===todayStr);
   const latestLog=logs[0];
   const AL={ADD_LEAD:'Add Lead',UPDATE_LEAD:'Update Lead',MARK_LEAD_DEAD:'Mark Dead',ADD_FINANCE_ENTRY:'Log Transaction',ADD_TODO:'Add Task'};
-  const PS={high:{color:'#ff6040',border:'rgba(255,96,64,0.3)',bg:'rgba(255,96,64,0.07)'},medium:{color:'#f0c060',border:'rgba(240,192,96,0.3)',bg:'rgba(240,192,96,0.07)'},low:{color:'#3a4860',border:'rgba(58,72,96,0.3)',bg:'rgba(58,72,96,0.07)'}};
+  const PS={high:{color:'#ff5a36',border:'rgba(255,90,54,0.3)',bg:'rgba(255,90,54,0.07)'},medium:{color:'#f0c060',border:'rgba(240,192,96,0.3)',bg:'rgba(240,192,96,0.07)'},low:{color:'#3a4860',border:'rgba(92,62,58,0.3)',bg:'rgba(92,62,58,0.07)'}};
   return (
     <div className="section">
-      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(0,24,36,0.95),rgba(0,61,92,0.3),rgba(26,16,53,0.4) 100%)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.5rem 1.25rem'}}>
-        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(0,136,200,0.5),rgba(0,212,255,0.8),rgba(64,232,255,0.4),transparent)'}}/>
+      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(20,8,9,0.95),rgba(58,18,22,0.3),rgba(40,10,20,0.4) 100%)',border:'1px solid rgba(230,57,70,0.15)',borderRadius:14,padding:'1.5rem 1.25rem'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(200,32,47,0.5),rgba(230,57,70,0.8),rgba(255,154,138,0.4),transparent)'}}/>
         <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>JAXON Intelligence</div>
-        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',color:'var(--bolt-white)',textShadow:'0 0 30px rgba(0,212,255,0.3)'}}>Second Brain</div>
+        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',color:'var(--bolt-white)',textShadow:'0 0 30px rgba(230,57,70,0.3)'}}>Second Brain</div>
         <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
-          {[{label:'Pending',value:pending.length,color:'var(--bolt)',glow:'rgba(0,212,255,0.5)'},{label:'Approved',value:approved.length,color:'var(--valley)',glow:'rgba(26,219,138,0.4)'},{label:'Executed',value:executed.length,color:'var(--steel)',glow:'rgba(68,136,204,0.4)'}].map(s=>(<div key={s.label}><div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,color:s.color,lineHeight:1,textShadow:`0 0 16px ${s.glow}`}}>{s.value}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginTop:2}}>{s.label}</div></div>))}
+          {[{label:'Pending',value:pending.length,color:'var(--bolt)',glow:'rgba(230,57,70,0.5)'},{label:'Approved',value:approved.length,color:'var(--valley)',glow:'rgba(26,219,138,0.4)'},{label:'Executed',value:executed.length,color:'var(--steel)',glow:'rgba(200,32,47,0.4)'}].map(s=>(<div key={s.label}><div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,color:s.color,lineHeight:1,textShadow:`0 0 16px ${s.glow}`}}>{s.value}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginTop:2}}>{s.label}</div></div>))}
         </div>
       </div>
-      {todayBriefing&&(<div className="fade-in" style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,rgba(0,95,138,0.12),rgba(0,24,36,0.8))',border:'1px solid rgba(0,170,238,0.2)',borderLeft:'3px solid var(--bolt)',borderRadius:10,padding:'1.125rem'}}><div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',boxShadow:'0 0 8px rgba(0,212,255,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/><span style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.25em',textTransform:'uppercase',color:'var(--bolt-lt)',opacity:0.8}}>Morning Briefing — {todayStr}</span></div><div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line',fontWeight:300}}>{todayBriefing.content}</div></div>)}
-      <div style={{display:'flex',gap:'2px',background:'rgba(0,24,36,0.6)',border:'1px solid rgba(0,212,255,0.08)',borderRadius:8,padding:3}}>
-        {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(0,136,200,0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(0,212,255,0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(0,212,255,0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
+      {todayBriefing&&(<div className="fade-in" style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,rgba(122,19,30,0.12),rgba(20,8,9,0.8))',border:'1px solid rgba(230,57,70,0.2)',borderLeft:'3px solid var(--bolt)',borderRadius:10,padding:'1.125rem'}}><div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',boxShadow:'0 0 8px rgba(230,57,70,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/><span style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.25em',textTransform:'uppercase',color:'var(--bolt-lt)',opacity:0.8}}>Morning Briefing — {todayStr}</span></div><div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line',fontWeight:300}}>{todayBriefing.content}</div></div>)}
+      <div style={{display:'flex',gap:'2px',background:'rgba(20,8,9,0.6)',border:'1px solid rgba(230,57,70,0.08)',borderRadius:8,padding:3}}>
+        {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(200,32,47,0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(230,57,70,0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(230,57,70,0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
       </div>
-      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(0,24,36,0.5)',border:'1px solid rgba(0,212,255,0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(0,212,255,0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
-        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(7,13,24,0.85)',border:'1px solid rgba(0,212,255,0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(0,95,138,0.1)',borderLeft:'2px solid rgba(0,136,200,0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(0,95,138,0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,96,64,0.2)',background:'rgba(255,96,64,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff6040'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
+      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(20,8,9,0.5)',border:'1px solid rgba(230,57,70,0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(230,57,70,0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
+        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(14,6,7,0.85)',border:'1px solid rgba(230,57,70,0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(122,19,30,0.1)',borderLeft:'2px solid rgba(200,32,47,0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(122,19,30,0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,90,54,0.2)',background:'rgba(255,90,54,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff5a36'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
       ))}
-      {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(0,95,138,0.07)',border:'1px solid rgba(0,136,200,0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
-      {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(0,24,36,0.7)',border:'1px solid rgba(0,136,200,0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(0,212,255,0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff6040',g:'rgba(255,96,64,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(0,212,255,0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
+      {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(122,19,30,0.07)',border:'1px solid rgba(200,32,47,0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
+      {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(20,8,9,0.7)',border:'1px solid rgba(200,32,47,0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(230,57,70,0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff5a36',g:'rgba(255,90,54,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(230,57,70,0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
       {tab==='research'&&<ResearchLauncher/>}
     </div>
   );
@@ -4800,9 +4849,9 @@ function ResearchLauncher() {
     }catch(e){console.error(e);}
     setLoading(false);
   };
-  if(launched)return(<div style={{textAlign:'center',padding:'1rem'}}><div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(0,212,255,0.6))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Research Active</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>JAXON hunting every hour for {hours}h</div></div>);
+  if(launched)return(<div style={{textAlign:'center',padding:'1rem'}}><div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(230,57,70,0.6))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Research Active</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>JAXON hunting every hour for {hours}h</div></div>);
   return(
-    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem',background:'linear-gradient(135deg,rgba(0,24,36,0.95),rgba(26,16,53,0.4))',border:'1px solid rgba(0,212,255,0.15)',borderRadius:14,padding:'1.125rem'}}>
+    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem',background:'linear-gradient(135deg,rgba(20,8,9,0.95),rgba(40,10,20,0.4))',border:'1px solid rgba(230,57,70,0.15)',borderRadius:14,padding:'1.125rem'}}>
       <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,color:'var(--mist-0)',marginBottom:'0.25rem'}}>Intelligence Hunter</div>
       <Field label="Research Topic"><input className="input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="e.g. WhatsApp Business adoption among Jamaican restaurants"/></Field>
       <Field label="Research Goal"><textarea className="input" style={{minHeight:'52px',resize:'vertical'}} value={goal} onChange={e=>setGoal(e.target.value)} placeholder="What specific intelligence do we need?"/></Field>
@@ -5083,12 +5132,141 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
         ))}
         <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={()=>setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}))}><Icons.plus size={13}/> Add Line</button>
       </div>
-      <div style={{background:'rgba(0,212,255,0.06)',border:'1px solid rgba(0,212,255,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
+      <div style={{background:'rgba(230,57,70,0.06)',border:'1px solid rgba(230,57,70,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
       <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
       <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 {DESKTOP ? 'Save Invoice PDF' : 'Download Invoice'}</button>
       <ModalFoot onClose={onClose}/>
       </>
     </Modal>
+  );
+}
+
+// ─── COMMAND BAR (⌘K) ─────────────────────────────────────────────────────────
+// Type what you did in plain words and it's logged; or jump anywhere.
+//   "spent 1500 on lunch"         → expense, category guessed
+//   "got 20000 from Kicks"        → income, linked to the client
+//   "task call Donna"             → task for today
+//   "did gym" / "habit gym"       → tick a habit
+//   "start exam prep"             → start a focus timer
+//   "lead Bob's Bakery"           → new lead with a first-contact step
+const EXPENSE_WORDS = {
+  Food: ['food','lunch','dinner','breakfast','groceries','grocery','snack','kfc','juici','patty','drink','coffee','chicken'],
+  Transport: ['taxi','bus','gas','fuel','transport','uber','route','fare','car'],
+  Hosting: ['hosting','render','domain','server','vercel','netlify'],
+  'AI API': ['claude','openai','api','anthropic','gpt','tokens'],
+  Tools: ['canva','figma','tool','tools','software','subscription','adobe','notion','app'],
+  Education: ['book','books','course','tuition','school','fees','udemy','exam'],
+};
+const parseAmount = text => {
+  const m = text.match(/(?:j?\$\s*)?(\d[\d,]*(?:\.\d+)?)\s*(k)?\b/i);
+  if (!m) return null;
+  const n = Number(m[1].replace(/,/g, '')) * (m[2] ? 1000 : 1);
+  return n > 0 ? { n, raw: m[0] } : null;
+};
+const tidy = s => { const t = s.replace(/\s+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : ''; };
+
+function CommandPalette({ sections, leads, habits, timers, todos, todayStr, run, onClose }) {
+  const [q, setQ] = useState('');
+  const [sel, setSel] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const text = q.trim(), lower = text.toLowerCase();
+  const results = [];
+  const add = (group, title, sub, act, icon = '›') => results.push({ group, title, sub, act, icon });
+  const findLead = () => leads.filter(l => l.businessName).sort((a, b) => b.businessName.length - a.businessName.length)
+    .find(l => lower.includes(l.businessName.toLowerCase()) || l.businessName.toLowerCase().split(/\s+/).some(w => w.length > 3 && lower.split(/\s+/).includes(w)));
+
+  if (text) {
+    // ── Natural-language actions ──
+    let m;
+    if ((m = lower.match(/^(spent|spend|paid|pay|bought|buy|expense|cost)\b/))) {
+      const amt = parseAmount(text);
+      if (amt) {
+        const words = lower.split(/[^a-z]+/);
+        const category = Object.keys(EXPENSE_WORDS).find(c => EXPENSE_WORDS[c].some(w => words.includes(w))) || 'Other';
+        const desc = tidy(text.slice(m[0].length).replace(amt.raw, '').replace(/\b(on|for|at|j\$)\b/gi, '')) || category;
+        add('Log', `Expense ${J(amt.n)} · ${category}`, desc, () => run.addFinance({ type: 'expense', amount: amt.n, category, description: desc, date: todayStr }), '−');
+      } else add('Log', 'How much?', 'e.g. "spent 1500 on lunch"', null, '?');
+    } else if ((m = lower.match(/^(earned|earn|got|received|income|sold|made)\b/))) {
+      const amt = parseAmount(text);
+      if (amt) {
+        const client = findLead();
+        const category = /retainer/.test(lower) ? 'Monthly Retainer' : /deposit/.test(lower) ? 'First Deposit' : /freelance/.test(lower) ? 'Freelance' : 'Other';
+        const desc = tidy(text.slice(m[0].length).replace(amt.raw, '').replace(/\b(from|for|j\$)\b/gi, '')) || (client ? `${client.businessName} payment` : 'Income');
+        add('Log', `Income ${J(amt.n)}${client ? ` · ${client.businessName}` : ''}`, `${category} · ${desc}`, () => run.addFinance({
+          type: 'income', amount: amt.n, category, description: desc, date: todayStr,
+          ...(client ? { pipelineLeadId: client.id, ...(PAYMENT_STAGES.includes(category) ? { paymentStage: category } : {}) } : {}),
+        }), '+');
+      } else add('Log', 'How much?', 'e.g. "got 20000 from Kicks"', null, '?');
+    } else if ((m = text.match(/^(task|todo|to do)\s+(.+)/i))) {
+      add('Do', `Add task: ${tidy(m[2])}`, 'For today', () => run.addTodo(tidy(m[2])), '✓');
+    } else if ((m = text.match(/^lead\s+(.+)/i))) {
+      add('Do', `New lead: ${tidy(m[1])}`, 'First contact today', () => run.addLead(tidy(m[1])), '+');
+    } else if ((m = lower.match(/^(did|habit|done)\s+(.+)/))) {
+      habits.filter(h => !h.archivedAt && h.name.toLowerCase().includes(m[2])).forEach(h =>
+        add('Do', `${h.completions?.[todayStr] ? 'Undo' : 'Tick'} habit: ${h.name}`, h.completions?.[todayStr] ? 'Done today' : '+10 XP', () => run.toggleHabit(h), '♥'));
+    } else if ((m = lower.match(/^(start|focus|study|pause|stop)\s+(.+)/))) {
+      timers.filter(t => timerStatus(t, todayStr) === 'active' && t.title.toLowerCase().includes(m[2])).forEach(t =>
+        add('Do', `${t.runningSince ? 'Pause' : 'Start'} timer: ${t.title}`, `${fmtHM(timerTargetSec(t) - timerElapsed(t, Date.now()))} to go`, () => (t.runningSince ? run.pauseTimer(t) : run.startTimer(t)), '⧗'));
+    }
+
+    // ── Search ──
+    sections.filter(s => s.label.toLowerCase().includes(lower)).forEach(s => add('Go to', s.label, 'Section', () => run.nav(s.id)));
+    leads.filter(l => (l.businessName || '').toLowerCase().includes(lower) || (l.contactName || '').toLowerCase().includes(lower)).slice(0, 5).forEach(l =>
+      add(l.status === 'Paid' ? 'Clients' : 'Leads', l.businessName, `${l.status}${l.contactName ? ` · ${l.contactName}` : ''}`, () => run.nav(l.status === 'Paid' ? 'clients' : 'pipeline')));
+    habits.filter(h => !h.archivedAt && h.name.toLowerCase().includes(lower) && !/^(did|habit|done)\s/.test(lower)).forEach(h =>
+      add('Habits', `${h.completions?.[todayStr] ? 'Undo' : 'Tick'}: ${h.name}`, h.completions?.[todayStr] ? 'Done today' : '+10 XP', () => run.toggleHabit(h), '♥'));
+    timers.filter(t => timerStatus(t, todayStr) === 'active' && t.title.toLowerCase().includes(lower) && !/^(start|focus|study|pause|stop)\s/.test(lower)).forEach(t =>
+      add('Focus', `${t.runningSince ? 'Pause' : 'Start'}: ${t.title}`, `${fmtHM(timerTargetSec(t) - timerElapsed(t, Date.now()))} to go`, () => (t.runningSince ? run.pauseTimer(t) : run.startTimer(t)), '⧗'));
+    todos.filter(t => t.addedDate === todayStr && t.title.toLowerCase().includes(lower) && !/^(task|todo)\s/.test(lower)).forEach(t =>
+      add('Tasks', `${t.doneOn?.[todayStr] ? 'Undo' : 'Done'}: ${t.title}`, t.doneOn?.[todayStr] ? 'Completed' : '+5 XP', () => run.toggleTodo(t), '✓'));
+    if (!results.some(r => r.act)) add('Tip', 'Try "spent 800 on lunch", "task call Donna", "did gym" or "start exam prep"', '', null, '?');
+  } else {
+    sections.forEach((s, i) => add('Go to', s.label, `⌘${(i + 1) % 10}`, () => run.nav(s.id)));
+  }
+
+  const actionable = results.filter(r => r.act);
+  const safeSel = Math.min(sel, Math.max(0, actionable.length - 1));
+  const exec = r => { if (!r?.act) return; const msg = r.act(); onClose(); if (typeof msg === 'string') run.toast(msg); };
+  const onKey = e => {
+    if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); setSel(i => Math.min(actionable.length - 1, i + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(i => Math.max(0, i - 1)); }
+    else if (e.key === 'Enter') { e.preventDefault(); exec(actionable[safeSel]); }
+  };
+
+  let lastGroup = null;
+  return (
+    <div className="cmdk-overlay" onMouseDown={onClose}>
+      <div className="cmdk" onMouseDown={e => e.stopPropagation()}>
+        <div className="cmdk-input-row">
+          <Icons.search size={16}/>
+          <input ref={inputRef} className="cmdk-input" value={q} onChange={e => { setQ(e.target.value); setSel(0); }} onKeyDown={onKey}
+            placeholder="Type what you did, or where to go…" spellCheck={false}/>
+          <kbd>esc</kbd>
+        </div>
+        <div className="cmdk-list">
+          {results.map((r, i) => {
+            const idx = actionable.indexOf(r);
+            const head = r.group !== lastGroup ? <div className="cmdk-group" key={`g${i}`}>{r.group}</div> : null;
+            lastGroup = r.group;
+            return (
+              <React.Fragment key={i}>
+                {head}
+                <button className={`cmdk-item ${idx === safeSel && r.act ? 'on' : ''} ${r.act ? '' : 'muted'}`} disabled={!r.act}
+                  onMouseEnter={() => idx >= 0 && setSel(idx)} onClick={() => exec(r)}>
+                  <span className="cmdk-icon">{r.icon}</span>
+                  <span className="cmdk-title">{r.title}</span>
+                  {r.sub && <span className="cmdk-sub">{r.sub}</span>}
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+        <div className="cmdk-foot"><span>↑↓ choose</span><span>↵ do it</span><span>⌘K open anywhere</span></div>
+      </div>
+    </div>
   );
 }
 
@@ -5114,7 +5292,7 @@ function useConfirm() {
       zIndex:9999,backdropFilter:'blur(4px)',padding:'1rem',
     }}>
       <div style={{
-        background:'rgba(8,15,26,0.98)',
+        background:'rgba(17,7,8,0.98)',
         border:'1px solid rgba(255,255,255,0.1)',
         borderRadius:14,padding:'1.5rem',maxWidth:320,width:'100%',
         boxShadow:'0 20px 60px rgba(0,0,0,0.8)',
@@ -5137,9 +5315,9 @@ function useConfirm() {
           <button onClick={handleYes} style={{
             flex:1,padding:'0.6rem',borderRadius:8,cursor:'pointer',
             fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700,
-            background: state.danger ? 'rgba(255,96,64,0.15)' : 'rgba(0,212,255,0.12)',
-            border: `1px solid ${state.danger ? 'rgba(255,96,64,0.4)' : 'rgba(0,212,255,0.35)'}`,
-            color: state.danger ? '#ff6040' : 'var(--bolt)',
+            background: state.danger ? 'rgba(255,90,54,0.15)' : 'rgba(230,57,70,0.12)',
+            border: `1px solid ${state.danger ? 'rgba(255,90,54,0.4)' : 'rgba(230,57,70,0.35)'}`,
+            color: state.danger ? '#ff5a36' : 'var(--bolt)',
           }}>{state.label}</button>
         </div>
       </div>
