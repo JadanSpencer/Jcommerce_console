@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktop', {
     overview: dir => ipcRenderer.invoke('venture:overview', dir),
     money: (project, days) => ipcRenderer.invoke('venture:money', { project, days }),
     pick: () => ipcRenderer.invoke('venture:pick'),
+    open: dir => ipcRenderer.invoke('venture:open', dir),
     doc: (dir, file) => ipcRenderer.invoke('venture:doc', { dir, file }),
     run: (dir, id) => ipcRenderer.invoke('venture:run', { dir, id }),
     stop: () => ipcRenderer.invoke('venture:stop'),

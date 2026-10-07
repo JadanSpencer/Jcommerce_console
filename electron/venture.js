@@ -5,7 +5,7 @@
 //   - a fixed list of safe check commands (no deploys), output streamed back
 //   - live money data from the venture's Firestore, read with this Mac's
 //     existing Firebase CLI login. No keys are stored by the console.
-const { ipcMain, dialog } = require('electron');
+const { ipcMain, dialog, shell } = require('electron');
 const { spawn, execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
@@ -167,7 +167,7 @@ async function money(project, days = 30) {
       return { ok: true, since, fetchedAt: Date.now(), ...(await load(token)) };
     }
   } catch (e) {
-    return { ok: false, error: e.message || 'Could not read Dorm Dash data' };
+    return { ok: false, error: e.message || 'Could not read the live data' };
   }
 }
 
@@ -179,6 +179,8 @@ function register(getWindow) {
     const r = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'], message: 'Choose the project folder' });
     return r.canceled ? null : r.filePaths[0];
   });
+  // Shows the folder in Finder. Opens nothing else.
+  ipcMain.handle('venture:open', async (_e, dir) => ((await isDir(dir)) ? !(await shell.openPath(dir)) : false));
   ipcMain.handle('venture:doc', async (_e, { dir, file }) => {
     if (!/^[\w .-]+\.md$/i.test(file || '')) return { ok: false, error: 'Not a document' };
     try { return { ok: true, text: (await fs.readFile(path.join(dir, path.basename(file)), 'utf8')).slice(0, 200000) }; }

@@ -1132,6 +1132,8 @@ function App() {
   const [timers, setTimers]     = useState([]);
   const [ventureServices_, setVentureServices] = useState([]);
   const [ventureChecks, setVentureChecks] = useState([]);
+  const [ventures, setVentures] = useState([]);
+  const [ventureItems, setVentureItems] = useState([]);
   const [courses, setCourses]   = useState([]);
   const [settings, setSettings] = useState([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1237,7 +1239,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['courses',setCourses],['settings',setSettings],
+      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['courses',setCourses],['settings',setSettings],
     ];
 
     // Track which collections have fired at least once
@@ -1599,7 +1601,7 @@ function App() {
       )}
 
       <main className="main">
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} ventureChecked={ventureChecks.some(c=>c.date===todayStr)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
@@ -1611,10 +1613,20 @@ function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
-        {tab==='ventures' && <Ventures services={ventureServices_} checks={ventureChecks} todayStr={todayStr}
-          onSaveService={d => { const { id, createdAt, ...data } = d; const existing = id ? { id } : ventureServices_.find(x => x.serviceId === d.serviceId); existing ? update('venture_services', existing.id, data) : add('venture_services', data); }}
+        {tab==='ventures' && <Ventures ventures={ventures} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
+          onSaveVenture={d => { const { id, ...data } = d; id ? update('ventures', id, data) : add('ventures', data); }}
+          onDeleteVenture={v => {
+            const firstId = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
+            ventureItems.filter(i => (i.ventureId || firstId) === v.id).forEach(i => remove('venture_items', i.id));
+            ventureServices_.filter(x => (x.ventureId || firstId) === v.id).forEach(x => remove('venture_services', x.id));
+            remove('ventures', v.id);
+          }}
+          onSaveService={(d, mine) => { const { id, createdAt, ...data } = d; const existing = id ? { id } : mine.find(x => x.serviceId === d.serviceId); existing ? update('venture_services', existing.id, data) : add('venture_services', data); }}
           onDeleteService={id => remove('venture_services', id)}
-          onSaveCheck={d => { if (!ventureChecks.some(c => c.date === d.date)) add('venture_checks', d); }}/>}
+          onSaveCheck={d => { if (!ventureChecks.some(c => c.date === d.date && c.ventureId === d.ventureId)) add('venture_checks', d); }}
+          onSaveItem={d => { const { id, createdAt, ...data } = d; id ? update('venture_items', id, data) : add('venture_items', data); }}
+          onDeleteItem={id => remove('venture_items', id)}
+          onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={remove}/>}
       </main>
 
@@ -1815,7 +1827,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, ventureChecked, todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -1908,7 +1920,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   todos.filter(t => t.addedDate > todayStr && t.addedDate <= addDays(todayStr, 3) && !taskDone(t))
     .sort((a, b) => a.addedDate.localeCompare(b.addedDate)).slice(0, 3)
     .forEach(t => push(t.addedDate === addDays(todayStr, 1) ? 'danger' : 'warn', `${t.title} is due ${t.addedDate === addDays(todayStr, 1) ? 'tomorrow' : fmtDate(t.addedDate, { weekday:'long' })}.`, 'Tasks', go('todos')));
-  if (DESKTOP?.venture && !ventureChecked) push(hour >= 12 ? 'warn' : 'info', "Dorm Dash's daily check hasn't been read today. +10 XP.", 'Ventures', go('ventures'));
+  if (DESKTOP?.venture && venturesUnchecked.length) push(hour >= 12 ? 'warn' : 'info', `Daily check not read today: ${venturesUnchecked.join(', ')}.`, 'Ventures', go('ventures'));
   if (hour >= 18 && !wroteTide) push('info', "Write tonight's Tide Log before bed. +15 XP.", null, null);
   const order = { danger: 0, warn: 1, info: 2 };
   moves.sort((a, b) => order[a.lv] - order[b.lv]);
@@ -5788,11 +5800,13 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
 }
 
 // ─── VENTURES ─────────────────────────────────────────────────────────────────
-// A control room for another project on this Mac (Dorm Dash). Read-only:
-// the console looks at the repo, the keys and the live money, and runs
-// safe checks. It never changes the other project or its data.
-const VENTURE_DEFAULT = { name: 'Dorm Dash', dir: '/Users/account/Documents/Jcommerce/dorm-dash-web' };
-const ventureConfig = () => { try { return { ...VENTURE_DEFAULT, ...(JSON.parse(localStorage.getItem('jc_venture')) || {}) }; } catch { return VENTURE_DEFAULT; } };
+// Every business in one place. Each venture has its own plan, people, links,
+// services and daily check. A venture with a project folder on this Mac also
+// gets a read-only control room: the repo, the keys and the live money, plus
+// safe checks. The console never changes the other project or its data.
+const VENTURE_STAGES = ['Idea', 'Building', 'Live', 'Paused'];
+const VENTURE_HEX = ['#e6c47c', '#ff7a3d', '#3ab88e', '#6aa8ff', '#c58cff', '#ff6a8a'];
+const PERSON_ROLES = ['Partner', 'Investor', 'Team', 'Runner', 'Supplier', 'Customer', 'Advisor', 'Other'];
 const KEY_NOTES = [
   [/FIREBASE_API_KEY/, 'Firebase web key. Public by design; protected by rules and App Check.'],
   [/FIREBASE_VAPID/, 'Web push key. Lets browsers receive notifications.'],
@@ -5805,6 +5819,9 @@ const keyNote = k => (KEY_NOTES.find(([re]) => re.test(k)) || [null, ''])[1];
 const looksPlaceholder = s => /not_|placeholder|changeme|your[_-]|xxx|todo|example|emul|1234/i.test(s.masked) || /^(not_|todo|xxx)/i.test(s.masked);
 const dayKey = ms => localDateStr(new Date(ms));
 const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+const createdSec = x => x.createdAt?.seconds ?? Infinity;
+const byCreated = (a, b) => createdSec(a) - createdSec(b);
+const fullUrl = u => (/^https?:\/\//i.test(u) ? u : `https://${u}`);
 
 function ventureServices(o) {
   if (!o?.ok) return [];
@@ -5848,63 +5865,16 @@ function ventureStats(m, fromMs) {
   };
 }
 
-function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, onSaveCheck }) {
-  const api = DESKTOP?.venture;
-  const { confirm, ConfirmUI } = useConfirm();
-  const [cfg, setCfg] = useState(ventureConfig);
-  const [view, setView] = useState('overview');
-  const [o, setO] = useState(null);
-  const [money, setMoney] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [range, setRange] = useState(7);
-  const [term, setTerm] = useState({ text: '', running: null, last: {} });
-  const [doc, setDoc] = useState(null);
-  const [svcForm, setSvcForm] = useState(null);
-  const termRef = useRef(null);
-
-  const load = async () => {
-    if (!api) return;
-    setLoading(true);
-    const ov = await api.overview(cfg.dir);
-    setO(ov);
-    setMoney(ov.ok && ov.firebaseProject ? await api.money(ov.firebaseProject, 30) : { ok: false, error: ov.ok ? 'No Firebase project in this folder' : ov.error });
-    setLoading(false);
-  };
-  useEffect(() => { load(); }, [cfg.dir]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!api) return;
-    return api.onOutput(p => setTerm(t => ({
-      text: (t.text + (p.chunk || '')).slice(-60000),
-      running: p.done ? null : t.running,
-      last: p.done ? { ...t.last, [p.id]: { code: p.code, at: Date.now() } } : t.last,
-    })));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight; }, [term.text]);
-
-  if (!api) return (
-    <div className="section venture"><div className="card agenda-empty">Ventures only works in the Mac app, because it reads project folders on this computer.</div></div>
-  );
-
-  const pickFolder = async () => {
-    const dir = await api.pick();
-    if (!dir) return;
-    const next = { name: dir.split('/').pop(), dir };
-    localStorage.setItem('jc_venture', JSON.stringify(next));
-    setCfg(next); setMoney(null); setO(null);
-  };
-  const run = async id => {
-    setView('terminal');
-    setTerm(t => ({ ...t, text: t.text + (t.text ? '\n' : ''), running: id }));
-    const r = await api.run(cfg.dir, id);
-    if (!r.ok) setTerm(t => ({ ...t, text: t.text + `${r.error}\n`, running: null }));
-  };
-  const openDoc = async file => { const r = await api.doc(cfg.dir, file); setDoc({ file, text: r.ok ? r.text : r.error }); };
-
-  // ── Daily check: findings come from the real state, not a tick-box ───────
-  const now = Date.now();
-  const startOfToday = parseLocal(todayStr).getTime();
+// The state of one venture, worked out from what is really there: the folder,
+// the live data, its services and its plan. Nothing here is typed in by hand.
+function ventureHealth(v, d, { services, items, todayStr }) {
+  const o = d?.o, money = d?.money, now = Date.now();
   const findings = [];
   const add = (lv, t) => findings.push({ lv, t });
+  const days = date => Math.round((parseLocal(date) - parseLocal(todayStr)) / 864e5);
+  const s1 = n => (n === 1 ? '' : 's');
+
+  if (v.dir && o && !o.ok) add('danger', `Project folder problem: ${o.error}.`);
   if (o?.ok) {
     const missing = o.secrets.filter(s => !s.set);
     if (missing.length) add('danger', `${missing.length} key${missing.length === 1 ? ' is' : 's are'} empty: ${missing.map(s => s.key).join(', ')}.`);
@@ -5914,72 +5884,320 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
     if (trackedSecrets.length) add('danger', `${trackedSecrets.map(f => f.file).join(', ')} is committed to git. Anyone with the repo has it.`);
     if (o.secrets.some(s => /WIPAY/.test(s.key))) add('warn', 'WiPay settings are still in the project, but WiPay was replaced by Fygaro. Remove them.');
     if (o.git) {
-      if (o.git.dirty.length) add('warn', `${o.git.dirty.length} file${o.git.dirty.length === 1 ? '' : 's'} changed but not committed.`);
-      if (o.git.ahead) add('warn', `${o.git.ahead} commit${o.git.ahead === 1 ? '' : 's'} not pushed to GitHub.`);
-      if (o.git.behind) add('warn', `${o.git.behind} commit${o.git.behind === 1 ? '' : 's'} on GitHub you don't have here.`);
+      if (o.git.dirty.length) add('warn', `${o.git.dirty.length} file${s1(o.git.dirty.length)} changed but not committed.`);
+      if (o.git.ahead) add('warn', `${o.git.ahead} commit${s1(o.git.ahead)} not pushed to GitHub.`);
+      if (o.git.behind) add('warn', `${o.git.behind} commit${s1(o.git.behind)} on GitHub you don't have here.`);
+      const idle = o.git.commits[0] ? Math.floor((now - o.git.commits[0].at) / 864e5) : 0;
+      if (idle >= 7 && v.stage !== 'Paused') add('warn', `No commits in ${idle} days. Is this still moving?`);
     }
   }
-  let today = null, win = null;
-  if (money?.ok) {
-    today = ventureStats(money, startOfToday);
-    win = ventureStats(money, now - range * 86400000);
+
+  let today = null;
+  const hasOrders = !!money?.ok && money.orders.length + money.payments.length > 0;
+  if (hasOrders) {
+    today = ventureStats(money, parseLocal(todayStr).getTime());
     const stuck = money.payments.filter(p => p.status === 'pending' && now - p.createdAt > 20 * 60000 && now - p.createdAt < 3 * 86400000);
-    if (stuck.length) add('warn', `${stuck.length} card payment${stuck.length === 1 ? '' : 's'} started in the last 3 days never completed (${J(stuck.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}). Abandoned, or a webhook problem?`);
+    if (stuck.length) add('warn', `${stuck.length} card payment${s1(stuck.length)} started in the last 3 days never completed (${J(stuck.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}). Abandoned, or a webhook problem?`);
     const week = ventureStats(money, now - 7 * 86400000);
-    if (week.refundsCoins) add('warn', `${week.refundsCoins} refund${week.refundsCoins === 1 ? '' : 's'} this week went back as coins, not to the card. Check each one.`);
-    if (week.lateCredits) add('warn', `${week.lateCredits} payment${week.lateCredits === 1 ? '' : 's'} this week landed after the order was cancelled.`);
+    if (week.refundsCoins) add('warn', `${week.refundsCoins} refund${s1(week.refundsCoins)} this week went back as coins, not to the card. Check each one.`);
+    if (week.lateCredits) add('warn', `${week.lateCredits} payment${s1(week.lateCredits)} this week landed after the order was cancelled.`);
     const noDasher = week.reasons.no_dasher || 0;
-    if (noDasher) add(noDasher >= 3 ? 'danger' : 'warn', `${noDasher} order${noDasher === 1 ? '' : 's'} this week cancelled because no runner took ${noDasher === 1 ? 'it' : 'them'}. That's lost money and a lost customer.`);
+    if (noDasher) add(noDasher >= 3 ? 'danger' : 'warn', `${noDasher} order${s1(noDasher)} this week cancelled because no runner took ${noDasher === 1 ? 'it' : 'them'}. That's lost money and a lost customer.`);
     const timeouts = week.reasons.payment_timeout || 0;
-    if (timeouts) add('warn', `${timeouts} order${timeouts === 1 ? '' : 's'} this week timed out waiting for payment.`);
+    if (timeouts) add('warn', `${timeouts} order${s1(timeouts)} this week timed out waiting for payment.`);
     if (week.placed === 0) add('warn', 'No orders in the last 7 days.');
-    if (!findings.some(f => f.lv !== 'ok')) add('ok', 'Money, keys and code all look clean.');
   } else if (money && !money.ok) add('danger', `Couldn't read live data: ${money.error}`);
+
+  // The plan and the bills
+  const moves = items.filter(i => i.kind === 'move' && !i.done).sort((a, b) => (a.due || '9999').localeCompare(b.due || '9999'));
+  const overdue = moves.filter(m => m.due && m.due < todayStr);
+  if (overdue.length) add('danger', `${overdue.length} move${s1(overdue.length)} past ${overdue.length === 1 ? 'its' : 'their'} date: ${overdue.slice(0, 3).map(m => m.title).join(', ')}${overdue.length > 3 ? '…' : ''}.`);
+  moves.filter(m => m.due === todayStr).forEach(m => add('warn', `Due today: ${m.title}.`));
+  services.filter(s => s.renewsOn).forEach(s => {
+    const n = days(s.renewsOn);
+    if (n < 0) add('danger', `${s.name} was due to renew ${-n} day${s1(-n)} ago. Is it still running?`);
+    else if (n <= 7) add('warn', `${s.name} renews ${n === 0 ? 'today' : `in ${n} day${s1(n)}`}${Number(s.monthlyCost) > 0 ? ` (${J(s.monthlyCost)})` : ''}.`);
+  });
+  if (!moves.length && v.stage !== 'Paused') add('warn', 'No next move written down. A venture with no next step is standing still.');
+
+  if (!findings.length) add('ok', hasOrders ? 'Money, keys, code and plan all look clean.' : 'Nothing needs you right now.');
   const order = { danger: 0, warn: 1, ok: 2 };
   findings.sort((a, b) => order[a.lv] - order[b.lv]);
+  const issues = findings.filter(f => f.lv !== 'ok');
+  return {
+    findings, issues, worst: issues[0]?.lv || 'ok', today, hasOrders, moves,
+    monthly: services.reduce((s, x) => s + (Number(x.monthlyCost) || 0), 0),
+  };
+}
 
-  const checkedToday = checks.some(c => c.date === todayStr);
-  const streak = (() => { const days = new Set(checks.map(c => c.date)); let n = 0, d = days.has(todayStr) ? todayStr : addDays(todayStr, -1); while (days.has(d)) { n++; d = addDays(d, -1); } return n; })();
-  const markChecked = () => onSaveCheck({ date: todayStr, venture: cfg.name, issues: findings.filter(f => f.lv !== 'ok').length, orders: today?.placed ?? null, platform: today?.platform ?? null });
+function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+  const api = DESKTOP?.venture;
+  const { confirm, ConfirmUI } = useConfirm();
+  const [sel, setSelRaw] = useState(() => { try { return localStorage.getItem('jc_venture_sel') || 'all'; } catch { return 'all'; } });
+  const [data, setData] = useState({});
+  const [form, setForm] = useState(null);
+  const setSel = id => { setSelRaw(id); try { localStorage.setItem('jc_venture_sel', id); } catch {} };
 
-  // 14-day chart
-  const chart = money?.ok ? Array.from({ length: 14 }, (_, i) => {
-    const d = addDays(todayStr, i - 13);
-    const dayOrders = money.orders.filter(x => dayKey(x.createdAt) === d);
+  const list = [...ventures].sort(byCreated);
+  const firstId = list[0]?.id;
+  const of = (rows, v) => rows.filter(r => (r.ventureId || firstId) === v.id);   // older rows belong to the first venture
+
+  const loadOne = async v => {
+    if (!api) return;
+    const dir = v.dir || '';
+    if (!dir) { setData(d => ({ ...d, [v.id]: { o: null, money: null, loading: false, dir } })); return; }
+    setData(d => ({ ...d, [v.id]: { ...d[v.id], loading: true, dir } }));
+    const o = await api.overview(dir);
+    const money = o.ok && o.firebaseProject ? await api.money(o.firebaseProject, 30) : null;
+    setData(d => ({ ...d, [v.id]: { o, money, loading: false, dir } }));
+  };
+  const loadKey = list.map(v => `${v.id}:${v.dir || ''}`).join('|');
+  useEffect(() => { list.forEach(v => { if (!data[v.id] || data[v.id].dir !== (v.dir || '')) loadOne(v); }); }, [loadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!api) return (
+    <div className="section venture"><div className="card agenda-empty">Ventures only works in the Mac app, because it reads project folders on this computer.</div></div>
+  );
+
+  const health = Object.fromEntries(list.map(v => [v.id, ventureHealth(v, data[v.id], { services: of(services, v), items: of(items, v), todayStr })]));
+  const checkedToday = v => checks.some(c => c.date === todayStr && (c.ventureId || firstId) === v.id);
+  const current = list.find(v => v.id === sel);
+  const hex = v => v.color || VENTURE_HEX[Math.max(0, list.indexOf(v)) % VENTURE_HEX.length];
+
+  const removeVenture = async v => {
+    if (!(await confirm({ message: `Remove ${v.name} from the console? Its plan, people, links and service notes go with it. The project folder itself is not touched.`, label: 'Remove', danger: true }))) return;
+    onDeleteVenture(v); setForm(null); setSel('all');
+  };
+
+  const switcher = (
+    <div className="vt-tabs">
+      <button className={!current ? 'on' : ''} onClick={() => setSel('all')}>All ventures</button>
+      {list.map(v => (
+        <button key={v.id} className={current?.id === v.id ? 'on' : ''} onClick={() => setSel(v.id)}>
+          <i className={`vt-dot ${health[v.id].worst}`} style={{ '--c': hex(v) }}/>{v.name}
+          {health[v.id].issues.length > 0 && <em>{health[v.id].issues.length}</em>}
+        </button>
+      ))}
+      <button className="add" onClick={() => setForm({})}><Icons.plus size={12}/> Venture</button>
+    </div>
+  );
+  const modal = form && (
+    <VentureModal data={form} todayStr={todayStr} onPick={api.pick}
+      onSave={d => { onSaveVenture(d); setForm(null); }}
+      onDelete={form.id ? () => removeVenture(form) : null}
+      onClose={() => setForm(null)}/>
+  );
+
+  if (current) return (
+    <div className="section venture">
+      {switcher}
+      <VentureRoom key={current.id} v={current} hex={hex(current)} d={data[current.id]} h={health[current.id]} reload={() => loadOne(current)}
+        services={of(services, current)} items={of(items, current)} checks={of(checks, current)} checkedToday={checkedToday(current)} todayStr={todayStr}
+        onEdit={() => setForm(current)}
+        onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
+        onSaveCheck={d => onSaveCheck({ ...d, ventureId: current.id, venture: current.name })}
+        onSaveItem={d => onSaveItem({ ...d, ventureId: current.id })} onDeleteItem={onDeleteItem} onAddTodo={onAddTodo}/>
+      {modal}{ConfirmUI}
+    </div>
+  );
+
+  // ── Portfolio: every venture at a glance ─────────────────────────────────
+  const totalIssues = list.reduce((s, v) => s + health[v.id].issues.length, 0);
+  const totalMonthly = list.reduce((s, v) => s + health[v.id].monthly, 0);
+  const cutToday = list.reduce((s, v) => s + (health[v.id].today?.platform || 0), 0);
+  const anyOrders = list.some(v => health[v.id].hasOrders);
+  const unchecked = list.filter(v => v.stage !== 'Paused' && !checkedToday(v));
+  const across = list.flatMap(v => health[v.id].issues.map(f => ({ ...f, v }))).sort((a, b) => (a.lv === 'danger' ? 0 : 1) - (b.lv === 'danger' ? 0 : 1));
+  const horizon = addDays(todayStr, 14);
+  const coming = list.flatMap(v => [
+    ...health[v.id].moves.filter(m => m.due && m.due <= horizon).map(m => ({ v, date: m.due, text: m.title, kind: 'Move' })),
+    ...of(services, v).filter(s => s.renewsOn && s.renewsOn <= horizon).map(s => ({ v, date: s.renewsOn, text: `${s.name} renews${Number(s.monthlyCost) > 0 ? ` · ${J(s.monthlyCost)}` : ''}`, kind: 'Bill' })),
+  ]).sort((a, b) => a.date.localeCompare(b.date));
+
+  return (
+    <div className="section venture">
+      {switcher}
+      {list.length === 0 ? (
+        <div className="card agenda-empty">
+          No ventures yet. Add each business you run or are building, with or without a project folder.
+          <div style={{ marginTop: '0.9rem' }}><button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={13}/> Add your first venture</button></div>
+        </div>
+      ) : (<>
+        <div className="grid-2">
+          <div className="fin-tile"><span>Ventures</span><b>{list.length}</b><span className="fin-delta">{list.filter(v => v.stage === 'Live').length} live · {list.filter(v => v.stage === 'Building').length} building</span></div>
+          <div className="fin-tile"><span>Needs attention</span><b className={across.some(f => f.lv === 'danger') ? 'bad' : totalIssues ? 'warn' : 'good'}>{totalIssues}</b><span className="fin-delta">across everything</span></div>
+          <div className="fin-tile"><span>Running cost</span><b className={totalMonthly ? 'warn' : ''}>{J(totalMonthly)}</b><span className="fin-delta">a month, from the services you priced</span></div>
+          <div className="fin-tile"><span>{anyOrders ? 'Your cut today' : 'Checked today'}</span><b className="good">{anyOrders ? J(cutToday) : `${list.length - unchecked.length}/${list.length}`}</b><span className="fin-delta">{unchecked.length ? `not read yet: ${unchecked.map(v => v.name).join(', ')}` : 'every daily check read'}</span></div>
+        </div>
+
+        <div className="vt-grid">
+          {list.map(v => {
+            const h = health[v.id], d = data[v.id], git = d?.o?.ok ? d.o.git : null;
+            const next = h.moves[0];
+            return (
+              <button key={v.id} className="card vt-card" style={{ '--c': hex(v) }} onClick={() => setSel(v.id)}>
+                <div className="focus-head">
+                  <div>
+                    <div className="focus-title">{v.name}</div>
+                    <div className="focus-meta">{v.tagline || (v.dir ? v.dir.replace(/^\/Users\/[^/]+/, '~') : 'No project folder')}</div>
+                  </div>
+                  <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}</span>
+                </div>
+                <div className={`vt-health ${h.worst}`}>
+                  {d?.loading ? 'Reading the project…' : h.issues.length ? `${h.issues.length} thing${h.issues.length === 1 ? '' : 's'} need${h.issues.length === 1 ? 's' : ''} you · ${h.issues[0].t}` : h.findings[0].t}
+                </div>
+                <dl className="fin-kv">
+                  {h.today && <div><dt>Today</dt><dd>{h.today.placed} orders · <span className="good">{J(h.today.platform)}</span></dd></div>}
+                  {git && <div><dt>Code</dt><dd className={git.dirty.length || git.ahead ? 'warn' : ''}>{git.dirty.length ? `${git.dirty.length} uncommitted` : git.ahead ? `${git.ahead} not pushed` : 'clean'}{git.commits[0] ? ` · ${ago(git.commits[0].at)}` : ''}</dd></div>}
+                  <div><dt>Next move</dt><dd className={next ? (next.due && next.due < todayStr ? 'bad' : '') : 'warn'}>{next ? `${next.title}${next.due ? ` · ${fmtDate(next.due, { month: 'short', day: 'numeric' })}` : ''}` : 'none written'}</dd></div>
+                  <div><dt>Running cost</dt><dd>{h.monthly ? `${J(h.monthly)}/mo` : '—'}</dd></div>
+                </dl>
+                <div className="goal-foot">
+                  <span className={checkedToday(v) ? 'good' : ''}>{checkedToday(v) ? '✓ checked today' : 'not checked today'}</span>
+                  <span>Open ›</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="card span-8">
+          <div className="card-label">Across everything</div>
+          {across.length === 0 ? <div className="agenda-empty small">Nothing needs you in any venture.</div> : (
+            <ul className="fin-findings" style={{ borderTop: 'none', marginTop: 0 }}>
+              {across.slice(0, 10).map((f, i) => <li key={i} className={f.lv}><button className="link-btn" onClick={() => setSel(f.v.id)}>{f.v.name}</button> · {f.t}</li>)}
+            </ul>
+          )}
+          {across.length > 10 && <div className="goal-hint">{across.length - 10} more inside the ventures.</div>}
+        </div>
+        <div className="card span-4">
+          <div className="card-label">Next 14 days</div>
+          {coming.length === 0 ? <div className="agenda-empty small">No dated moves or bills coming up.</div> : coming.slice(0, 10).map((c, i) => {
+            const n = Math.round((parseLocal(c.date) - parseLocal(todayStr)) / 864e5);
+            return (
+              <div key={i} className="tk-row old">
+                <div className="tk-main"><div className="tk-title">{c.text}</div><div className="tk-note">{c.v.name} · {c.kind} · {fmtDate(c.date, { weekday: 'short', month: 'short', day: 'numeric' })}</div></div>
+                <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n < 0 ? `${-n}d late` : n === 0 ? 'today' : `${n}d`}</span>
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+      {modal}{ConfirmUI}
+    </div>
+  );
+}
+
+function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+  const api = DESKTOP.venture;
+  const { confirm, ConfirmUI } = useConfirm();
+  const o = d?.o, money = d?.money, loading = !!d?.loading;
+  const [view, setView] = useState('overview');
+  const [range, setRange] = useState(7);
+  const [term, setTerm] = useState({ text: '', running: null, last: {} });
+  const [doc, setDoc] = useState(null);
+  const [svcForm, setSvcForm] = useState(null);
+  const [itemForm, setItemForm] = useState(null);
+  const [moveTitle, setMoveTitle] = useState('');
+  const [moveDue, setMoveDue] = useState('');
+  const [logText, setLogText] = useState('');
+  const termRef = useRef(null);
+
+  useEffect(() => api.onOutput(p => setTerm(t => ({
+    text: (t.text + (p.chunk || '')).slice(-60000),
+    running: p.done ? null : t.running,
+    last: p.done ? { ...t.last, [p.id]: { code: p.code, at: Date.now() } } : t.last,
+  }))), []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight; }, [term.text]);
+
+  const run = async id => {
+    setView('terminal');
+    setTerm(t => ({ ...t, text: t.text + (t.text ? '\n' : ''), running: id }));
+    const r = await api.run(v.dir, id);
+    if (!r.ok) setTerm(t => ({ ...t, text: t.text + `${r.error}\n`, running: null }));
+  };
+  const openDoc = async file => { const r = await api.doc(v.dir, file); setDoc({ file, text: r.ok ? r.text : r.error }); };
+
+  const { findings, today, hasOrders, moves, monthly } = h;
+  const now = Date.now();
+  const win = hasOrders ? ventureStats(money, now - range * 86400000) : null;
+  const streak = (() => { const days = new Set(checks.map(c => c.date)); let n = 0, day = days.has(todayStr) ? todayStr : addDays(todayStr, -1); while (days.has(day)) { n++; day = addDays(day, -1); } return n; })();
+  const markChecked = () => onSaveCheck({ date: todayStr, issues: h.issues.length, orders: today?.placed ?? null, platform: today?.platform ?? null });
+
+  const chart = hasOrders ? Array.from({ length: 14 }, (_, i) => {
+    const day = addDays(todayStr, i - 13);
+    const dayOrders = money.orders.filter(x => dayKey(x.createdAt) === day);
     const del = dayOrders.filter(x => x.status === 'delivered');
-    return { d, label: fmtDate(d, { month: 'numeric', day: 'numeric' }), delivered: del.length, cancelled: dayOrders.filter(x => x.status === 'cancelled').length, platform: del.reduce((s, x) => s + (Number(x.platformFeeJmd) || 0), 0) };
+    return { d: day, label: fmtDate(day, { month: 'numeric', day: 'numeric' }), delivered: del.length, cancelled: dayOrders.filter(x => x.status === 'cancelled').length, platform: del.reduce((s, x) => s + (Number(x.platformFeeJmd) || 0), 0) };
   }) : [];
 
   const svcMeta = id => services.find(s => s.serviceId === id) || {};
   const autoServices = ventureServices(o);
   const customServices = services.filter(s => s.custom);
-  const monthly = services.reduce((s, x) => s + (Number(x.monthlyCost) || 0), 0);
+  const doneMoves = items.filter(i => i.kind === 'move' && i.done).sort((a, b) => (b.doneAt || '').localeCompare(a.doneAt || ''));
+  const people = items.filter(i => i.kind === 'person').sort(byCreated);
+  const links = items.filter(i => i.kind === 'link').sort(byCreated);
+  const log = items.filter(i => i.kind === 'log').sort((a, b) => (b.date || '').localeCompare(a.date || '') || createdSec(b) - createdSec(a));
   const tt = { background:'rgba(var(--b1),0.96)', border:'1px solid rgba(212,166,74,0.3)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
   const axis = { fill:'#7f6758', fontSize:10 };
+  const hasFolder = !!o?.ok;
+  const tabs = [['overview','Overview'], ['plan',`Plan${moves.length ? ` · ${moves.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
+    ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : [])];
 
-  return (
-    <div className="section venture">
+  const addMove = () => {
+    if (!moveTitle.trim()) return;
+    onSaveItem({ kind: 'move', title: moveTitle.trim(), due: moveDue, done: false });
+    setMoveTitle(''); setMoveDue('');
+  };
+  const toggleMove = m => onSaveItem({ id: m.id, done: !m.done, doneAt: m.done ? '' : todayStr });
+  const toTasks = m => { onAddTodo({ title: `${v.name} · ${m.title}`, note: '', starred: false }); onSaveItem({ id: m.id, sentOn: todayStr }); };
+  const addLog = () => { if (!logText.trim()) return; onSaveItem({ kind: 'log', text: logText.trim(), date: todayStr }); setLogText(''); };
+  const removeItem = async (i, label) => { if (await confirm({ message: `Delete "${label}"?`, label: 'Delete', danger: true })) { onDeleteItem(i.id); setItemForm(null); } };
+  const moveRow = m => {
+    const n = m.due ? Math.round((parseLocal(m.due) - parseLocal(todayStr)) / 864e5) : null;
+    return (
+      <div key={m.id} className={`tk-row ${m.done ? 'done' : ''}`}>
+        <button className="check-btn" onClick={() => toggleMove(m)} style={{ color: m.done ? '#ff9a4a' : 'var(--mist-3)' }}>{m.done ? <Icons.check size={22}/> : <Icons.circle size={22}/>}</button>
+        <div className="tk-main">
+          <div className="tk-title">{m.title}</div>
+          {(m.note || m.sentOn === todayStr) && <div className="tk-note">{m.sentOn === todayStr ? 'In today\'s tasks' : ''}{m.note && m.sentOn === todayStr ? ' · ' : ''}{m.note}</div>}
+        </div>
+        {!m.done && n !== null && <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n < 0 ? `${-n}d late` : n === 0 ? 'today' : n === 1 ? 'tomorrow' : `${n} days`}</span>}
+        {!m.done && m.sentOn !== todayStr && <button className="btn-ghost tk-carry" onClick={() => toTasks(m)}>Do today</button>}
+        <button className="icon-btn" onClick={() => setItemForm({ ...m })}><Icons.edit size={12}/></button>
+      </div>
+    );
+  };
+
+  return (<>
       <div className="sched-bar">
         <div className="sched-range">
-          <div className="sched-title" style={{ marginLeft: 0 }}>{cfg.name}</div>
-          <button className="vt-path" onClick={pickFolder} title="Change folder">{cfg.dir.replace(/^\/Users\/[^/]+/, '~')}</button>
+          <i className="vt-dot big" style={{ '--c': hex }}/>
+          <div className="sched-title" style={{ marginLeft: 0 }}>{v.name}</div>
+          <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}</span>
         </div>
         <div className="seg">
-          {[['overview','Overview'],['money','Money'],['keys','Keys'],['services','Services'],['terminal','Terminal'],['docs','Docs']].map(([id, label]) => (
-            <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
-          ))}
+          {tabs.map(([id, label]) => <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>)}
         </div>
-        <button className="btn-ghost" onClick={load} disabled={loading}>{loading ? 'Reading…' : '↻ Refresh'}</button>
+        <span className="row-gap">
+          {v.dir && <button className="btn-ghost" onClick={() => api.open(v.dir)} title={v.dir}>Open folder</button>}
+          <button className="btn-ghost" onClick={onEdit}>Edit</button>
+          {v.dir && <button className="btn-ghost" onClick={reload} disabled={loading}>{loading ? 'Reading…' : '↻ Refresh'}</button>}
+        </span>
       </div>
+      {v.tagline && <div className="fin-delta vt-tagline">{v.tagline}</div>}
 
-      {o && !o.ok && <div className="card agenda-empty">{o.error}. <button className="link-btn" onClick={pickFolder}>Choose the folder</button></div>}
-
-      {view === 'overview' && o?.ok && (<>
+      {view === 'overview' && (<>
         <div className="grid-2">
-          <div className="fin-tile"><span>Orders today</span><b>{today ? today.placed : '…'}</b><span className="fin-delta">{today ? `${today.delivered} delivered · ${today.active} live` : ''}</span></div>
-          <div className="fin-tile"><span>Your cut today</span><b className="good">{today ? J(today.platform) : '…'}</b><span className="fin-delta">{today ? `of ${J(today.fees)} in fees` : ''}</span></div>
-          <div className="fin-tile"><span>Card payments today</span><b>{today ? J(today.cardPaid.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0)) : '…'}</b><span className="fin-delta">{today ? `${today.cardPaid.length} paid · ${today.cardPending.length} pending` : ''}</span></div>
-          <div className="fin-tile"><span>Needs attention</span><b className={findings.some(f => f.lv === 'danger') ? 'bad' : findings.some(f => f.lv === 'warn') ? 'warn' : 'good'}>{findings.filter(f => f.lv !== 'ok').length}</b><span className="fin-delta">{money?.fetchedAt ? `read ${ago(money.fetchedAt)}` : ''}</span></div>
+          {hasOrders ? (<>
+            <div className="fin-tile"><span>Orders today</span><b>{today.placed}</b><span className="fin-delta">{today.delivered} delivered · {today.active} live</span></div>
+            <div className="fin-tile"><span>Your cut today</span><b className="good">{J(today.platform)}</b><span className="fin-delta">of {J(today.fees)} in fees</span></div>
+            <div className="fin-tile"><span>Card payments today</span><b>{J(today.cardPaid.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}</b><span className="fin-delta">{today.cardPaid.length} paid · {today.cardPending.length} pending</span></div>
+          </>) : (<>
+            <div className="fin-tile"><span>Open moves</span><b className={moves.length ? '' : 'warn'}>{moves.length}</b><span className="fin-delta">{doneMoves.length} done so far</span></div>
+            <div className="fin-tile"><span>Running cost</span><b className={monthly ? 'warn' : ''}>{J(monthly)}</b><span className="fin-delta">a month</span></div>
+            <div className="fin-tile"><span>{v.startedOn ? 'Days in' : 'People'}</span><b>{v.startedOn ? Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(v.startedOn)) / 864e5)) : people.length}</b><span className="fin-delta">{v.startedOn ? `since ${fmtDate(v.startedOn, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'linked to this venture'}</span></div>
+          </>)}
+          <div className="fin-tile"><span>Needs attention</span><b className={h.worst === 'danger' ? 'bad' : h.worst === 'warn' ? 'warn' : 'good'}>{h.issues.length}</b><span className="fin-delta">{money?.fetchedAt ? `read ${ago(money.fetchedAt)}` : 'worked out live'}</span></div>
         </div>
 
         <div className="card span-8">
@@ -5988,20 +6206,28 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
             <span className="fin-delta">{streak > 0 ? `🔥 ${streak} day${streak === 1 ? '' : 's'} in a row` : 'no streak yet'}</span>
           </div>
           <ul className="fin-findings" style={{ borderTop: 'none', marginTop: 0 }}>
-            {loading && !findings.length && <li className="ok">Reading the project…</li>}
+            {loading && <li className="ok">Reading the project…</li>}
             {findings.map((f, i) => <li key={i} className={f.lv}>{f.t}</li>)}
           </ul>
           <div className="vt-check-foot">
             {checkedToday
-              ? <span className="good">✓ Checked today · +10 XP</span>
-              : <button className="btn-primary" onClick={markChecked} disabled={loading || !money}>I've read today's check</button>}
-            <span className="fin-delta">Findings are worked out from the live project, not typed in. +10 XP a day for looking.</span>
+              ? <span className="good">✓ Checked today</span>
+              : <button className="btn-primary" onClick={markChecked} disabled={loading}>I've read today's check</button>}
+            <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP once a day for looking at your ventures.</span>
           </div>
         </div>
 
         <div className="card span-4">
-          <div className="card-label">Code</div>
-          {!o.git ? <div className="agenda-empty small">Not a git repository.</div> : (<>
+          <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>Next moves</span>
+            <button className="link-btn" onClick={() => setView('plan')}>Plan ›</button>
+          </div>
+          {moves.length === 0 ? <div className="agenda-empty small">Nothing written down. What is the next step?</div> : moves.slice(0, 5).map(moveRow)}
+        </div>
+
+        {hasFolder && o.git && (
+          <div className="card span-6">
+            <div className="card-label">Code</div>
             <dl className="fin-kv">
               <div><dt>Branch</dt><dd>{o.git.branch}</dd></div>
               <div><dt>Uncommitted</dt><dd className={o.git.dirty.length ? 'warn' : 'good'}>{o.git.dirty.length || 'Clean'}</dd></div>
@@ -6011,16 +6237,55 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
             {o.git.commits.slice(0, 5).map(c => (
               <div key={c.hash} className="vt-commit"><span>{c.subject}</span><em>{ago(c.at)}</em></div>
             ))}
-          </>)}
+          </div>
+        )}
+        <div className={`card ${hasFolder && o.git ? 'span-6' : ''}`}>
+          <div className="card-label">At a glance</div>
+          <dl className="fin-kv">
+            <div><dt>Stage</dt><dd>{v.stage || 'Building'}</dd></div>
+            {v.startedOn && <div><dt>Started</dt><dd>{fmtDate(v.startedOn, { month: 'short', day: 'numeric', year: 'numeric' })}</dd></div>}
+            <div><dt>Running cost</dt><dd className={monthly ? 'warn' : ''}>{monthly ? `${J(monthly)} a month` : 'Nothing priced yet'}</dd></div>
+            <div><dt>Services it depends on</dt><dd>{autoServices.length + customServices.length}</dd></div>
+            <div><dt>People</dt><dd>{people.length ? people.slice(0, 3).map(p => p.name).join(', ') + (people.length > 3 ? ` +${people.length - 3}` : '') : 'None added'}</dd></div>
+            <div><dt>Project folder</dt><dd>{v.dir ? v.dir.replace(/^\/Users\/[^/]+/, '~') : 'None linked'}</dd></div>
+            {hasFolder && o.firebaseProject && <div><dt>Firebase project</dt><dd className="mono">{o.firebaseProject}</dd></div>}
+          </dl>
+          {links.length > 0 && <div className="vt-links">{links.slice(0, 6).map(l => <a key={l.id} className="btn-ghost tk-carry" href={fullUrl(l.url)} target="_blank" rel="noopener noreferrer">{l.label} ↗</a>)}</div>}
         </div>
       </>)}
 
-      {view === 'money' && (
-        !money ? <div className="card agenda-empty">Reading live data…</div>
-        : !money.ok ? <div className="card agenda-empty">{money.error}</div> : (<>
+      {view === 'plan' && (<>
+        <div className="card span-7 tk-list">
+          <div className="card-label">Moves · what happens next</div>
+          <div className="vt-add">
+            <input className="input" value={moveTitle} onChange={e => setMoveTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMove()} placeholder="The next concrete step, e.g. sign up 3 more runners"/>
+            <input className="input" type="date" value={moveDue} min={todayStr} onChange={e => setMoveDue(e.target.value)} title="By when (optional)"/>
+            <button className="btn-primary icon-only" onClick={addMove}><Icons.plus size={16}/></button>
+          </div>
+          {moves.length === 0 ? <div className="agenda-empty small">No open moves. Write the next one.</div> : moves.map(moveRow)}
+          {doneMoves.length > 0 && (<>
+            <div className="card-label" style={{ margin: '1rem 0 0.4rem' }}>Done · {doneMoves.length}</div>
+            {doneMoves.slice(0, 8).map(moveRow)}
+          </>)}
+          <div className="goal-hint" style={{ marginTop: '0.75rem' }}>"Do today" copies a move into today's Tasks, where it earns XP like any other task. Tick it here when the move itself is finished.</div>
+        </div>
+        <div className="card span-5">
+          <div className="card-label">Log · decisions and what happened</div>
+          <textarea className="input" style={{ minHeight: 70, resize: 'vertical' }} value={logText} onChange={e => setLogText(e.target.value)} placeholder="What did you decide or learn today? Future you will want the reason."/>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.5rem 0 0.75rem' }}><button className="btn-ghost" onClick={addLog} disabled={!logText.trim()}>Add to log</button></div>
+          {log.length === 0 ? <div className="agenda-empty small">Nothing logged yet.</div> : log.slice(0, 30).map(l => (
+            <div key={l.id} className="vt-log">
+              <div className="row-between"><em>{fmtDate(l.date, { weekday: 'short', month: 'short', day: 'numeric' })}</em><button className="icon-btn danger-btn" onClick={() => removeItem(l, 'this log entry')}><Icons.trash size={11}/></button></div>
+              <p>{l.text}</p>
+            </div>
+          ))}
+        </div>
+      </>)}
+
+      {view === 'money' && hasOrders && (<>
           <div className="row-between">
-            <span className="fin-delta">Read-only, straight from Dorm Dash's database · {ago(money.fetchedAt)}</span>
-            <div className="seg">{[[1,'Today'],[7,'7 days'],[30,'30 days']].map(([d, l]) => <button key={d} className={range === d ? 'on' : ''} onClick={() => setRange(d)}>{l}</button>)}</div>
+            <span className="fin-delta">Read-only, straight from {v.name}'s database · {ago(money.fetchedAt)}</span>
+            <div className="seg">{[[1,'Today'],[7,'7 days'],[30,'30 days']].map(([n, l]) => <button key={n} className={range === n ? 'on' : ''} onClick={() => setRange(n)}>{l}</button>)}</div>
           </div>
           {(() => { const s = range === 1 ? today : win; return (<>
             <div className="grid-2">
@@ -6040,7 +6305,7 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
                   <XAxis dataKey="label" tick={axis}/>
                   <YAxis yAxisId="n" tick={axis} width={28} allowDecimals={false}/>
                   <YAxis yAxisId="j" orientation="right" tick={axis} width={40} tickFormatter={Jk}/>
-                  <Tooltip contentStyle={tt} formatter={(v, n) => (n === 'Your cut' ? J(v) : v)}/>
+                  <Tooltip contentStyle={tt} formatter={(val, n) => (n === 'Your cut' ? J(val) : val)}/>
                   <Bar yAxisId="n" dataKey="delivered" name="Delivered" stackId="o" fill="#e6c47c" maxBarSize={22} radius={[0,0,0,0]}/>
                   <Bar yAxisId="n" dataKey="cancelled" name="Cancelled" stackId="o" fill="#ff6a45" maxBarSize={22} radius={[3,3,0,0]}/>
                   <Line yAxisId="j" type="monotone" dataKey="platform" name="Your cut" stroke="#f2ddab" strokeWidth={2} dot={{ r: 2 }}/>
@@ -6078,27 +6343,29 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
               {money.orders.length === 0 && <div className="agenda-empty small">No orders in the last 30 days.</div>}
             </div>
           </div>
-        </>)
-      )}
+      </>)}
 
-      {view === 'keys' && o?.ok && (<>
+      {view === 'keys' && hasFolder && (<>
         <div className="card span-8">
           <div className="card-label">Keys and settings · values never leave this Mac</div>
-          <div className="vt-table keys">
-            <div className="vt-row head"><span>Key</span><span>File</span><span>Value</span><span>Status</span></div>
-            {o.secrets.map((s, i) => {
-              const bad = !s.set ? 'Empty' : /WIPAY/.test(s.key) ? 'Unused' : looksPlaceholder(s) && !/demo|emul/.test(s.file) && !s.public ? 'Placeholder?' : '';
-              return (
-                <div key={i} className="vt-row" title={keyNote(s.key)}>
-                  <span className="name">{s.key}</span><span>{s.file}</span><span className="mono">{s.masked || '—'}</span>
-                  <span className={bad ? 'bad' : s.public ? '' : 'good'}>{bad || (s.public ? 'Public' : 'Set')}</span>
-                </div>
-              );
-            })}
-          </div>
+          {o.secrets.length === 0 ? <div className="agenda-empty small">No .env files found in this project.</div> : (
+            <div className="vt-table keys">
+              <div className="vt-row head"><span>Key</span><span>File</span><span>Value</span><span>Status</span></div>
+              {o.secrets.map((s, i) => {
+                const bad = !s.set ? 'Empty' : /WIPAY/.test(s.key) ? 'Unused' : looksPlaceholder(s) && !/demo|emul/.test(s.file) && !s.public ? 'Placeholder?' : '';
+                return (
+                  <div key={i} className="vt-row" title={keyNote(s.key)}>
+                    <span className="name">{s.key}</span><span>{s.file}</span><span className="mono">{s.masked || '—'}</span>
+                    <span className={bad ? 'bad' : s.public ? '' : 'good'}>{bad || (s.public ? 'Public' : 'Set')}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="card span-4">
           <div className="card-label">Secret files</div>
+          {o.files.length === 0 && <div className="agenda-empty small">None found.</div>}
           {o.files.map(f => (
             <div key={f.file} className="row-between cl-line">
               <span>{f.file}</span>
@@ -6113,11 +6380,12 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
         </div>
       </>)}
 
-      {view === 'services' && o?.ok && (<>
+      {view === 'services' && (<>
         <div className="row-between">
-          <span className="fin-delta">Everything Dorm Dash depends on. Monthly cost: <b className={monthly ? 'warn' : ''}>{J(monthly)}</b></span>
+          <span className="fin-delta">Everything {v.name} depends on. Monthly cost: <b className={monthly ? 'warn' : ''}>{J(monthly)}</b></span>
           <button className="btn-primary" onClick={() => setSvcForm({ custom: true })}><Icons.plus size={13}/> Service</button>
         </div>
+        {autoServices.length + customServices.length === 0 && <div className="card agenda-empty">No services yet. Add what this venture pays for or relies on: domain, hosting, phone plan, payment provider.</div>}
         <div className="goal-grid">
           {[...autoServices, ...customServices.map(s => ({ id: s.serviceId, name: s.name, does: s.does, url: s.url, custom: true }))].map(s => {
             const meta = svcMeta(s.id);
@@ -6133,14 +6401,46 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
                   {days !== null && <span className={days <= 7 ? 'bad' : ''}>{days < 0 ? `Renewal ${-days}d overdue` : days === 0 ? 'Renews today' : `Renews in ${days}d`}</span>}
                 </div>
                 {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
-                {s.url && <a className="btn-ghost goal-log" href={s.url} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+                {s.url && <a className="btn-ghost goal-log" href={fullUrl(s.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>}
               </div>
             );
           })}
         </div>
       </>)}
 
-      {view === 'terminal' && o?.ok && (<>
+      {view === 'people' && (<>
+        <div className="card span-7">
+          <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>People · {people.length}</span>
+            <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'person' })}><Icons.plus size={12}/> Person</button>
+          </div>
+          {people.length === 0 ? <div className="agenda-empty small">Partners, investors, team, suppliers. Who is this venture tied to, and on what terms?</div> : people.map(p => (
+            <div key={p.id} className="tk-row old">
+              <div className="tk-main">
+                <div className="tk-title">{p.name} <span className="vt-role">{p.role}</span></div>
+                {(p.contact || p.terms) && <div className="tk-note">{[p.contact, p.terms].filter(Boolean).join(' · ')}</div>}
+                {p.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{p.note}</div>}
+              </div>
+              <button className="icon-btn" onClick={() => setItemForm({ ...p })}><Icons.edit size={12}/></button>
+            </div>
+          ))}
+        </div>
+        <div className="card span-5">
+          <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>Links · {links.length}</span>
+            <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'link' })}><Icons.plus size={12}/> Link</button>
+          </div>
+          {links.length === 0 ? <div className="agenda-empty small">The live site, admin panel, shared drive, social pages. One click from here.</div> : links.map(l => (
+            <div key={l.id} className="tk-row old">
+              <div className="tk-main"><div className="tk-title">{l.label}</div><div className="tk-note">{l.url}</div></div>
+              <a className="btn-ghost tk-carry" href={fullUrl(l.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>
+              <button className="icon-btn" onClick={() => setItemForm({ ...l })}><Icons.edit size={12}/></button>
+            </div>
+          ))}
+        </div>
+      </>)}
+
+      {view === 'terminal' && hasFolder && (<>
         <div className="card span-4">
           <div className="card-label">Safe checks</div>
           <div className="vt-checks">
@@ -6171,7 +6471,7 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
         </div>
       </>)}
 
-      {view === 'docs' && o?.ok && (<>
+      {view === 'docs' && hasFolder && (<>
         <div className="card span-4">
           <div className="card-label">Project notes</div>
           {o.docs.length === 0 ? <div className="agenda-empty small">No .md files at the top of the project.</div>
@@ -6189,8 +6489,80 @@ function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, 
           onDelete={svcForm.id && svcForm.custom ? async () => { if (await confirm({ message: `Remove ${svcForm.name}?`, label: 'Remove', danger: true })) { onDeleteService(svcForm.id); setSvcForm(null); } } : null}
           onClose={() => setSvcForm(null)}/>
       )}
+      {itemForm && (
+        <VentureItemModal data={itemForm} todayStr={todayStr}
+          onSave={d => { onSaveItem(d); setItemForm(null); }}
+          onDelete={itemForm.id ? () => removeItem(itemForm, itemForm.title || itemForm.name || itemForm.label) : null}
+          onClose={() => setItemForm(null)}/>
+      )}
       {ConfirmUI}
-    </div>
+  </>);
+}
+
+function VentureModal({ data, todayStr, onPick, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({ name: '', tagline: '', stage: 'Building', startedOn: '', dir: '', color: '', ...data });
+  const s = (k, val) => setF(p => ({ ...p, [k]: val }));
+  const pick = async () => { const dir = await onPick(); if (dir) setF(p => ({ ...p, dir, name: p.name || dir.split('/').pop() })); };
+  const save = () => { if (!f.name.trim()) return; const { createdAt, ...rest } = f; onSave({ ...rest, name: f.name.trim(), tagline: (f.tagline || '').trim() }); };
+  return (
+    <Modal title={data.id ? `Edit ${data.name}` : 'New Venture'} onClose={onClose}>
+      <Field label="Name"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Dorm Dash"/></Field>
+      <Field label="What it is, in one line"><input className="input" value={f.tagline} onChange={e => s('tagline', e.target.value)} placeholder="Campus food delivery for UWI Mona"/></Field>
+      <div className="grid-2">
+        <Field label="Stage"><select className="input" value={f.stage} onChange={e => s('stage', e.target.value)}>{VENTURE_STAGES.map(x => <option key={x}>{x}</option>)}</select></Field>
+        <Field label="Started on (optional)"><input className="input" type="date" max={todayStr} value={f.startedOn || ''} onChange={e => s('startedOn', e.target.value)}/></Field>
+      </div>
+      <Field label="Project folder on this Mac (optional)">
+        <div className="row-gap">
+          <button type="button" className="vt-path" style={{ marginLeft: 0 }} onClick={pick}>{f.dir ? f.dir.replace(/^\/Users\/[^/]+/, '~') : 'Choose a folder…'}</button>
+          {f.dir && <button type="button" className="link-btn" onClick={() => s('dir', '')}>Unlink</button>}
+        </div>
+      </Field>
+      <Field label="Colour">
+        <div className="sched-cals">
+          {VENTURE_HEX.map(c => <button key={c} type="button" className={`sched-cal ${f.color === c ? 'on' : ''}`} style={{ '--c': c }} onClick={() => s('color', c)}><span className="dot"/></button>)}
+        </div>
+      </Field>
+      <div className="focus-preview"><div>With a folder, the console reads the code, keys and live data, and only ever looks. Without one you still get the plan, people, links, services and daily check.</div></div>
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Remove venture</button>}
+    </Modal>
+  );
+}
+
+function VentureItemModal({ data, todayStr, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({ role: 'Partner', ...data });
+  const s = (k, val) => setF(p => ({ ...p, [k]: val }));
+  const kind = data.kind;
+  const main = kind === 'move' ? 'title' : kind === 'person' ? 'name' : 'label';
+  const save = () => {
+    if (!(f[main] || '').trim() || (kind === 'link' && !(f.url || '').trim())) return;
+    const { createdAt, ventureId, ...rest } = f;
+    onSave({ ...rest, [main]: f[main].trim() });
+  };
+  return (
+    <Modal title={kind === 'move' ? 'Move' : kind === 'person' ? (data.id ? f.name : 'New Person') : (data.id ? f.label : 'New Link')} onClose={onClose}>
+      {kind === 'move' && (<>
+        <Field label="Move"><input className="input" autoFocus value={f.title || ''} onChange={e => s('title', e.target.value)}/></Field>
+        <Field label="By when (optional)"><input className="input" type="date" value={f.due || ''} onChange={e => s('due', e.target.value)}/></Field>
+        <Field label="Note"><textarea className="input" style={{ minHeight: 56, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)}/></Field>
+      </>)}
+      {kind === 'person' && (<>
+        <div className="grid-2">
+          <Field label="Name"><input className="input" autoFocus value={f.name || ''} onChange={e => s('name', e.target.value)}/></Field>
+          <Field label="Role"><select className="input" value={f.role} onChange={e => s('role', e.target.value)}>{PERSON_ROLES.map(x => <option key={x}>{x}</option>)}</select></Field>
+        </div>
+        <Field label="Phone or email"><input className="input" value={f.contact || ''} onChange={e => s('contact', e.target.value)}/></Field>
+        <Field label="Terms (optional)"><input className="input" value={f.terms || ''} onChange={e => s('terms', e.target.value)} placeholder="e.g. put in J$50,000 for 10%, or paid J$300 a delivery"/></Field>
+        <Field label="Notes"><textarea className="input" style={{ minHeight: 56, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)} placeholder="What was agreed, what they are waiting on from you"/></Field>
+      </>)}
+      {kind === 'link' && (<>
+        <Field label="Name"><input className="input" autoFocus value={f.label || ''} onChange={e => s('label', e.target.value)} placeholder="e.g. Live site, Admin panel, Instagram"/></Field>
+        <Field label="Link"><input className="input" value={f.url || ''} onChange={e => s('url', e.target.value)} placeholder="https://"/></Field>
+      </>)}
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete</button>}
+    </Modal>
   );
 }
 
