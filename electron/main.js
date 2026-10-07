@@ -5,6 +5,7 @@ const { app, BrowserWindow, Menu, protocol, net, shell, ipcMain, dialog } = requ
 const fs = require('fs/promises');
 const path = require('path');
 const { pathToFileURL } = require('url');
+const venture = require('./venture');
 
 const SCHEME = 'app';
 const BUILD_DIR = path.join(__dirname, '..', 'build');
@@ -73,6 +74,9 @@ ipcMain.handle('invoice:save-pdf', async (_e, { html, filename }) => {
     pdfWin.destroy();
   }
 });
+
+// Read-only access to another project folder (Ventures section)
+venture.register(() => win);
 
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([

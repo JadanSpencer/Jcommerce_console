@@ -57,6 +57,8 @@ const Icons = {
   bot:       () => <Icon d="M12 2a2 2 0 012 2v1h3a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h3V4a2 2 0 012-2zM9 11a1 1 0 100 2 1 1 0 000-2zm6 0a1 1 0 100 2 1 1 0 000-2zM9 16h6" />,
   barChart:  () => <Icon d="M18 20V10M12 20V4M6 20v-6" />,
   logout:    () => <Icon d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />,
+  book:      () => <Icon d="M4 19.5A2.5 2.5 0 016.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />,
+  rocket:    () => <Icon d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09zM12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2zM9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />,
   search:    () => <Icon d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35" />,
   hourglass: () => <Icon d="M6 2h12M6 22h12M17 2v3.5a5 5 0 0 1-2.2 4.1L12 12l-2.8-2.4A5 5 0 0 1 7 5.5V2M7 22v-3.5a5 5 0 0 1 2.2-4.1L12 12l2.8 2.4a5 5 0 0 1 2.2 4.1V22" />,
   filter:    () => <Icon d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />,
@@ -207,7 +209,7 @@ function getLast20Weeks(count = 20) {
   return weeks;
 }
 
-function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = []) {
+function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = []) {
   let xp = 0;
   // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
   habits.forEach(h => {
@@ -233,28 +235,55 @@ function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers
   // Bonuses derived from stored data so they survive a restart:
   // +100 per completed goal, +15 per Tide Log entry
   // +100 per goal reached, −50 per goal missed or given up
-  goals.forEach(g => { const st = goalStatus(g, todayStr); if (st === 'done') xp += 100; if (st === 'failed') xp -= 50; });
+  goals.forEach(g => { xp += goalXP(g, todayStr); });
+  // +10 for each day the venture's daily check was read
+  xp += new Set(ventureChecks.map(c => c.date)).size * 10;
+  // +5 per syllabus topic that is backed by focus time on that course
+  xp += studyXP(courses, timers, todayStr);
   xp += journal.length * 15;
   xp += focusXP(timers, todayStr);
   return Math.max(0, xp);
 }
 
-// ─── GOALS: kinds that track themselves from real data ────────────────────────
-const GOAL_KINDS = [
-  { id:'revenue', label:'Revenue',        unit:'J$',    hint:'Income logged in Finance since the start date', auto:true },
-  { id:'profit',  label:'Profit',         unit:'J$',    hint:'Income minus expenses since the start date',    auto:true },
-  { id:'clients', label:'New clients',    unit:'clients', hint:'Paying clients won since the start date',    auto:true },
-  { id:'focus',   label:'Focus hours',    unit:'hours', hint:'Time filled in Focus timers since the start date', auto:true },
-  { id:'savings', label:'Savings',        unit:'J$',    hint:'Money you have put aside. Update it yourself',   auto:false },
-  { id:'custom',  label:'Custom',         unit:'',      hint:'Anything else. Update it yourself',              auto:false },
+// ─── GOALS ────────────────────────────────────────────────────────────────────
+// A goal is not always a number. Three shapes:
+//   milestone  one thing that is done or not ("Register the business")
+//   steps      reached by finishing a list of steps
+//   number     a figure to hit; some track themselves from real data
+const GOAL_AREAS = [
+  { id:'Business', hex:'#e63946' },
+  { id:'Money',    hex:'#e6c47c' },
+  { id:'School',   hex:'#ff9a4a' },
+  { id:'Health',   hex:'#3ab88e' },
+  { id:'Personal', hex:'#b89f8b' },
 ];
-const goalKind = g => GOAL_KINDS.find(k => k.id === (g.kind || 'custom')) || GOAL_KINDS[5];
-const goalUnit = g => (g.kind ? (g.kind === 'custom' ? g.unit || '' : goalKind(g).unit) : 'J$');
-const fmtGoal = (g, v) => { const u = goalUnit(g); const n = u === 'hours' ? Math.round(v * 10) / 10 : Math.round(v); return u === 'J$' ? `J$${n.toLocaleString()}` : `${n.toLocaleString()}${u ? ` ${u}` : ''}`; };
+const GOAL_AREA_HEX = Object.fromEntries(GOAL_AREAS.map(a => [a.id, a.hex]));
+const GOAL_KINDS = [
+  { id:'milestone', label:'Milestone',   shape:'do',     hint:'One thing that is either done or not: register the business, get a TRN, launch the app.' },
+  { id:'steps',     label:'Steps',       shape:'do',     hint:'A goal you reach by finishing a list of steps. Tick them off as you go.' },
+  { id:'revenue',   label:'Revenue',     shape:'number', unit:'J$',      auto:true,  hint:'Counts income logged in Finance since the start date.' },
+  { id:'profit',    label:'Profit',      shape:'number', unit:'J$',      auto:true,  hint:'Counts income minus expenses since the start date.' },
+  { id:'clients',   label:'New clients', shape:'number', unit:'clients', auto:true,  hint:'Counts paying clients won since the start date.' },
+  { id:'focus',     label:'Focus hours', shape:'number', unit:'hours',   auto:true,  hint:'Counts time filled in Focus timers since the start date.' },
+  { id:'savings',   label:'Savings',     shape:'number', unit:'J$',      auto:false, hint:'Money you have put aside. You update it.' },
+  { id:'custom',    label:'Other number', shape:'number', unit:'',       auto:false, hint:'Any other figure: books read, kg lost, apps shipped. You update it.' },
+];
+const goalKind = g => GOAL_KINDS.find(k => k.id === (g.kind || 'custom')) || GOAL_KINDS[7];
+const goalArea = g => g.area || ({ Revenue:'Money', Clients:'Business', Skills:'School', Health:'Health', Personal:'Personal' }[g.category]) || 'Business';
+const goalUnit = g => (g.kind ? (g.kind === 'custom' ? g.unit || '' : goalKind(g).unit || '') : 'J$');
+const goalTarget = g => (g.kind === 'milestone' ? 1 : g.kind === 'steps' ? (g.steps || []).length : Number(g.target) || 0);
+const fmtGoal = (g, v) => {
+  if (g.kind === 'milestone') return v >= 1 ? 'Done' : 'Not yet';
+  if (g.kind === 'steps') return `${Math.round(v)} step${Math.round(v) === 1 ? '' : 's'}`;
+  const u = goalUnit(g); const n = u === 'hours' ? Math.round(v * 10) / 10 : Math.round(v);
+  return u === 'J$' ? `J$${n.toLocaleString()}` : `${n.toLocaleString()}${u ? ` ${u}` : ''}`;
+};
 function goalProgress(g, { finances = [], leads = [], timers = [] } = {}) {
   const start = g.startDate || '0000-00-00';
   const inRange = d => d && d >= start;
   switch (g.kind) {
+    case 'milestone': return g.status === 'done' || g.completedAt ? 1 : 0;
+    case 'steps':   return (g.steps || []).filter(s => s.done).length;
     case 'revenue': return finances.filter(f => f.type === 'income' && inRange(f.date)).reduce((s, f) => s + (Number(f.amount) || 0), 0);
     case 'profit':  return finances.filter(f => inRange(f.date)).reduce((s, f) => s + (f.type === 'income' ? 1 : -1) * (Number(f.amount) || 0), 0);
     case 'clients': return leads.filter(l => l.status === 'Paid' && inRange(l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : ''))).length;
@@ -262,7 +291,7 @@ function goalProgress(g, { finances = [], leads = [], timers = [] } = {}) {
     default:        return Number(g.current) || 0;
   }
 }
-// done/failed are written once by the App watcher so a finished goal stays finished
+// done/failed are written once (by the App watcher or the Done button) so a finished goal stays finished
 function goalStatus(g, todayStr) {
   if (g.status === 'done' || g.completedAt) return 'done';
   if (g.status === 'failed') return 'failed';
@@ -270,6 +299,9 @@ function goalStatus(g, todayStr) {
   if (g.deadline && g.deadline < todayStr) return 'failed';
   return 'active';
 }
+// XP: +100 for a goal reached after you committed to it, −50 for one missed.
+// Wins logged after the fact are on the record but earn nothing.
+const goalXP = (g, todayStr) => { const st = goalStatus(g, todayStr); return st === 'done' ? (g.logged ? 0 : 100) : st === 'failed' ? -50 : 0; };
 
 function xpToLevel(xp) {
   return { level: Math.floor(xp/500)+1, progress: (xp%500)/500, xpInLevel: xp%500 };
@@ -498,7 +530,7 @@ function LevelUpSplash({ level, onDismiss }) {
     `}</style>
     <div onClick={onDismiss} style={{
       position:'fixed',inset:0,zIndex:9998,
-      background:'rgba(6,2,3,0.92)',
+      background:'rgba(var(--b0),0.92)',
       display:'flex',flexDirection:'column',
       alignItems:'center',justifyContent:'center',
       backdropFilter:'blur(12px)',
@@ -508,7 +540,7 @@ function LevelUpSplash({ level, onDismiss }) {
       {/* Ring burst */}
       <div style={{
         position:'absolute',width:260,height:260,
-        border:'2px solid rgba(230,57,70,0.3)',
+        border:'2px solid rgba(var(--p3),0.3)',
         borderRadius:'50%',
         animation:'ringBurst 1.2s ease-out forwards',
       }}/>
@@ -520,10 +552,10 @@ function LevelUpSplash({ level, onDismiss }) {
       }}/>
       <div style={{
         width:96,height:96,borderRadius:'50%',
-        background:'linear-gradient(135deg,rgba(122,19,30,0.6),rgba(230,57,70,0.15))',
+        background:'linear-gradient(135deg,rgba(var(--p6),0.6),rgba(var(--p3),0.15))',
         border:'2px solid var(--bolt)',
         display:'flex',alignItems:'center',justifyContent:'center',
-        boxShadow:'0 0 40px rgba(230,57,70,0.5),0 0 80px rgba(230,57,70,0.2)',
+        boxShadow:'0 0 40px rgba(var(--p3),0.5),0 0 80px rgba(var(--p3),0.2)',
         marginBottom:'1.5rem',
         fontSize:'36px',fontWeight:900,fontFamily:'var(--fe)',
         color:'var(--bolt)',
@@ -538,7 +570,7 @@ function LevelUpSplash({ level, onDismiss }) {
       <div style={{
         fontFamily:'var(--fe)',fontSize:'36px',fontWeight:700,
         color:'var(--mist-0)',letterSpacing:'-0.02em',lineHeight:1,
-        textShadow:'0 0 30px rgba(230,57,70,0.4)',marginBottom:'0.5rem',
+        textShadow:'0 0 30px rgba(var(--p3),0.4)',marginBottom:'0.5rem',
       }}>Level {level}</div>
       <div style={{
         fontFamily:'var(--fm)',fontSize:'12px',color:'var(--mist-2)',
@@ -635,8 +667,8 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
   return (
     <div className="span-7" style={{
       position: 'relative', overflow: 'hidden',
-      background: 'linear-gradient(160deg, rgba(20,8,9,0.95) 0%, rgba(58,18,22,0.2) 100%)',
-      border: '1px solid rgba(230,57,70,0.12)',
+      background: 'linear-gradient(160deg, rgba(var(--b2),0.95) 0%, rgba(var(--b3),0.2) 100%)',
+      border: '1px solid rgba(var(--p3),0.12)',
       borderRadius: 14, padding: '1.125rem',
     }}>
       {/* Top lightning line */}
@@ -652,7 +684,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
         {metrics.map(m => (
           <div key={m.label} style={{
             background:'rgba(0,0,0,0.35)',
-            border:'1px solid rgba(230,57,70,0.07)',
+            border:'1px solid rgba(var(--p3),0.07)',
             borderRadius:10, padding:'0.75rem 0.625rem',
             position:'relative',overflow:'hidden',
           }}>
@@ -666,8 +698,8 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
                 position:'absolute',top:'0.5rem',right:'0.5rem',
                 fontFamily:'var(--fm)',fontSize:'8px',fontWeight:600,
                 color: m.delta >= 0 ? 'var(--bolt)' : '#ff5a36',
-                background: m.delta >= 0 ? 'rgba(230,57,70,0.1)' : 'rgba(255,90,54,0.1)',
-                border: `1px solid ${m.delta>=0?'rgba(230,57,70,0.25)':'rgba(255,90,54,0.25)'}`,
+                background: m.delta >= 0 ? 'rgba(var(--p3),0.1)' : 'rgba(255,90,54,0.1)',
+                border: `1px solid ${m.delta>=0?'rgba(var(--p3),0.25)':'rgba(255,90,54,0.25)'}`,
                 borderRadius:99, padding:'1px 5px',
               }}>
                 {m.delta >= 0 ? '+' : ''}{m.delta}%
@@ -713,7 +745,7 @@ function AlertBanner({ alerts }) {
 
   return (
     <div className="alert-toast" style={{
-      background: 'rgba(9,4,5,0.98)',
+      background: 'rgba(var(--b0),0.98)',
       border: `1px solid ${typeColor}33`,
       borderTop: `2px solid ${typeColor}`,
       borderRadius: 12,
@@ -807,7 +839,7 @@ function AlertBanner({ alerts }) {
 // from the trench, and the occasional soft caustic band of light moving
 // across the water — replaces the old circuit-board grid with something
 // that actually belongs to the ocean theme.
-function Particles() {
+function Particles({ palette }) {
   const canvasRef = useRef(null);
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -818,7 +850,7 @@ function Particles() {
     const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; init(); };
 
     // Bioluminescent palette — teal current, a rarer violet glow, a trace of amber
-    const GLOWS = ['#7a131e', '#c8202f', '#e63946', '#ff7a3d', '#d3a855', '#f2ddab'];
+    const GLOWS = palette || ['#7a131e', '#c8202f', '#e63946', '#ff7a3d', '#d3a855', '#f2ddab'];
 
     let motes = [];   // slow-drifting bioluminescent plankton
     let bubbles = []; // quietly rising bubbles
@@ -891,9 +923,9 @@ function Particles() {
         if (c.y - c.width > canvas.height) c.y = -c.width;
         const sway = Math.sin(c.phase) * 30;
         const grd = ctx.createLinearGradient(0, c.y - c.width, 0, c.y + c.width);
-        grd.addColorStop(0, 'rgba(200,32,47,0)');
+        grd.addColorStop(0, 'rgba(0,0,0,0)');
         grd.addColorStop(0.5, hexToRgba('#d3a855', c.alpha * 0.7));
-        grd.addColorStop(1, 'rgba(200,32,47,0)');
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.save();
         ctx.translate(sway, 0);
         ctx.fillStyle = grd;
@@ -950,7 +982,7 @@ function Particles() {
     loop();
     window.addEventListener('resize', resize);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize); };
-  }, []);
+  }, [palette]);
 
   return (
     <canvas ref={canvasRef} style={{
@@ -958,6 +990,45 @@ function Particles() {
       pointerEvents:'none', zIndex:0, opacity:0.5,
     }}/>
   );
+}
+
+// ─── SECTION THEMES ───────────────────────────────────────────────────────────
+// Every section has its own colour. A theme is generated from one hue: accent
+// shades, matching dark backgrounds and the ember colours. Gold stays constant
+// across all of them, and red/green keep meaning bad/good everywhere.
+const SECTION_HUES = {
+  dashboard: [355, 72], pipeline: [22, 85],  habits: [150, 66],  todos: [265, 68],
+  focus: [214, 78],     studies: [196, 78],  schedule: [176, 68], finance: [42, 62],
+  goals: [330, 72],     jaxon: [300, 62],    clients: [238, 66],  ventures: [84, 58],
+};
+const hslToRgb = (h, sat, l) => {
+  const s1 = sat / 100, l1 = l / 100, k = n => (n + h / 30) % 12, a = s1 * Math.min(l1, 1 - l1);
+  const f = n => Math.round(255 * (l1 - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+  return [f(0), f(8), f(4)];
+};
+const rgbHex = c => '#' + c.map(x => x.toString(16).padStart(2, '0')).join('');
+function makeTheme([h, sat]) {
+  const P = l => hslToRgb(h, sat, l), G = l => hslToRgb(h, Math.min(52, sat * 0.62), l);
+  const accent = { 900: P(9), 700: P(21), 600: P(28), 500: P(38), 400: P(45), 300: P(56), 200: P(76), 100: P(90), '050': P(97) };
+  const ground = { 950: G(2.2), 900: G(3.4), 850: G(5.2), 800: G(6.8), 700: G(8.5), 600: G(11), 500: G(15), 400: G(20), 300: G(27) };
+  const vars = {
+    ...Object.fromEntries(Object.entries(accent).map(([k, v]) => [`--teal-${k}`, rgbHex(v)])),
+    ...Object.fromEntries(Object.entries(ground).map(([k, v]) => [`--abyss-${k}`, rgbHex(v)])),
+    '--p2': accent[200].join(','), '--p3': accent[300].join(','), '--p4': accent[400].join(','), '--p6': accent[600].join(','),
+    '--b0': ground[950].join(','), '--b1': ground[900].join(','), '--b2': ground[850].join(','), '--b3': G(15).join(','),
+    '--teal-glow': `rgba(${accent[400].join(',')},0.22)`, '--teal-deep': `rgba(${accent[400].join(',')},0.09)`, '--teal-trace': `rgba(${accent[400].join(',')},0.045)`,
+  };
+  return { vars, embers: [rgbHex(accent[600]), rgbHex(accent[400]), rgbHex(accent[300]), rgbHex(accent[200]), '#d3a855', '#f2ddab'] };
+}
+const THEMES = Object.fromEntries(Object.entries(SECTION_HUES).map(([id, hs]) => [id, makeTheme(hs)]));
+function applyTheme(id) {
+  const theme = THEMES[id] || THEMES.dashboard;
+  const root = document.documentElement;
+  Object.entries(theme.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  document.body.classList.add('theme-shift');
+  clearTimeout(applyTheme.t);
+  applyTheme.t = setTimeout(() => document.body.classList.remove('theme-shift'), 750);
+  return theme;
 }
 
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
@@ -1045,6 +1116,8 @@ function SignIn() {
 
 function App() {
   const [tab, setTab] = useState('dashboard');
+  // Each section wears its own colours
+  const theme = useMemo(() => applyTheme(tab), [tab]);
   const [leads, setLeads]       = useState([]);
   const [habits, setHabits]     = useState([]);
   const [schedule, setSchedule] = useState([]);
@@ -1057,6 +1130,10 @@ function App() {
   const [journal, setJournal]   = useState([]);
   const [budgets, setBudgets]   = useState([]);
   const [timers, setTimers]     = useState([]);
+  const [ventureServices_, setVentureServices] = useState([]);
+  const [ventureChecks, setVentureChecks] = useState([]);
+  const [courses, setCourses]   = useState([]);
+  const [settings, setSettings] = useState([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [toasts, setToasts]     = useState([]);
   const [xpPops, setXpPops]     = useState([]);
@@ -1160,7 +1237,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],
+      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['courses',setCourses],['settings',setSettings],
     ];
 
     // Track which collections have fired at least once
@@ -1326,11 +1403,15 @@ function App() {
     const ctx = { finances, leads, timers };
     goals.forEach(g => {
       if (g.status === 'done' || g.status === 'failed' || g.completedAt) return;
-      const target = Number(g.target) || 0;
-      if (target > 0 && goalProgress(g, ctx) >= target) update('goals', g.id, { status: 'done', completedAt: new Date().toISOString() });
+      const target = goalTarget(g);
+      if (g.kind !== 'milestone' && target > 0 && goalProgress(g, ctx) >= target) update('goals', g.id, { status: 'done', completedAt: new Date().toISOString() });
       else if (g.deadline && g.deadline < todayStr) update('goals', g.id, { status: 'failed', failedAt: new Date().toISOString() });
     });
   }, [goals, finances, leads, timers, todayStr]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Weekly hour targets for Work / School / Life
+  const balanceDoc = settings.find(x => x.key === 'balance');
+  const setBalance = targets => (balanceDoc ? update('settings', balanceDoc.id, { targets }) : add('settings', { key: 'balance', targets }));
 
   // One budget doc per expense category; a limit of 0 removes it
   const setBudget = async (category, limit) => {
@@ -1355,7 +1436,7 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers);
+  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses);
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -1375,11 +1456,13 @@ function App() {
     {id:'habits',    label:'Habits',   icon:Icons.habits},
     {id:'todos',     label:'Tasks',    icon:Icons.tasks},
     {id:'focus',     label:'Focus',    icon:Icons.hourglass},
+    {id:'studies',   label:'Studies',  icon:Icons.book},
     {id:'schedule',  label:'Schedule', icon:Icons.schedule},
     {id:'finance',   label:'Finance',  icon:Icons.finance},
     {id:'goals',     label:'Goals',    icon:Icons.goals},
     {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon},
     {id:'clients',   label:'Clients',  icon:Icons.briefcase},
+    {id:'ventures',  label:'Ventures', icon:Icons.rocket},
   ];
   const currentNav = navItems.find(n => n.id === tab) || navItems[0];
 
@@ -1441,7 +1524,7 @@ function App() {
       {/* Ambient orbs */}
       <div className="orb orb-1" />
       <div className="orb orb-2" />
-      <Particles />
+      <Particles palette={theme.embers}/>
 
       <header className="header">
         <div className="brand">
@@ -1456,19 +1539,19 @@ function App() {
           <span>{currentNav.label}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(230,57,70,0.2)',color:'var(--bolt)'}}>📄</button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--bolt)'}}>📄</button>
           <button
             onClick={requestPermission}
             title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
             style={{
               position:'relative',background:'none',
-              border:`1px solid ${notifSubbed?'rgba(230,57,70,0.35)':'rgba(255,255,255,0.08)'}`,
+              border:`1px solid ${notifSubbed?'rgba(var(--p3),0.35)':'rgba(255,255,255,0.08)'}`,
               cursor:'pointer',
               display:'flex',alignItems:'center',justifyContent:'center',
               width:32,height:32,
               color:notifSubbed?'var(--bolt)':notifPerm==='granted'?'var(--bolt-3)':'var(--mist-3)',
               borderRadius:'var(--r1)',
-              boxShadow:notifSubbed?'0 0 8px rgba(230,57,70,0.3)':'none',
+              boxShadow:notifSubbed?'0 0 8px rgba(var(--p3),0.3)':'none',
               flexShrink:0,
             }}>
             <Icons.bell size={15}/>
@@ -1516,15 +1599,22 @@ function App() {
       )}
 
       <main className="main">
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} ventureChecked={ventureChecks.some(c=>c.date===todayStr)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
-        {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer}/>}
+        {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
+        {tab==='studies'  && <Studies courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
+          onAdd={d=>add('courses',d)} onUpdate={(id,d)=>update('courses',id,d)} onDelete={id=>remove('courses',id)}
+          onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
+        {tab==='ventures' && <Ventures services={ventureServices_} checks={ventureChecks} todayStr={todayStr}
+          onSaveService={d => { const { id, createdAt, ...data } = d; const existing = id ? { id } : ventureServices_.find(x => x.serviceId === d.serviceId); existing ? update('venture_services', existing.id, data) : add('venture_services', data); }}
+          onDeleteService={id => remove('venture_services', id)}
+          onSaveCheck={d => { if (!ventureChecks.some(c => c.date === d.date)) add('venture_checks', d); }}/>}
         {tab==='clients'  && <ClientManagement leads={leads} finances={finances} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={remove}/>}
       </main>
 
@@ -1537,10 +1627,10 @@ function App() {
           </div>
         </div>
         {navItems.map((n,i) => (
-          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={`${n.label} (⌘${(i+1)%10})`}>
+          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={i < 10 ? `${n.label} (⌘${(i+1)%10})` : n.label}>
             <span className="nav-icon"><n.icon /></span>
             <span className="nav-lbl">{n.label}</span>
-            <span className="nav-key">⌘{(i+1)%10}</span>
+            {i < 10 && <span className="nav-key">⌘{(i+1)%10}</span>}
           </button>
         ))}
         <div className="nav-foot">
@@ -1725,7 +1815,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, ventureChecked, todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -1797,7 +1887,9 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   else if (tasksDone < 5) push(hour >= 15 ? 'warn' : 'info', `Finish ${5 - tasksDone} more task${5 - tasksDone === 1 ? '' : 's'} today to avoid −10 XP tomorrow.`, 'Tasks', go('todos'));
   goals.forEach(g => {
     if (goalStatus(g, todayStr) !== 'active' || !g.deadline) return;
-    const cur = goalProgress(g, { finances, leads, timers }), tgt = Number(g.target) || 0;
+    const dueIn = Math.round((parseLocal(g.deadline) - parseLocal(todayStr)) / 864e5);
+    if (g.kind === 'milestone') { if (dueIn <= 3) push(dueIn <= 1 ? 'danger' : 'warn', `"${g.title}" is due ${dueIn === 0 ? 'today' : dueIn === 1 ? 'tomorrow' : `in ${dueIn} days`}.`, 'Goals', go('goals')); return; }
+    const cur = goalProgress(g, { finances, leads, timers }), tgt = goalTarget(g);
     const start = g.startDate || todayStr;
     const span = Math.max(1, Math.round((parseLocal(g.deadline) - parseLocal(start)) / 864e5));
     const elapsed = Math.min(1, Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(start)) / 864e5) / span));
@@ -1806,6 +1898,17 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   if (sinceLog !== null && sinceLog >= 3) push('warn', `Nothing logged in Finance for ${sinceLog} days. Log what you spent.`, 'Log it', go('finance'));
   if (openLeads.filter(l => !l.nextActionDate).length) push('info', `${openLeads.filter(l => !l.nextActionDate).length} open lead${openLeads.filter(l => !l.nextActionDate).length === 1 ? ' has' : 's have'} no next step. A lead without a date gets forgotten.`, 'Pipeline', go('pipeline'));
   if (nextBlock && toMin(nextBlock.start) > nowMin && toMin(nextBlock.start) - nowMin <= 120) push('info', `Next up: ${nextBlock.title} at ${fmtTime(nextBlock.start)}.`, 'Schedule', go('schedule'));
+  courses.forEach(c => {
+    const cs = courseStats(c, timers, todayStr);
+    if (!cs.total) { push('info', `${c.code} has no syllabus yet. Paste it in so you can track it.`, 'Studies', go('studies')); return; }
+    if (cs.left === 0 || cs.daysToExam === null || cs.daysToExam < 0) return;
+    if (cs.daysToExam <= 14) push(cs.daysToExam <= 7 ? 'danger' : 'warn', `${c.code} exam in ${cs.daysToExam} day${cs.daysToExam === 1 ? '' : 's'} with ${cs.left} topic${cs.left === 1 ? '' : 's'} uncovered.`, 'Studies', go('studies'));
+    else if (cs.behind) push('warn', `${c.code} is behind: ${Math.round(cs.pct * 100)}% covered, ${Math.round(cs.elapsed * 100)}% of the term gone. ${Math.ceil(cs.perWeek)} topics a week from here.`, 'Studies', go('studies'));
+  });
+  todos.filter(t => t.addedDate > todayStr && t.addedDate <= addDays(todayStr, 3) && !taskDone(t))
+    .sort((a, b) => a.addedDate.localeCompare(b.addedDate)).slice(0, 3)
+    .forEach(t => push(t.addedDate === addDays(todayStr, 1) ? 'danger' : 'warn', `${t.title} is due ${t.addedDate === addDays(todayStr, 1) ? 'tomorrow' : fmtDate(t.addedDate, { weekday:'long' })}.`, 'Tasks', go('todos')));
+  if (DESKTOP?.venture && !ventureChecked) push(hour >= 12 ? 'warn' : 'info', "Dorm Dash's daily check hasn't been read today. +10 XP.", 'Ventures', go('ventures'));
   if (hour >= 18 && !wroteTide) push('info', "Write tonight's Tide Log before bed. +15 XP.", null, null);
   const order = { danger: 0, warn: 1, info: 2 };
   moves.sort((a, b) => order[a.lv] - order[b.lv]);
@@ -1956,6 +2059,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
       </div>
 
       <div className="dash-row wide">
+        <BalanceCard schedule={schedule} timers={timers} todayStr={todayStr} targets={balance} onSetTargets={onSetBalance}/>
         <VelocityTracker leads={leads} finances={finances} habits={activeHabits} todos={todos} todayStr={todayStr} xp={xp}/>
         <div className="card fade-in">
           <div className="card-label">Habit consistency · {weekCount} weeks</div>
@@ -2404,7 +2508,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                           }}>
                           📄 Invoice
                         </button>
-                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(230,57,70,0.25)',color:'var(--bolt)',background:'rgba(230,57,70,0.05)'}}
+                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(var(--p3),0.25)',color:'var(--bolt)',background:'rgba(var(--p3),0.05)'}}
                           onClick={async ()=>{
                             const prompt = `LEAD ANALYSIS REQUEST\n\nBusiness: ${l.businessName}\nStatus: ${l.status}\nLocation: ${l.location||'Jamaica'}\nValue: J$${Number(l.value||0).toLocaleString()}\nPhone: ${l.phone||'Not found'}\nNotes: ${l.notes||'None'}\nLast action: ${l.nextAction||'None'} on ${l.nextActionDate||'N/A'}\nOutreach draft: ${l.outreachDraft||'None'}\n\nAs my business AI, analyse this lead and tell me:\n1. What is the best next move right now?\n2. What should I say to them?\n3. What is the probability of closing?\n4. Any red flags?`;
                             window._openJaxonChat && window._openJaxonChat(prompt);
@@ -2526,7 +2630,7 @@ function PaymentModal({lead,existing,onLog,onUpdateEntry,onClose}) {
           <div className="card-label" style={{margin:0,marginBottom:'0.5rem'}}>Existing Payments</div>
           {existing.map(p=>(
             <div key={p.id} style={{display:'flex',justifyContent:'space-between',padding:'0.25rem 0',
-              fontSize:'12px',borderBottom:'1px solid rgba(230,57,70,0.06)'}}>
+              fontSize:'12px',borderBottom:'1px solid rgba(var(--p3),0.06)'}}>
               <span style={{fontFamily:'var(--fm)',color:'var(--mist-2)'}}>{p.paymentStage}</span>
               <span style={{fontFamily:'var(--fm)',color:'#1adb8a',fontWeight:600}}>J${Number(p.amount).toLocaleString()}</span>
             </div>
@@ -2725,6 +2829,9 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const unfinished = todos
     .filter(t => t.addedDate < todayStr && t.addedDate >= addDays(todayStr, -7) && !taskDone(t) && !t.movedTo)
     .sort((a, b) => (b.addedDate || '').localeCompare(a.addedDate || ''));
+  // Tasks planned for a later day (coursework deadlines): shown ahead of time
+  const upcoming = todos.filter(t => t.addedDate > todayStr).sort((a, b) => a.addedDate.localeCompare(b.addedDate));
+  const daysTo = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5);
   const sorted = [...today].sort((a, b) =>
     (a.doneOn?.[todayStr] ? 1 : 0) - (b.doneOn?.[todayStr] ? 1 : 0) || (b.starred ? 1 : 0) - (a.starred ? 1 : 0));
 
@@ -2800,6 +2907,27 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
         ))}
         <div className="goal-hint" style={{ marginTop:'0.75rem' }}>A task only counts on the day it's planned. Carrying it forward gives you another shot; the missed day still counts.</div>
       </div>
+
+      {upcoming.length > 0 && (
+        <div className="card tk-list">
+          <div className="card-label">Coming up · {upcoming.length}</div>
+          {upcoming.map(t => {
+            const n = daysTo(t.addedDate);
+            return (
+              <div key={t.id} className="tk-row old">
+                <div className="tk-main">
+                  <div className="tk-title">{t.title}</div>
+                  <div className="tk-note">{fmtDate(t.addedDate, { weekday:'short', month:'short', day:'numeric' })}{t.note ? ` · ${t.note}` : ''}</div>
+                </div>
+                <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n === 1 ? 'tomorrow' : `${n} days`}</span>
+                <button className="icon-btn" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
+                <button className="icon-btn danger-btn" onClick={() => remove(t)}><Icons.trash size={12}/></button>
+              </div>
+            );
+          })}
+          <div className="goal-hint" style={{ marginTop:'0.75rem' }}>These land in Today on their date. Finish early if you can; the date is the last day, not the plan.</div>
+        </div>
+      )}
 
       {form !== null && (
         <Modal title="Edit Task" onClose={() => setForm(null)}>
@@ -2913,7 +3041,7 @@ function FocusPill({ timers, onOpen }) {
   );
 }
 
-function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }) {
+function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onStart, onPause }) {
   const { confirm, ConfirmUI } = useConfirm();
   const [filter, setFilter] = useState('active');
   const [form, setForm] = useState(null);
@@ -2995,7 +3123,7 @@ function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }
                 <div className="focus-head">
                   <div>
                     <div className="focus-title">{t.title}</div>
-                    <div className="focus-meta">{t.category} · {fmtHM(target)} target</div>
+                    <div className="focus-meta">{t.category}{t.courseId && courses.find(c => c.id === t.courseId) ? ` · ${courses.find(c => c.id === t.courseId).code}` : ''} · {fmtHM(target)} target</div>
                   </div>
                   <button className="icon-btn" title="Edit" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
                 </div>
@@ -3031,7 +3159,7 @@ function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }
       )}
 
       {form !== null && (
-        <TimerModal data={form} todayStr={todayStr}
+        <TimerModal data={form} todayStr={todayStr} courses={courses}
           onSave={d => { form.id ? onUpdate(form.id, d) : onAdd(d); setForm(null); }}
           onGiveUp={form.id && timerStatus(form, todayStr) === 'active' ? () => giveUp(form) : null}
           onDelete={form.id && (!form.createdAt?.toDate || Date.now() - form.createdAt.toDate().getTime() < DELETE_GRACE_MS) && timerElapsed(form, Date.now()) < 60 ? () => remove(form) : null}
@@ -3042,7 +3170,7 @@ function Focus({ timers, todayStr, onAdd, onUpdate, onDelete, onStart, onPause }
   );
 }
 
-function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
+function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, onClose }) {
   const editing = !!data.id;
   const locked = editing && timerStatus(data, todayStr) !== 'active';
   const minTarget = editing ? Number(data.targetMinutes) || 0 : 0;
@@ -3051,6 +3179,7 @@ function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
   const [hours, setHours] = useState(data.targetMinutes ? Math.floor(data.targetMinutes / 60) : 2);
   const [mins, setMins] = useState(data.targetMinutes ? data.targetMinutes % 60 : 0);
   const [deadline, setDeadline] = useState(data.deadline || addDays(todayStr, 7));
+  const [courseId, setCourseId] = useState(data.courseId || '');
   const targetMinutes = (Number(hours) || 0) * 60 + (Number(mins) || 0);
   const days = Math.round((parseLocal(deadline) - parseLocal(todayStr)) / 864e5) + 1;
   const done = editing ? (Number(data.elapsedSec) || 0) / 60 : 0;
@@ -3077,6 +3206,14 @@ function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
           {FOCUS_CATS.map(c => <button key={c.id} type="button" className={`sched-cal ${category === c.id ? 'on' : ''}`} style={{ '--c': c.hex }} onClick={() => !locked && setCategory(c.id)}><span className="dot"/>{c.id}</button>)}
         </div>
       </Field>
+      {category === 'Study' && courses.length > 0 && (
+        <Field label="Course (study time counts toward its syllabus)">
+          <select className="input" value={courseId} onChange={e => setCourseId(e.target.value)} disabled={locked}>
+            <option value="">No course</option>
+            {courses.map(c => <option key={c.id} value={c.id}>{c.code}{c.title ? ` · ${c.title}` : ''}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label={editing ? `Target (can only go up from ${fmtHM(minTarget * 60)})` : 'Minimum time'}>
         <div className="focus-target">
           <input className="input" type="number" min="0" value={hours} onChange={e => setHours(e.target.value)} disabled={locked}/><span>h</span>
@@ -3102,10 +3239,411 @@ function TimerModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
       )}
       {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
 
-      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
+      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, courseId: category === 'Study' ? courseId : '', ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
       {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
       {locked && <ModalFoot onClose={onClose}/>}
+    </Modal>
+  );
+}
+
+// ─── STUDIES ──────────────────────────────────────────────────────────────────
+// Every course carries its full syllabus as a tree (unit → topic → subtopic)
+// that gets ticked off. Focus timers attach to a course, and that study time
+// is what backs the ticks: nobody is watching, so the timer is the witness.
+const MIN_PER_TOPIC = 20;   // focus minutes that back one ticked topic
+const XP_PER_TOPIC = 5;
+const COURSE_HEX = ['#e6c47c', '#ff9a4a', '#e63946', '#3ab88e', '#7fb4ff', '#c58bd6'];
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const leavesOf = nodes => (nodes || []).flatMap(n => (n.children?.length ? leavesOf(n.children) : [n]));
+const nodeDone = n => (n.children?.length ? n.children.every(nodeDone) : !!n.done);
+const editTree = (nodes, id, fn) => (nodes || []).flatMap(n => {
+  if (n.id === id) { const r = fn(n); return r ? [r] : []; }
+  return [{ ...n, children: editTree(n.children, id, fn) }];
+});
+const setAll = (n, done) => (n.children?.length ? { ...n, children: n.children.map(c => setAll(c, done)) } : { ...n, done, doneAt: done ? new Date().toISOString() : null });
+
+// Turn a pasted outline into a tree. Depth comes from numbering (1, 1.2, 1.2.3)
+// or from indentation; "Unit 3", "Week 2", "Module 1" always start a new top level.
+function parseOutline(text) {
+  const rows = [];
+  text.split('\n').forEach(raw => {
+    if (!raw.trim()) return;
+    const indent = raw.match(/^[\t ]*/)[0].replace(/\t/g, '  ').length;
+    let line = raw.trim().replace(/^[-*•·▪◦–]\s+/, '');
+    let level = null;
+    const num = line.match(/^(\d+(?:\.\d+)*)[.)]?\s+(.*)$/);
+    if (num) { level = num[1].split('.').length - 1; line = num[2]; }
+    const heading = /^(unit|week|module|chapter|section|part|lecture)\s*\d+/i.test(line);
+    rows.push({ title: line.replace(/\s+/g, ' ').trim(), indent, level, heading });
+  });
+  if (!rows.length) return [];
+  const indents = [...new Set(rows.filter(r => r.level === null).map(r => r.indent))].sort((a, b) => a - b);
+  const tree = [];
+  const stack = [];
+  let prev = -1;
+  rows.forEach(r => {
+    let lvl = r.heading ? 0 : r.level !== null ? r.level : indents.indexOf(r.indent);
+    if (!r.heading && r.level === null && stack.length && rows.some(x => x.heading) && lvl === 0) lvl = 1; // plain lines under a "Unit" heading
+    lvl = Math.max(0, Math.min(2, Math.min(lvl, prev + 1)));
+    const node = { id: newId(), title: r.title, done: false, children: [] };
+    stack.length = lvl;
+    (lvl === 0 ? tree : stack[lvl - 1].children).push(node);
+    stack[lvl] = node;
+    prev = lvl;
+  });
+  return tree;
+}
+
+const courseFocusSec = (course, timers, nowMs) => timers.filter(t => t.courseId === course.id)
+  .reduce((s, t) => s + (Number(t.elapsedSec) || 0) + timerRunSec(t, nowMs), 0);
+function courseStats(course, timers, todayStr) {
+  const leaves = leavesOf(course.syllabus), done = leaves.filter(l => l.done).length;
+  const focusSec = courseFocusSec(course, timers, Date.now());
+  const backed = Math.min(done, Math.floor(focusSec / 60 / MIN_PER_TOPIC));
+  const daysToExam = course.examDate ? Math.round((parseLocal(course.examDate) - parseLocal(todayStr)) / 864e5) : null;
+  const left = leaves.length - done;
+  const perWeek = daysToExam !== null && daysToExam > 0 ? left / (daysToExam / 7) : null;
+  // Pace: how far through the term you are vs how far through the syllabus
+  const start = course.startDate || (course.createdAt?.toDate ? localDateStr(course.createdAt.toDate()) : todayStr);
+  const span = course.examDate ? Math.max(1, Math.round((parseLocal(course.examDate) - parseLocal(start)) / 864e5)) : null;
+  const elapsed = span ? Math.min(1, Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(start)) / 864e5) / span)) : null;
+  const pct = leaves.length ? done / leaves.length : 0;
+  return { total: leaves.length, done, left, pct, focusSec, backed, unbacked: done - backed, daysToExam, perWeek, elapsed, behind: elapsed !== null && left > 0 && pct + 0.05 < elapsed };
+}
+const studyXP = (courses, timers, todayStr) => courses.reduce((s, c) => s + courseStats(c, timers, todayStr).backed * XP_PER_TOPIC, 0);
+
+// ── Work / School / Life: where this week's hours actually went ─────────────
+const BALANCE_DEFAULT = { School: 25, Work: 20, Life: 10 };
+const BALANCE_HEX = { School: '#e6c47c', Work: '#e63946', Life: '#3ab88e' };
+function weekBalance(schedule, timers, todayStr) {
+  const monday = mondayOf(todayStr), nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  const out = { School: { planned: 0, done: 0 }, Work: { planned: 0, done: 0 }, Life: { planned: 0, done: 0 } };
+  const bucket = b => ({ School: 'School', Work: 'Work', Personal: 'Life' }[calOf(b)] || 'Work');
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(monday, i);
+    schedule.filter(b => blockOccursOn(b, d)).forEach(b => {
+      const mins = Math.max(0, toMin(b.end) - toMin(b.start));
+      if (d > todayStr) return;                              // only count what has happened
+      const past = d < todayStr ? mins : Math.max(0, Math.min(mins, nowMin - toMin(b.start)));
+      out[bucket(b)].planned += past / 60;
+    });
+  }
+  timers.forEach(t => {
+    const key = t.category === 'Study' ? 'School' : t.category === 'Other' ? 'Life' : 'Work';
+    const sec = (t.sessions || []).filter(s => localDateStr(new Date(s.end)) >= monday).reduce((a, s) => a + (Number(s.sec) || 0), 0) + timerRunSec(t, Date.now());
+    out[key].done += sec / 3600;
+  });
+  const dayNo = Math.round((parseLocal(todayStr) - parseLocal(monday)) / 864e5) + 1;
+  return { out, dayNo };
+}
+
+function BalanceCard({ schedule, timers, todayStr, targets, onSetTargets }) {
+  const [edit, setEdit] = useState(null);
+  const t = { ...BALANCE_DEFAULT, ...(targets || {}) };
+  const { out, dayNo } = weekBalance(schedule, timers, todayStr);
+  const rows = Object.keys(BALANCE_DEFAULT).map(k => {
+    const hours = out[k].planned + out[k].done, due = (Number(t[k]) || 0) * (dayNo / 7);
+    return { k, hours, target: Number(t[k]) || 0, due, ratio: due > 0 ? hours / due : 1, ...out[k] };
+  });
+  const worst = rows.filter(r => r.target > 0).sort((a, b) => a.ratio - b.ratio)[0];
+  const best = rows.filter(r => r.target > 0).sort((a, b) => b.ratio - a.ratio)[0];
+  const verdict = !worst ? 'Set weekly hours for each part of your life.'
+    : worst.ratio >= 0.9 ? 'Balanced so far this week. Keep it that way.'
+    : `${worst.k} is the one slipping: ${fmtHM(worst.hours * 3600)} of the ${fmtHM(worst.due * 3600)} you should have by today${best && best.k !== worst.k && best.ratio > 1.15 ? `, while ${best.k} is over` : ''}.`;
+  return (
+    <div className="card balance">
+      <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+        <span className="card-label" style={{ margin: 0 }}>This week's balance</span>
+        <button className="link-btn" onClick={() => setEdit({ ...t })}>Set hours</button>
+      </div>
+      {rows.map(r => (
+        <div key={r.k} className="bal-row" style={{ '--c': BALANCE_HEX[r.k] }}>
+          <div className="row-between">
+            <span className="bal-name">{r.k}</span>
+            <span className={`bal-num ${r.target && r.ratio < 0.75 ? 'bad' : ''}`}>{fmtHM(r.hours * 3600)} <em>/ {r.target}h</em></span>
+          </div>
+          <div className="goal-bar">
+            <div className="goal-fill" style={{ width: `${r.target ? Math.min(100, (r.hours / r.target) * 100) : 0}%`, background: 'var(--c)' }}/>
+            {r.target > 0 && <div className="goal-time" style={{ left: `${(dayNo / 7) * 100}%` }} title="Where you should be by today"/>}
+          </div>
+          <div className="bal-sub">{r.k === 'Life' ? `${fmtHM(r.planned * 3600)} of personal time kept` : `${fmtHM(r.planned * 3600)} ${r.k === 'School' ? 'in class' : 'scheduled'} + ${fmtHM(r.done * 3600)} focused`}</div>
+        </div>
+      ))}
+      <div className="goal-hint" style={{ marginTop: '0.7rem' }}>{verdict}</div>
+      {edit && (
+        <Modal title="Hours per week" onClose={() => setEdit(null)}>
+          <div className="focus-preview"><div>There are 168 hours in a week. Sleep takes about 56. Decide where the rest goes before the week decides for you.</div></div>
+          {Object.keys(BALANCE_DEFAULT).map(k => (
+            <Field key={k} label={`${k} (hours a week)`}><input className="input" type="number" min="0" max="100" value={edit[k]} onChange={e => setEdit(v => ({ ...v, [k]: e.target.value }))}/></Field>
+          ))}
+          <ModalFoot onClose={() => setEdit(null)} onSave={() => { onSetTargets(Object.fromEntries(Object.keys(BALANCE_DEFAULT).map(k => [k, Math.max(0, Number(edit[k]) || 0)]))); setEdit(null); }}/>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, onAdd, onUpdate, onDelete, onAddTimer, onStartTimer, onPauseTimer }) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [sel, setSel] = useState(null);
+  const [form, setForm] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [paste, setPaste] = useState(null);
+  const [collapsed, setCollapsed] = useState({});
+  const [draft, setDraft] = useState({});
+  const [timerForm, setTimerForm] = useState(null);
+  const [, tick] = useState(0);
+  const anyRunning = timers.some(t => t.runningSince && t.courseId);
+  useEffect(() => { if (!anyRunning) return; const iv = setInterval(() => tick(n => n + 1), 1000); return () => clearInterval(iv); }, [anyRunning]);
+
+  const stats = Object.fromEntries(courses.map(c => [c.id, courseStats(c, timers, todayStr)]));
+  const list = [...courses].sort((a, b) => (a.examDate || '9999').localeCompare(b.examDate || '9999') || (a.code || '').localeCompare(b.code || ''));
+  const course = courses.find(c => c.id === sel) || list[0] || null;
+  const st = course ? stats[course.id] : null;
+  const hex = c => c.color || COURSE_HEX[Math.max(0, courses.indexOf(c)) % COURSE_HEX.length];
+
+  const totalLeft = courses.reduce((s, c) => s + stats[c.id].left, 0);
+  const totalDone = courses.reduce((s, c) => s + stats[c.id].done, 0);
+  const weekSec = timers.filter(t => t.category === 'Study').reduce((s, t) => s + (t.sessions || []).filter(x => localDateStr(new Date(x.end)) >= mondayOf(todayStr)).reduce((a, x) => a + (Number(x.sec) || 0), 0) + timerRunSec(t, Date.now()), 0);
+  const nextExam = list.find(c => c.examDate && stats[c.id].daysToExam >= 0);
+
+  // Courses seen in the School schedule that have no syllabus yet
+  const codes = [...new Set(schedule.filter(b => calOf(b) === 'School').map(b => (b.title.match(/[A-Za-z]{3,4}\s?\d{4}/) || [])[0]).filter(Boolean).map(c => c.toUpperCase().replace(/\s/g, '').replace(/^([A-Z]+)(\d+)$/, '$1 $2')))];
+  const missing = codes.filter(code => !courses.some(c => (c.code || '').toUpperCase().replace(/\s/g, '') === code.replace(/\s/g, '')));
+
+  const save = syllabus => onUpdate(course.id, { syllabus });
+  const toggle = n => save(editTree(course.syllabus, n.id, x => setAll(x, !nodeDone(x))));
+  const addUnder = (parentId, key) => {
+    const title = (draft[key] || '').trim();
+    if (!title) return;
+    const node = { id: newId(), title, done: false, children: [] };
+    save(parentId ? editTree(course.syllabus, parentId, x => ({ ...x, children: [...(x.children || []), node] })) : [...(course.syllabus || []), node]);
+    setDraft(d => ({ ...d, [key]: '' }));
+  };
+  const rename = n => { const title = window.prompt('Rename', n.title); if (title && title.trim()) save(editTree(course.syllabus, n.id, x => ({ ...x, title: title.trim() }))); };
+  const removeNode = async n => {
+    const count = leavesOf([n]).length;
+    if (await confirm({ message: `Remove "${n.title}"${n.children?.length ? ` and its ${count} topic${count === 1 ? '' : 's'}` : ''}?`, label: 'Remove', danger: true })) save(editTree(course.syllabus, n.id, () => null));
+  };
+  const removeCourse = async c => {
+    if (await confirm({ message: `Delete ${c.code} and its whole syllabus? Its focus timers stay.`, label: 'Delete', danger: true })) { onDelete(c.id); setForm(null); setSel(null); }
+  };
+  const applyPaste = () => {
+    const tree = parseOutline(paste.text);
+    if (!tree.length) return;
+    save(paste.mode === 'replace' ? tree : [...(course.syllabus || []), ...tree]);
+    setPaste(null);
+  };
+
+  const renderNode = (n, depth) => {
+    const hasKids = n.children?.length > 0;
+    const done = nodeDone(n), kids = leavesOf([n]);
+    const isClosed = collapsed[n.id] ?? (depth === 0 && done);
+    return (
+      <div key={n.id} className={`sy-node d${depth}`}>
+        <div className={`sy-row ${done ? 'done' : ''}`}>
+          {hasKids && depth < 2
+            ? <button className="sy-caret" onClick={() => setCollapsed(c => ({ ...c, [n.id]: !isClosed }))} style={{ transform: isClosed ? 'rotate(-90deg)' : 'none' }}><Icons.chevDown size={12}/></button>
+            : <span className="sy-caret"/>}
+          <button className={`sy-box ${done ? 'on' : hasKids && kids.some(k => k.done) ? 'part' : ''}`} onClick={() => toggle(n)} title={hasKids ? (done ? 'Untick all' : 'Tick all') : 'Tick'}>{done ? '✓' : ''}</button>
+          <span className="sy-title" onClick={() => !hasKids && toggle(n)}>{n.title}</span>
+          {hasKids && <span className="sy-count">{kids.filter(k => k.done).length}/{kids.length}</span>}
+          {editing && (
+            <span className="row-gap">
+              <button className="icon-btn" title="Rename" onClick={() => rename(n)}><Icons.edit size={11}/></button>
+              <button className="icon-btn danger-btn" title="Remove" onClick={() => removeNode(n)}><Icons.trash size={11}/></button>
+            </span>
+          )}
+        </div>
+        {!isClosed && (hasKids || (editing && depth < 2)) && (
+          <div className="sy-kids">
+            {(n.children || []).map(c => renderNode(c, depth + 1))}
+            {editing && depth < 2 && (
+              <input className="input sy-add" value={draft[n.id] || ''} placeholder={depth === 0 ? 'Add a topic…' : 'Add a subtopic…'}
+                onChange={e => setDraft(d => ({ ...d, [n.id]: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addUnder(n.id, n.id)}/>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const linked = course ? timers.filter(t => t.courseId === course.id) : [];
+  return (
+    <div className="section studies">
+      <div className="sched-bar">
+        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Studies</div></div>
+        <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Course</button>
+      </div>
+
+      <div className="grid-2">
+        <div className="fin-tile"><span>Topics covered</span><b className="good">{totalDone}</b><span className="fin-delta">{totalLeft} still to go</span></div>
+        <div className="fin-tile"><span>Studied this week</span><b>{fmtHM(weekSec)}</b><span className="fin-delta">on focus timers</span></div>
+        <div className="fin-tile"><span>Next exam</span><b className={nextExam && stats[nextExam.id].daysToExam <= 14 ? 'bad' : ''}>{nextExam ? `${stats[nextExam.id].daysToExam}d` : '—'}</b><span className="fin-delta">{nextExam ? `${nextExam.code} · ${fmtDate(nextExam.examDate, { month:'short', day:'numeric' })}` : 'no exam dates set'}</span></div>
+        <div className="fin-tile"><span>Behind pace</span><b className={courses.some(c => stats[c.id].behind) ? 'bad' : 'good'}>{courses.filter(c => stats[c.id].behind).length}</b><span className="fin-delta">of {courses.length} course{courses.length === 1 ? '' : 's'}</span></div>
+      </div>
+
+      {missing.length > 0 && (
+        <div className="card sy-missing">
+          <span>Your timetable has {missing.length === 1 ? 'a course' : 'courses'} with no syllabus here yet:</span>
+          {missing.map(code => <button key={code} className="btn-ghost tk-carry" onClick={() => setForm({ code })}>+ {code}</button>)}
+        </div>
+      )}
+
+      <div className="span-4 sy-left">
+        <div className="card cl-list" style={{ position: 'static', maxHeight: 'none' }}>
+          {list.length === 0 ? <div className="agenda-empty small">No courses yet. <button className="link-btn" onClick={() => setForm({})}>Add one</button></div> : list.map(c => {
+            const s = stats[c.id];
+            return (
+              <button key={c.id} className={`cl-row ${course?.id === c.id ? 'on' : ''}`} style={{ '--c': hex(c) }} onClick={() => { setSel(c.id); setEditing(false); }}>
+                <span className="cl-avatar" style={{ fontSize: 11, fontFamily: 'var(--fm)' }}>{Math.round(s.pct * 100)}%</span>
+                <span className="cl-row-main">
+                  <span className="cl-row-name">{c.code}</span>
+                  <span className="cl-row-meta">{s.done}/{s.total} topics{s.daysToExam !== null && s.daysToExam >= 0 ? ` · exam in ${s.daysToExam}d` : ''}</span>
+                </span>
+                {s.behind && <span className="cl-owed">behind</span>}
+              </button>
+            );
+          })}
+        </div>
+        <BalanceCard schedule={schedule} timers={timers} todayStr={todayStr} targets={balance} onSetTargets={onSetBalance}/>
+      </div>
+
+      {!course ? <div className="card span-8 agenda-empty">Add a course, then paste in its syllabus. Tick topics off as you actually cover them.</div> : (
+        <div className="cl-detail span-8">
+          <div className="card cl-head" style={{ '--c': hex(course) }}>
+            <div className="cl-head-top">
+              <span className="cl-avatar big" style={{ fontSize: 15, fontFamily: 'var(--fm)' }}>{Math.round(st.pct * 100)}%</span>
+              <div className="cl-head-main">
+                <div className="cl-name">{course.code}</div>
+                <div className="cl-sub">
+                  {course.title && <span>{course.title}</span>}
+                  {course.credits && <span>{course.credits} credits</span>}
+                  {course.examDate && <span className={st.daysToExam <= 14 ? 'bad' : ''}>exam {fmtDate(course.examDate, { weekday:'short', month:'short', day:'numeric' })}{st.daysToExam >= 0 ? ` · ${st.daysToExam}d` : ' · passed'}</span>}
+                </div>
+              </div>
+              <div className="cl-head-actions">
+                <button className="icon-btn" title="Edit course" onClick={() => setForm(course)}><Icons.edit size={13}/></button>
+              </div>
+            </div>
+            <div className="goal-bar" style={{ margin: '1rem 0 0.5rem' }}>
+              <div className="goal-fill" style={{ width: `${st.pct * 100}%` }}/>
+              {st.elapsed !== null && st.left > 0 && <div className="goal-time" style={{ left: `${st.elapsed * 100}%` }} title="Where the term is"/>}
+            </div>
+            <div className="goal-foot">
+              <span>{st.done} of {st.total} topics · {st.left} left</span>
+              {st.perWeek !== null && st.left > 0 && <span className={st.behind ? 'bad' : ''}>{Math.ceil(st.perWeek)} a week to finish before the exam</span>}
+            </div>
+            {st.behind && <div className="goal-warn" style={{ marginTop: '0.5rem' }}>Behind. {Math.round(st.elapsed * 100)}% of the term is gone and {Math.round(st.pct * 100)}% of the syllabus is covered.</div>}
+          </div>
+
+          <div className="grid-2">
+            <div className="fin-tile"><span>Time studied</span><b>{fmtHM(st.focusSec)}</b><span className="fin-delta">on linked timers</span></div>
+            <div className="fin-tile"><span>Backed ticks</span><b className={st.unbacked ? 'warn' : 'good'}>{st.backed}/{st.done}</b><span className="fin-delta">{MIN_PER_TOPIC} min of focus backs one</span></div>
+            <div className="fin-tile"><span>XP from this course</span><b className="good">+{st.backed * XP_PER_TOPIC}</b><span className="fin-delta">{st.unbacked ? `${st.unbacked} tick${st.unbacked === 1 ? '' : 's'} waiting on study time` : `+${XP_PER_TOPIC} per backed topic`}</span></div>
+            <div className="fin-tile"><span>Per topic so far</span><b>{st.done ? fmtHM(st.focusSec / st.done) : '—'}</b><span className="fin-delta">average study time</span></div>
+          </div>
+
+          <div className="card">
+            <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>Focus timers for {course.code}</span>
+              <button className="btn-ghost tk-carry" onClick={() => setTimerForm({ category: 'Study', courseId: course.id, title: `${course.code} study` })}><Icons.plus size={12}/> Timer</button>
+            </div>
+            {linked.length === 0 ? <div className="agenda-empty small">No timer yet. Study time on a timer is what turns ticks into XP.</div> : linked.map(t => {
+              const state = timerStatus(t, todayStr), el = timerElapsed(t, Date.now()), target = timerTargetSec(t);
+              return (
+                <div key={t.id} className="dash-focus sy-timer" style={{ '--liq': hex(course) }}>
+                  <div className="row-between">
+                    <span>{t.runningSince ? '● ' : ''}{t.title}</span>
+                    <span>{fmtDur(el)} / {fmtHM(target)} · {state === 'done' ? 'filled' : state === 'failed' ? 'missed' : `due ${fmtDate(t.deadline, { month:'short', day:'numeric' })}`}</span>
+                  </div>
+                  <div className="row-gap">
+                    <div className="dash-focus-bar" style={{ flex: 1 }}><div style={{ width: `${(el / target) * 100}%` }}/></div>
+                    {state === 'active' && (t.runningSince
+                      ? <button className="btn-ghost tk-carry" onClick={() => onPauseTimer(t)}>❚❚ Pause</button>
+                      : <button className="btn-primary tk-carry" onClick={() => onStartTimer(t)}>▶ Study</button>)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="card">
+            <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>Syllabus</span>
+              <span className="row-gap">
+                <button className="btn-ghost tk-carry" onClick={() => setPaste({ text: '', mode: (course.syllabus || []).length ? 'append' : 'replace' })}>Paste outline</button>
+                <button className={`btn-ghost tk-carry ${editing ? 'on' : ''}`} onClick={() => setEditing(v => !v)}>{editing ? 'Done editing' : 'Edit'}</button>
+              </span>
+            </div>
+            {(course.syllabus || []).length === 0 && !editing ? (
+              <div className="agenda-empty small">No syllabus yet. <button className="link-btn" onClick={() => setPaste({ text: '', mode: 'replace' })}>Paste the course outline</button> or <button className="link-btn" onClick={() => setEditing(true)}>add units by hand</button>.</div>
+            ) : (
+              <div className="sy-tree">
+                {(course.syllabus || []).map(n => renderNode(n, 0))}
+                {editing && <input className="input sy-add" value={draft.root || ''} placeholder="Add a unit…" onChange={e => setDraft(d => ({ ...d, root: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addUnder(null, 'root')}/>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {paste && (
+        <Modal title={`Paste the ${course.code} outline`} onClose={() => setPaste(null)}>
+          <div className="focus-preview">
+            <div>One topic per line. Indent, or number them (1, 1.1, 1.1.1), to nest. Lines like "Unit 2" or "Week 5" start a new section.</div>
+          </div>
+          <textarea className="input sy-paste" value={paste.text} onChange={e => setPaste(p => ({ ...p, text: e.target.value }))} autoFocus
+            onKeyDown={e => { if (e.key !== 'Tab') return; e.preventDefault(); const el = e.target, a = el.selectionStart, b = el.selectionEnd; const text = paste.text.slice(0, a) + '  ' + paste.text.slice(b); setPaste(p => ({ ...p, text })); requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = a + 2; }); }}
+            placeholder={'Unit 1: Algorithm analysis\n  Big-O notation\n  Recurrences\n    Master theorem\nUnit 2: Sorting\n  Merge sort\n  Quick sort'}/>
+          <div className="row-between">
+            <span className="fin-delta">{(() => { const t = parseOutline(paste.text); return t.length ? `${t.length} section${t.length === 1 ? '' : 's'} · ${leavesOf(t).length} topics to tick` : 'Nothing to add yet'; })()}</span>
+            {(course.syllabus || []).length > 0 && (
+              <div className="seg">
+                <button className={paste.mode === 'append' ? 'on' : ''} onClick={() => setPaste(p => ({ ...p, mode: 'append' }))}>Add to it</button>
+                <button className={paste.mode === 'replace' ? 'on' : ''} onClick={() => setPaste(p => ({ ...p, mode: 'replace' }))}>Replace it</button>
+              </div>
+            )}
+          </div>
+          {paste.mode === 'replace' && (course.syllabus || []).length > 0 && <div className="form-warn">Replacing wipes the ticks you already have.</div>}
+          <ModalFoot onClose={() => setPaste(null)} onSave={applyPaste}/>
+        </Modal>
+      )}
+      {form !== null && <CourseModal data={form} onSave={d => { form.id ? onUpdate(form.id, d) : onAdd({ ...d, syllabus: [] }); setForm(null); }} onDelete={form.id ? () => removeCourse(form) : null} onClose={() => setForm(null)} todayStr={todayStr}/>}
+      {timerForm && <TimerModal data={timerForm} todayStr={todayStr} courses={courses} onSave={d => { onAddTimer({ ...d, courseId: timerForm.courseId }); setTimerForm(null); }} onClose={() => setTimerForm(null)}/>}
+      {ConfirmUI}
+    </div>
+  );
+}
+
+function CourseModal({ data, todayStr, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({ code: '', title: '', credits: '', examDate: '', startDate: todayStr, color: '', ...data });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const save = () => {
+    if (!f.code.trim()) return;
+    const { id, createdAt, syllabus, ...rest } = f;
+    onSave({ ...rest, code: f.code.trim().toUpperCase(), title: (f.title || '').trim() });
+  };
+  return (
+    <Modal title={data.id ? `Edit ${data.code}` : 'New Course'} onClose={onClose}>
+      <div className="grid-2">
+        <Field label="Course code"><input className="input" autoFocus value={f.code} onChange={e => s('code', e.target.value)} placeholder="COMP 2201"/></Field>
+        <Field label="Credits (optional)"><input className="input" type="number" min="0" value={f.credits} onChange={e => s('credits', e.target.value)}/></Field>
+      </div>
+      <Field label="Course title"><input className="input" value={f.title} onChange={e => s('title', e.target.value)} placeholder="Discrete Mathematics for Computer Science"/></Field>
+      <div className="grid-2">
+        <Field label="Term started"><input className="input" type="date" value={f.startDate || ''} onChange={e => s('startDate', e.target.value)}/></Field>
+        <Field label="Exam date"><input className="input" type="date" value={f.examDate || ''} onChange={e => s('examDate', e.target.value)}/></Field>
+      </div>
+      <Field label="Colour">
+        <div className="sched-cals">
+          {COURSE_HEX.map(c => <button key={c} type="button" className={`sched-cal ${f.color === c ? 'on' : ''}`} style={{ '--c': c }} onClick={() => s('color', c)}><span className="dot"/></button>)}
+        </div>
+      </Field>
+      <div className="focus-preview"><div>With an exam date, the console works out how many topics a week you need and tells you the day you fall behind.</div></div>
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete course</button>}
     </Modal>
   );
 }
@@ -3700,7 +4238,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
     if (await confirm({ message: `Delete "${form.description}" (${J(amountOf(form))})?`, label: 'Delete', danger: true })) { onDelete(form.id); setForm(null); }
   };
 
-  const tt = { background:'rgba(15,7,8,0.96)', border:'1px solid rgba(200,32,47,0.25)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
+  const tt = { background:'rgba(var(--b1),0.96)', border:'1px solid rgba(var(--p4),0.25)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
   const axis = { fill:'#7f6758', fontSize:10 };
   const Delta = ({ v, good = 'up' }) => v === null ? <span className="fin-delta">new</span>
     : <span className={`fin-delta ${(v >= 0) === (good === 'up') ? 'good' : 'bad'}`}>{v >= 0 ? '▲' : '▼'} {Math.abs(v)}%</span>;
@@ -3800,7 +4338,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
               <defs>
                 <linearGradient id="finAct" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f2ddab" stopOpacity={0.35}/><stop offset="95%" stopColor="#f2ddab" stopOpacity={0}/></linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,166,74,0.08)"/>
               <XAxis dataKey="day" tick={axis} interval={4}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)} labelFormatter={d => `${monthName(month, { month:'short' })} ${d}`}/>
@@ -3847,10 +4385,10 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           </div>
           <ResponsiveContainer width="100%" height={CHART_H(150)}>
             <ComposedChart data={trend} margin={{ left:0, right:8, top:6, bottom:0 }} onClick={e => e?.activePayload?.[0] && setMonth(e.activePayload[0].payload.mk)}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,166,74,0.08)"/>
               <XAxis dataKey="label" tick={axis}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
-              <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(200,32,47,0.06)' }}/>
+              <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(212,166,74,0.07)' }}/>
               <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4"/>
               <Bar dataKey="income" name="Income" maxBarSize={22} radius={[3,3,0,0]}>
                 {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#f2ddab' : 'rgba(212,166,74,0.6)'}/>)}
@@ -3916,7 +4454,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           <ResponsiveContainer width="100%" height={CHART_H(190)}>
             <ComposedChart data={[{ label:'Now', expected: Math.round(cash), worst: Math.round(cash) }, ...forecast]} margin={{ left:0, right:8, top:6, bottom:0 }}>
               <defs><linearGradient id="finExp" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f2ddab" stopOpacity={0.3}/><stop offset="95%" stopColor="#f2ddab" stopOpacity={0}/></linearGradient></defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(200,32,47,0.07)"/>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,166,74,0.08)"/>
               <XAxis dataKey="label" tick={axis}/>
               <YAxis tick={axis} width={44} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)}/>
@@ -4124,46 +4662,62 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
   );
 }
 
-// ─── GOALS ──────────────────────────────────────────────────────────────────────
+// ─── GOALS (page) ───────────────────────────────────────────────────────────────
 function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDelete }) {
   const { confirm, ConfirmUI } = useConfirm();
   const [filter, setFilter] = useState('active');
+  const [area, setArea] = useState('All');
   const [form, setForm] = useState(null);
   const [logFor, setLogFor] = useState(null);
   const [logVal, setLogVal] = useState('');
+  const [stepDraft, setStepDraft] = useState({});
   const ctx = { finances, leads, timers };
 
   const rows = goals.map(g => {
-    const st = goalStatus(g, todayStr), cur = goalProgress(g, ctx), target = Number(g.target) || 0;
-    const pct = target > 0 ? Math.min(1, Math.max(0, cur / target)) : 0;
+    const st = goalStatus(g, todayStr), cur = goalProgress(g, ctx), target = goalTarget(g);
+    const pct = st === 'done' ? 1 : target > 0 ? Math.min(1, Math.max(0, cur / target)) : 0;
     const daysLeft = g.deadline ? Math.round((parseLocal(g.deadline) - parseLocal(todayStr)) / 864e5) : null;
     const start = g.startDate || (g.createdAt?.toDate ? localDateStr(g.createdAt.toDate()) : todayStr);
     const span = g.deadline ? Math.max(1, Math.round((parseLocal(g.deadline) - parseLocal(start)) / 864e5)) : null;
     const elapsed = g.deadline ? Math.min(1, Math.max(0, Math.round((parseLocal(todayStr) - parseLocal(start)) / 864e5) / span)) : null;
-    const behind = st === 'active' && elapsed !== null && pct + 0.05 < elapsed;
-    const perWeek = st === 'active' && daysLeft !== null && daysLeft >= 0 ? Math.max(0, target - cur) / Math.max(1, (daysLeft + 1) / 7) : null;
+    const behind = st === 'active' && g.kind !== 'milestone' && elapsed !== null && pct + 0.05 < elapsed;
+    const perWeek = st === 'active' && goalKind(g).shape === 'number' && daysLeft !== null && daysLeft >= 0 ? Math.max(0, target - cur) / Math.max(1, (daysLeft + 1) / 7) : null;
     return { g, st, cur, target, pct, daysLeft, elapsed, behind, perWeek };
   });
   const counts = { active: 0, done: 0, failed: 0 };
   rows.forEach(r => { counts[r.st]++; });
-  const shown = rows.filter(r => filter === 'all' || r.st === filter)
-    .sort((a, b) => (a.g.deadline || '9999').localeCompare(b.g.deadline || '9999'));
+  const shown = rows
+    .filter(r => (filter === 'all' || r.st === filter) && (area === 'All' || goalArea(r.g) === area))
+    .sort((a, b) => filter === 'done'
+      ? (b.g.completedAt || '').localeCompare(a.g.completedAt || '')
+      : (a.g.deadline || '9999').localeCompare(b.g.deadline || '9999'));
   const nextDue = rows.filter(r => r.st === 'active' && r.daysLeft !== null).sort((a, b) => a.daysLeft - b.daysLeft)[0];
+  const earned = goals.reduce((s, g) => s + goalXP(g, todayStr), 0);
 
   const createdMs = g => (g.createdAt?.toDate ? g.createdAt.toDate().getTime() : Date.now());
+  const complete = async g => {
+    if (await confirm({ message: `Mark "${g.title}" as done? This is final. +100 XP.`, label: "It's done", danger: false }))
+      onUpdate(g.id, { status: 'done', completedAt: new Date().toISOString() });
+  };
   const giveUp = async g => {
     if (await confirm({ message: `Give up on "${g.title}"? It counts as missed: −50 XP.`, label: 'Give up', danger: true })) {
       onUpdate(g.id, { status: 'failed', failedAt: new Date().toISOString() }); setForm(null);
     }
   };
   const remove = async g => {
-    if (await confirm({ message: `Delete "${g.title}"? Only allowed right after creating it.`, label: 'Delete', danger: true })) { onDelete(g.id); setForm(null); }
+    if (await confirm({ message: `Delete "${g.title}"?`, label: 'Delete', danger: true })) { onDelete(g.id); setForm(null); }
   };
   const logManual = () => {
     const v = Number(logVal);
     if (!logFor || logVal === '' || Number.isNaN(v)) return;
-    onUpdate(logFor.id, { current: v });
-    setLogFor(null); setLogVal('');
+    onUpdate(logFor.id, { current: v }); setLogFor(null); setLogVal('');
+  };
+  const toggleStep = (g, id) => onUpdate(g.id, { steps: (g.steps || []).map(s => (s.id === id ? { ...s, done: !s.done, doneAt: !s.done ? new Date().toISOString() : null } : s)) });
+  const addStep = g => {
+    const text = (stepDraft[g.id] || '').trim();
+    if (!text) return;
+    onUpdate(g.id, { steps: [...(g.steps || []), { id: Date.now().toString(36), text, done: false }] });
+    setStepDraft(d => ({ ...d, [g.id]: '' }));
   };
 
   return (
@@ -4180,39 +4734,71 @@ function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDe
 
       <div className="grid-2">
         <div className="fin-tile"><span>Active</span><b>{counts.active}</b><span className="fin-delta">{rows.filter(r => r.behind).length} behind pace</span></div>
-        <div className="fin-tile"><span>Reached</span><b className="good">{counts.done}</b><span className="fin-delta">+{counts.done * 100} XP</span></div>
-        <div className="fin-tile"><span>Missed</span><b className={counts.failed ? 'bad' : ''}>{counts.failed}</b><span className="fin-delta">−{counts.failed * 50} XP</span></div>
-        <div className="fin-tile"><span>Next deadline</span><b>{nextDue ? (nextDue.daysLeft === 0 ? 'Today' : `${nextDue.daysLeft}d`) : '—'}</b><span className="fin-delta">{rows.filter(r => r.st === 'active' && !r.g.deadline).length} without a deadline</span></div>
+        <div className="fin-tile"><span>Reached</span><b className="good">{counts.done}</b><span className="fin-delta">{goals.filter(g => g.logged).length} logged after the fact</span></div>
+        <div className="fin-tile"><span>XP from goals</span><b className={earned < 0 ? 'bad' : 'good'}>{earned >= 0 ? '+' : ''}{earned}</b><span className="fin-delta">{counts.failed} missed</span></div>
+        <div className="fin-tile"><span>Next deadline</span><b>{nextDue ? (nextDue.daysLeft === 0 ? 'Today' : `${nextDue.daysLeft}d`) : '—'}</b><span className="fin-delta">{nextDue ? nextDue.g.title : 'nothing dated'}</span></div>
+      </div>
+
+      <div className="sched-cals">
+        {['All', ...GOAL_AREAS.map(a => a.id)].map(a => {
+          const n = rows.filter(r => (filter === 'all' || r.st === filter) && (a === 'All' || goalArea(r.g) === a)).length;
+          return <button key={a} className={`sched-cal ${area === a ? 'on' : ''}`} style={{ '--c': GOAL_AREA_HEX[a] || '#e6c47c' }} onClick={() => setArea(a)}><span className="dot"/>{a}<span className="hrs">{n}</span></button>;
+        })}
       </div>
 
       {shown.length === 0 ? (
-        <div className="card agenda-empty">{filter === 'active' ? 'No active goals. Pick one number that would change your life this quarter.' : 'Nothing here yet.'}
-          {filter === 'active' && <> <button className="link-btn" onClick={() => setForm({})}>Set a goal</button></>}
+        <div className="card agenda-empty">
+          {filter === 'active' ? 'No active goals here. A goal can be a number, a list of steps, or one thing you get done.' : filter === 'done' ? 'Nothing reached yet. Already done something big? Log it.' : 'Nothing here.'}
+          {' '}<button className="link-btn" onClick={() => setForm(filter === 'done' ? { already: true } : {})}>{filter === 'done' ? 'Log a win' : 'Set a goal'}</button>
         </div>
       ) : (
         <div className="goal-grid">
           {shown.map(({ g, st, cur, target, pct, daysLeft, elapsed, behind, perWeek }) => {
-            const k = goalKind(g);
+            const k = goalKind(g), a = goalArea(g), hex = GOAL_AREA_HEX[a];
             return (
-              <div key={g.id} className={`card goal-card ${st} ${behind ? 'behind' : ''}`}>
+              <div key={g.id} className={`card goal-card ${st} ${behind ? 'behind' : ''} kind-${k.shape}`} style={{ '--c': hex }}>
                 <div className="focus-head">
-                  <div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="goal-area"><i/>{a} · {k.label}{k.auto ? ' · tracks itself' : ''}</div>
                     <div className="focus-title">{g.title}</div>
-                    <div className="focus-meta">{k.label}{k.auto ? ' · tracks itself' : ''}</div>
+                    {g.why && <div className="goal-why">{g.why}</div>}
                   </div>
                   <button className="icon-btn" title="Edit" onClick={() => setForm(g)}><Icons.edit size={12}/></button>
                 </div>
-                <div className="goal-nums">
-                  <span className="goal-cur">{fmtGoal(g, cur)}</span>
-                  <span className="goal-target">of {fmtGoal(g, target)}</span>
-                  <span className="goal-pct">{Math.floor(pct * 100)}%</span>
-                </div>
-                <div className="goal-bar">
-                  <div className="goal-fill" style={{ width: `${pct * 100}%` }}/>
-                  {elapsed !== null && st === 'active' && <div className="goal-time" style={{ left: `${elapsed * 100}%` }} title="Where you should be by now"/>}
-                </div>
+
+                {g.kind === 'milestone' && st === 'active' && (
+                  <button className="btn-primary goal-done-btn" onClick={() => complete(g)}><Icons.check size={16}/> Mark as done</button>
+                )}
+
+                {g.kind === 'steps' && (
+                  <div className="goal-steps">
+                    {(g.steps || []).map(s => (
+                      <button key={s.id} className={`goal-step ${s.done ? 'done' : ''}`} disabled={st !== 'active'} onClick={() => toggleStep(g, s.id)}>
+                        <span className="goal-step-box">{s.done ? '✓' : ''}</span><span>{s.text}</span>
+                      </button>
+                    ))}
+                    {st === 'active' && (
+                      <input className="input goal-step-add" value={stepDraft[g.id] || ''} placeholder="Add a step…"
+                        onChange={e => setStepDraft(d => ({ ...d, [g.id]: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addStep(g)}/>
+                    )}
+                  </div>
+                )}
+
+                {g.kind !== 'milestone' && (<>
+                  <div className="goal-nums">
+                    <span className="goal-cur">{g.kind === 'steps' ? `${cur}/${target}` : fmtGoal(g, cur)}</span>
+                    {g.kind !== 'steps' && <span className="goal-target">of {fmtGoal(g, target)}</span>}
+                    {g.kind === 'steps' && <span className="goal-target">steps done</span>}
+                    <span className="goal-pct">{Math.floor(pct * 100)}%</span>
+                  </div>
+                  <div className="goal-bar">
+                    <div className="goal-fill" style={{ width: `${pct * 100}%` }}/>
+                    {elapsed !== null && st === 'active' && <div className="goal-time" style={{ left: `${elapsed * 100}%` }} title="Where you should be by now"/>}
+                  </div>
+                </>)}
+
                 <div className="goal-foot">
-                  {st === 'done' && <span className="good">Reached{g.completedAt ? ` ${fmtDate(localDateStr(new Date(g.completedAt)), { month:'short', day:'numeric' })}` : ''} · +100 XP</span>}
+                  {st === 'done' && <span className="good">{g.logged ? 'Logged win' : 'Reached'}{g.completedAt ? ` · ${fmtDate(localDateStr(new Date(g.completedAt)), { month:'short', day:'numeric', year:'numeric' })}` : ''}{g.logged ? '' : ' · +100 XP'}</span>}
                   {st === 'failed' && <span className="bad">Missed · −50 XP</span>}
                   {st === 'active' && (<>
                     <span className={daysLeft !== null && daysLeft <= 3 ? 'bad' : ''}>
@@ -4221,8 +4807,8 @@ function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDe
                     {perWeek !== null && perWeek > 0 && <span className={behind ? 'bad' : ''}>{fmtGoal(g, perWeek)}/week needed</span>}
                   </>)}
                 </div>
-                {behind && <div className="goal-warn">Behind pace. You're {Math.round(elapsed * 100)}% through the time and {Math.floor(pct * 100)}% of the way there.</div>}
-                {st === 'active' && !k.auto && (
+                {behind && <div className="goal-warn">Behind pace. {Math.round(elapsed * 100)}% of the time is gone and you're {Math.floor(pct * 100)}% there.</div>}
+                {st === 'active' && k.shape === 'number' && !k.auto && (
                   <button className="btn-ghost goal-log" onClick={() => { setLogFor(g); setLogVal(String(Number(g.current) || 0)); }}>Update progress</button>
                 )}
               </div>
@@ -4236,7 +4822,7 @@ function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDe
           <Field label={`Where are you now? (${goalUnit(logFor) || 'number'})`}>
             <input className="input" type="number" autoFocus value={logVal} onChange={e => setLogVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && logManual()}/>
           </Field>
-          <div className="focus-preview"><div>Target: <b>{fmtGoal(logFor, Number(logFor.target) || 0)}</b>. Be honest. Nobody else is checking.</div></div>
+          <div className="focus-preview"><div>Target: <b>{fmtGoal(logFor, goalTarget(logFor))}</b>. Be honest. Nobody else is checking.</div></div>
           <ModalFoot onClose={() => setLogFor(null)} onSave={logManual}/>
         </Modal>
       )}
@@ -4244,7 +4830,7 @@ function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDe
         <GoalModal data={form} todayStr={todayStr}
           onSave={d => { form.id ? onUpdate(form.id, d) : onAdd(d); setForm(null); }}
           onGiveUp={form.id && goalStatus(form, todayStr) === 'active' ? () => giveUp(form) : null}
-          onDelete={form.id && Date.now() - createdMs(form) < DELETE_GRACE_MS ? () => remove(form) : null}
+          onDelete={form.id && (form.logged || Date.now() - createdMs(form) < DELETE_GRACE_MS) ? () => remove(form) : null}
           onClose={() => setForm(null)}/>
       )}
       {ConfirmUI}
@@ -4256,49 +4842,109 @@ function GoalModal({ data, todayStr, onSave, onGiveUp, onDelete, onClose }) {
   const editing = !!data.id;
   const locked = editing && goalStatus(data, todayStr) !== 'active';
   const [title, setTitle] = useState(data.title || '');
-  const [kind, setKind] = useState(data.kind || (editing ? 'custom' : 'revenue'));
+  const [why, setWhy] = useState(data.why || '');
+  const [area, setArea] = useState(editing ? goalArea(data) : 'Business');
+  const [kind, setKind] = useState(data.kind || (editing ? 'custom' : 'milestone'));
   const [unit, setUnit] = useState(data.unit || (editing && !data.kind ? 'J$' : ''));
   const [target, setTarget] = useState(data.target ?? '');
   const [startDate, setStartDate] = useState(data.startDate || todayStr);
   const [deadline, setDeadline] = useState(data.deadline || '');
+  const [steps, setSteps] = useState(data.steps?.length ? data.steps : [{ id: 's1', text: '', done: false }, { id: 's2', text: '', done: false }]);
+  const [already, setAlready] = useState(!!data.already);
+  const [doneOn, setDoneOn] = useState(todayStr);
   const k = GOAL_KINDS.find(x => x.id === kind);
   const minTarget = editing ? Number(data.target) || 0 : 0;
+  const cleanSteps = steps.filter(s => s.text.trim()).map(s => ({ ...s, text: s.text.trim() }));
+  const canLog = !editing && k.shape === 'do';
+
   const problems = [];
   if (!title.trim()) problems.push('Name the goal.');
-  if (!(Number(target) > 0)) problems.push('Set a target above zero.');
-  if (editing && Number(target) < minTarget) problems.push(`The target can't go below ${minTarget.toLocaleString()}.`);
-  if (deadline && deadline < todayStr && !editing) problems.push('The deadline must be today or later.');
-  if (editing && data.deadline && (!deadline || deadline > data.deadline)) problems.push("You can't push the deadline back.");
-  const save = () => problems.length === 0 && onSave({
-    title: title.trim(), kind, unit: kind === 'custom' ? unit.trim() : '', target: Number(target), startDate, deadline: deadline || '',
-    ...(editing ? {} : { current: 0, status: 'active' }),
-  });
+  if (kind === 'steps' && cleanSteps.length < 2) problems.push('Add at least two steps, or make it a milestone.');
+  if (editing && kind === 'steps' && cleanSteps.length < (data.steps || []).length) problems.push("Steps can be added, not removed.");
+  if (k.shape === 'number' && !(Number(target) > 0)) problems.push('Set a target above zero.');
+  if (k.shape === 'number' && editing && Number(target) < minTarget) problems.push(`The target can't go below ${minTarget.toLocaleString()}.`);
+  if (!(already && canLog)) {
+    if (deadline && deadline < todayStr && !editing) problems.push('The deadline must be today or later.');
+    if (editing && data.deadline && (!deadline || deadline > data.deadline)) problems.push("You can't push the deadline back.");
+  } else if (!doneOn || doneOn > todayStr) problems.push("Pick the date you did it. It can't be in the future.");
+
+  const save = () => {
+    if (problems.length) return;
+    const base = { title: title.trim(), why: why.trim(), area, kind, unit: kind === 'custom' ? unit.trim() : '' };
+    if (k.shape === 'number') Object.assign(base, { target: Number(target), startDate });
+    if (kind === 'steps') base.steps = already && canLog ? cleanSteps.map(s => ({ ...s, done: true })) : cleanSteps;
+    if (already && canLog) return onSave({ ...base, status: 'done', logged: true, completedAt: new Date(`${doneOn}T12:00:00`).toISOString(), deadline: '' });
+    onSave({ ...base, deadline: deadline || '', ...(editing ? {} : { current: 0, status: 'active' }) });
+  };
+  const setStep = (i, text) => setSteps(list => list.map((s, j) => (j === i ? { ...s, text } : s)));
+
   return (
-    <Modal title={editing ? 'Edit Goal' : 'New Goal'} onClose={onClose}>
-      <Field label="Goal"><input className="input" autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Earn J$300,000 before Christmas" disabled={locked}/></Field>
-      <Field label="What does it measure?">
+    <Modal title={editing ? 'Edit Goal' : already ? 'Log a Win' : 'New Goal'} onClose={onClose}>
+      <Field label="Goal"><input className="input" autoFocus value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Register the business" disabled={locked}/></Field>
+      <Field label="Why it matters (optional)"><input className="input" value={why} onChange={e => setWhy(e.target.value)} placeholder="One line you'll read when you want to quit" disabled={locked}/></Field>
+      <Field label="Area of life">
+        <div className="sched-cals">
+          {GOAL_AREAS.map(a => <button key={a.id} type="button" className={`sched-cal ${area === a.id ? 'on' : ''}`} style={{ '--c': a.hex }} onClick={() => !locked && setArea(a.id)}><span className="dot"/>{a.id}</button>)}
+        </div>
+      </Field>
+      <Field label="What kind of goal?">
         <div className="sched-cals">
           {GOAL_KINDS.map(x => (
-            <button key={x.id} type="button" className={`sched-cal ${kind === x.id ? 'on' : ''}`} style={{ '--c': x.auto ? '#e63946' : '#e6c47c' }}
+            <button key={x.id} type="button" className={`sched-cal ${kind === x.id ? 'on' : ''}`} style={{ '--c': x.shape === 'do' ? '#e63946' : x.auto ? '#e6c47c' : '#ff9a4a' }}
               onClick={() => !editing && setKind(x.id)} disabled={editing && kind !== x.id}><span className="dot"/>{x.label}</button>
           ))}
         </div>
-        <div className="goal-hint">{k.hint}{editing ? '. The type is fixed once created.' : ''}</div>
+        <div className="goal-hint">{k.hint}{editing ? ' The kind is fixed once created.' : ''}</div>
       </Field>
-      <div className="grid-2">
-        <Field label={`Target${k.unit ? ` (${k.unit})` : ''}`}><input className="input" type="number" min={minTarget} value={target} onChange={e => setTarget(e.target.value)} disabled={locked}/></Field>
-        {kind === 'custom' && <Field label="Unit"><input className="input" value={unit} onChange={e => setUnit(e.target.value)} placeholder="books, kg, apps…" disabled={locked}/></Field>}
-        {k.auto && <Field label="Count from"><input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={editing}/></Field>}
-        <Field label="Deadline"><input className="input" type="date" value={deadline} min={todayStr} max={editing && data.deadline ? data.deadline : undefined} onChange={e => setDeadline(e.target.value)} disabled={locked}/></Field>
-      </div>
-      {!locked && <div className="focus-preview">
-        <div><b className="good">+100 XP</b> when you reach it.</div>
-        <div>{deadline ? <><b className="bad">−50 XP</b> if it isn't reached by {fmtDate(deadline, { weekday:'short', month:'short', day:'numeric' })}.</> : 'No deadline means no pressure, and goals without pressure rarely happen.'}</div>
-        {!editing && <div className="muted">Once set, the target can't go down and the deadline can't move later.</div>}
-      </div>}
+
+      {kind === 'steps' && (
+        <Field label={editing ? 'Steps (you can add more)' : 'Steps'}>
+          <div className="goal-step-edit">
+            {steps.map((s, i) => (
+              <div key={s.id} className="row-gap">
+                <input className="input" value={s.text} onChange={e => setStep(i, e.target.value)} placeholder={`Step ${i + 1}`} disabled={locked || (editing && i < (data.steps || []).length)}/>
+                {!editing && steps.length > 2 && <button type="button" className="icon-btn danger-btn" onClick={() => setSteps(l => l.filter((_, j) => j !== i))}><Icons.close size={12}/></button>}
+              </div>
+            ))}
+            {!locked && <button type="button" className="btn-ghost" style={{ justifyContent: 'center' }} onClick={() => setSteps(l => [...l, { id: `s${Date.now().toString(36)}`, text: '', done: false }])}><Icons.plus size={13}/> Add step</button>}
+          </div>
+        </Field>
+      )}
+
+      {k.shape === 'number' && (
+        <div className="grid-2">
+          <Field label={`Target${k.unit ? ` (${k.unit})` : ''}`}><input className="input" type="number" min={minTarget} value={target} onChange={e => setTarget(e.target.value)} disabled={locked}/></Field>
+          {kind === 'custom' && <Field label="Unit"><input className="input" value={unit} onChange={e => setUnit(e.target.value)} placeholder="books, kg, apps…" disabled={locked}/></Field>}
+          {k.auto && <Field label="Count from"><input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} disabled={editing}/></Field>}
+        </div>
+      )}
+
+      {canLog && (
+        <label className="goal-already">
+          <input type="checkbox" checked={already} onChange={e => setAlready(e.target.checked)}/>
+          <span>I've already done this. Put it on my record.</span>
+        </label>
+      )}
+
+      {already && canLog
+        ? <Field label="When did you do it?"><input className="input" type="date" value={doneOn} max={todayStr} onChange={e => setDoneOn(e.target.value)}/></Field>
+        : <Field label="Deadline"><input className="input" type="date" value={deadline} min={todayStr} max={editing && data.deadline ? data.deadline : undefined} onChange={e => setDeadline(e.target.value)} disabled={locked}/></Field>}
+
+      {!locked && (
+        <div className="focus-preview">
+          {already && canLog ? (<>
+            <div>This goes on your record as a win.</div>
+            <div className="muted">No XP: XP is for things you commit to first and then do. The win still counts for you.</div>
+          </>) : (<>
+            <div><b className="good">+100 XP</b> when you reach it.</div>
+            <div>{deadline ? <><b className="bad">−50 XP</b> if it isn't done by {fmtDate(deadline, { weekday:'short', month:'short', day:'numeric' })}.</> : 'No deadline means no pressure, and goals without pressure rarely happen.'}</div>
+            {!editing && <div className="muted">Once set: the deadline can't move later{k.shape === 'number' ? ", the target can't go down" : kind === 'steps' ? ', steps can be added but not removed' : ''}.</div>}
+          </>)}
+        </div>
+      )}
       {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
       {!locked ? <ModalFoot onClose={onClose} onSave={save}/> : <ModalFoot onClose={onClose}/>}
-      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> {data.logged ? 'Remove from record' : 'Delete (created by mistake)'}</button>}
       {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
     </Modal>
   );
@@ -4811,23 +5457,23 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
   const PS={high:{color:'#ff5a36',border:'rgba(255,90,54,0.3)',bg:'rgba(255,90,54,0.07)'},medium:{color:'#f0c060',border:'rgba(240,192,96,0.3)',bg:'rgba(240,192,96,0.07)'},low:{color:'#3a4860',border:'rgba(92,62,58,0.3)',bg:'rgba(92,62,58,0.07)'}};
   return (
     <div className="section">
-      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(20,8,9,0.95),rgba(58,18,22,0.3),rgba(40,10,20,0.4) 100%)',border:'1px solid rgba(230,57,70,0.15)',borderRadius:14,padding:'1.5rem 1.25rem'}}>
-        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(200,32,47,0.5),rgba(230,57,70,0.8),rgba(255,154,138,0.4),transparent)'}}/>
+      <div style={{position:'relative',overflow:'hidden',background:'linear-gradient(160deg,rgba(var(--b2),0.95),rgba(var(--b3),0.3),rgba(var(--b3),0.4) 100%)',border:'1px solid rgba(var(--p3),0.15)',borderRadius:14,padding:'1.5rem 1.25rem'}}>
+        <div style={{position:'absolute',top:0,left:0,right:0,height:1,background:'linear-gradient(90deg,transparent,rgba(var(--p4),0.5),rgba(var(--p3),0.8),rgba(var(--p2),0.4),transparent)'}}/>
         <div style={{fontFamily:'var(--fm)',fontSize:'8px',color:'var(--bolt)',letterSpacing:'0.3em',textTransform:'uppercase',marginBottom:'0.5rem',opacity:0.7}}>JAXON Intelligence</div>
-        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',color:'var(--bolt-white)',textShadow:'0 0 30px rgba(230,57,70,0.3)'}}>Second Brain</div>
+        <div style={{fontFamily:'var(--fe)',fontSize:'32px',fontWeight:600,letterSpacing:'-0.01em',lineHeight:1.05,marginBottom:'0.5rem',color:'var(--bolt-white)',textShadow:'0 0 30px rgba(var(--p3),0.3)'}}>Second Brain</div>
         <div style={{display:'flex',gap:'1.25rem',flexWrap:'wrap'}}>
-          {[{label:'Pending',value:pending.length,color:'var(--bolt)',glow:'rgba(230,57,70,0.5)'},{label:'Approved',value:approved.length,color:'var(--valley)',glow:'rgba(26,219,138,0.4)'},{label:'Executed',value:executed.length,color:'var(--steel)',glow:'rgba(200,32,47,0.4)'}].map(s=>(<div key={s.label}><div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,color:s.color,lineHeight:1,textShadow:`0 0 16px ${s.glow}`}}>{s.value}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginTop:2}}>{s.label}</div></div>))}
+          {[{label:'Pending',value:pending.length,color:'var(--bolt)',glow:'rgba(var(--p3),0.5)'},{label:'Approved',value:approved.length,color:'var(--valley)',glow:'rgba(26,219,138,0.4)'},{label:'Executed',value:executed.length,color:'var(--steel)',glow:'rgba(var(--p4),0.4)'}].map(s=>(<div key={s.label}><div style={{fontFamily:'var(--fe)',fontSize:'26px',fontWeight:700,color:s.color,lineHeight:1,textShadow:`0 0 16px ${s.glow}`}}>{s.value}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.15em',textTransform:'uppercase',color:'var(--mist-3)',marginTop:2}}>{s.label}</div></div>))}
         </div>
       </div>
-      {todayBriefing&&(<div className="fade-in" style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,rgba(122,19,30,0.12),rgba(20,8,9,0.8))',border:'1px solid rgba(230,57,70,0.2)',borderLeft:'3px solid var(--bolt)',borderRadius:10,padding:'1.125rem'}}><div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',boxShadow:'0 0 8px rgba(230,57,70,0.8)',animation:'blink 1.5s ease-in-out infinite'}}/><span style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.25em',textTransform:'uppercase',color:'var(--bolt-lt)',opacity:0.8}}>Morning Briefing — {todayStr}</span></div><div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line',fontWeight:300}}>{todayBriefing.content}</div></div>)}
-      <div style={{display:'flex',gap:'2px',background:'rgba(20,8,9,0.6)',border:'1px solid rgba(230,57,70,0.08)',borderRadius:8,padding:3}}>
-        {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(200,32,47,0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(230,57,70,0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(230,57,70,0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
+      {todayBriefing&&(<div className="fade-in" style={{position:'relative',overflow:'hidden',background:'linear-gradient(135deg,rgba(var(--p6),0.12),rgba(var(--b2),0.8))',border:'1px solid rgba(var(--p3),0.2)',borderLeft:'3px solid var(--bolt)',borderRadius:10,padding:'1.125rem'}}><div style={{display:'flex',alignItems:'center',gap:'0.5rem',marginBottom:'0.625rem'}}><div style={{width:6,height:6,borderRadius:'50%',background:'var(--bolt)',boxShadow:'0 0 8px rgba(var(--p3),0.8)',animation:'blink 1.5s ease-in-out infinite'}}/><span style={{fontFamily:'var(--fm)',fontSize:'8px',letterSpacing:'0.25em',textTransform:'uppercase',color:'var(--bolt-lt)',opacity:0.8}}>Morning Briefing — {todayStr}</span></div><div style={{fontSize:'13px',lineHeight:'1.75',color:'var(--mist-1)',whiteSpace:'pre-line',fontWeight:300}}>{todayBriefing.content}</div></div>)}
+      <div style={{display:'flex',gap:'2px',background:'rgba(var(--b2),0.6)',border:'1px solid rgba(var(--p3),0.08)',borderRadius:8,padding:3}}>
+        {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(var(--p4),0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(var(--p3),0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(var(--p3),0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
       </div>
-      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(20,8,9,0.5)',border:'1px solid rgba(230,57,70,0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(230,57,70,0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
-        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(14,6,7,0.85)',border:'1px solid rgba(230,57,70,0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(122,19,30,0.1)',borderLeft:'2px solid rgba(200,32,47,0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(122,19,30,0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,90,54,0.2)',background:'rgba(255,90,54,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff5a36'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
+      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(var(--b2),0.5)',border:'1px solid rgba(var(--p3),0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(var(--p3),0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
+        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(var(--b1),0.85)',border:'1px solid rgba(var(--p3),0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(var(--p6),0.1)',borderLeft:'2px solid rgba(var(--p4),0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(var(--p6),0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,90,54,0.2)',background:'rgba(255,90,54,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff5a36'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
       ))}
-      {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(122,19,30,0.07)',border:'1px solid rgba(200,32,47,0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
-      {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(20,8,9,0.7)',border:'1px solid rgba(200,32,47,0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(230,57,70,0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff5a36',g:'rgba(255,90,54,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(230,57,70,0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
+      {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(var(--p6),0.07)',border:'1px solid rgba(var(--p4),0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
+      {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(var(--b2),0.7)',border:'1px solid rgba(var(--p4),0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(var(--p3),0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff5a36',g:'rgba(255,90,54,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(var(--p3),0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
       {tab==='research'&&<ResearchLauncher/>}
     </div>
   );
@@ -4849,9 +5495,9 @@ function ResearchLauncher() {
     }catch(e){console.error(e);}
     setLoading(false);
   };
-  if(launched)return(<div style={{textAlign:'center',padding:'1rem'}}><div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(230,57,70,0.6))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Research Active</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>JAXON hunting every hour for {hours}h</div></div>);
+  if(launched)return(<div style={{textAlign:'center',padding:'1rem'}}><div style={{fontSize:'24px',marginBottom:'0.5rem',filter:'drop-shadow(0 0 10px rgba(var(--p3),0.6))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Research Active</div><div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-3)',letterSpacing:'0.08em'}}>JAXON hunting every hour for {hours}h</div></div>);
   return(
-    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem',background:'linear-gradient(135deg,rgba(20,8,9,0.95),rgba(40,10,20,0.4))',border:'1px solid rgba(230,57,70,0.15)',borderRadius:14,padding:'1.125rem'}}>
+    <div style={{display:'flex',flexDirection:'column',gap:'0.875rem',background:'linear-gradient(135deg,rgba(var(--b2),0.95),rgba(var(--b3),0.4))',border:'1px solid rgba(var(--p3),0.15)',borderRadius:14,padding:'1.125rem'}}>
       <div style={{fontFamily:'var(--fe)',fontSize:'22px',fontWeight:600,color:'var(--mist-0)',marginBottom:'0.25rem'}}>Intelligence Hunter</div>
       <Field label="Research Topic"><input className="input" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="e.g. WhatsApp Business adoption among Jamaican restaurants"/></Field>
       <Field label="Research Goal"><textarea className="input" style={{minHeight:'52px',resize:'vertical'}} value={goal} onChange={e=>setGoal(e.target.value)} placeholder="What specific intelligence do we need?"/></Field>
@@ -5132,11 +5778,443 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
         ))}
         <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={()=>setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}))}><Icons.plus size={13}/> Add Line</button>
       </div>
-      <div style={{background:'rgba(230,57,70,0.06)',border:'1px solid rgba(230,57,70,0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
+      <div style={{background:'rgba(var(--p3),0.06)',border:'1px solid rgba(var(--p3),0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
       <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
       <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 {DESKTOP ? 'Save Invoice PDF' : 'Download Invoice'}</button>
       <ModalFoot onClose={onClose}/>
       </>
+    </Modal>
+  );
+}
+
+// ─── VENTURES ─────────────────────────────────────────────────────────────────
+// A control room for another project on this Mac (Dorm Dash). Read-only:
+// the console looks at the repo, the keys and the live money, and runs
+// safe checks. It never changes the other project or its data.
+const VENTURE_DEFAULT = { name: 'Dorm Dash', dir: '/Users/account/Documents/Jcommerce/dorm-dash-web' };
+const ventureConfig = () => { try { return { ...VENTURE_DEFAULT, ...(JSON.parse(localStorage.getItem('jc_venture')) || {}) }; } catch { return VENTURE_DEFAULT; } };
+const KEY_NOTES = [
+  [/FIREBASE_API_KEY/, 'Firebase web key. Public by design; protected by rules and App Check.'],
+  [/FIREBASE_VAPID/, 'Web push key. Lets browsers receive notifications.'],
+  [/FIREBASE_/, 'Firebase project setting. Public.'],
+  [/GOOGLE_MAPS/, 'Google Maps key. Restrict it to your app in Google Cloud or others can run up your bill.'],
+  [/FYGARO/, 'Fygaro card payments.'],
+  [/WIPAY/, 'WiPay. No longer used since 1 Oct 2026; safe to remove.'],
+];
+const keyNote = k => (KEY_NOTES.find(([re]) => re.test(k)) || [null, ''])[1];
+const looksPlaceholder = s => /not_|placeholder|changeme|your[_-]|xxx|todo|example|emul|1234/i.test(s.masked) || /^(not_|todo|xxx)/i.test(s.masked);
+const dayKey = ms => localDateStr(new Date(ms));
+const ago = ms => { const m = Math.round((Date.now() - ms) / 60000); return m < 60 ? `${m}m ago` : m < 1440 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
+
+function ventureServices(o) {
+  if (!o?.ok) return [];
+  const p = o.firebaseProject;
+  const list = [];
+  if (p) list.push(
+    { id: 'firebase', name: 'Firebase', does: 'Database, logins, server functions, hosting, file storage', url: `https://console.firebase.google.com/project/${p}/overview` },
+    { id: 'firebase-usage', name: 'Firebase usage & billing', does: 'What the project is costing this month', url: `https://console.firebase.google.com/project/${p}/usage` },
+    { id: 'functions-logs', name: 'Server logs', does: 'Errors from payments, pushes and order handling', url: `https://console.cloud.google.com/logs/query?project=${p}` },
+    { id: 'gcp-keys', name: 'Google Cloud API keys', does: 'Where the Maps keys are restricted and rotated', url: `https://console.cloud.google.com/apis/credentials?project=${p}` },
+  );
+  if (o.secrets.some(s => /FYGARO/.test(s.key)) || o.docs.includes('PAYMENTS_SETUP.md')) list.push({ id: 'fygaro', name: 'Fygaro', does: 'Card payments, payouts and refunds', url: 'https://app.fygaro.com/' });
+  if (o.git?.remote) list.push({ id: 'github', name: 'GitHub', does: 'Code and automatic checks (CI)', url: o.git.remote }, ...(o.has.ci ? [{ id: 'github-ci', name: 'GitHub Actions', does: 'Did the last push pass its checks?', url: `${o.git.remote}/actions` }] : []));
+  if (o.has.vercel) list.push({ id: 'vercel', name: 'Vercel', does: 'Second web host and payment return pages', url: 'https://vercel.com/dashboard' });
+  if (o.has.expo) list.push({ id: 'expo', name: 'Expo (EAS)', does: 'Android and iOS app builds', url: 'https://expo.dev/' });
+  return list;
+}
+
+// Turn raw orders/payments into the numbers that matter for a window of days
+function ventureStats(m, fromMs) {
+  const orders = m.orders.filter(o => o.createdAt >= fromMs);
+  const delivered = orders.filter(o => o.status === 'delivered');
+  const cancelled = orders.filter(o => o.status === 'cancelled');
+  const sum = (list, f) => list.reduce((s, x) => s + (Number(x[f]) || 0), 0);
+  const pays = m.payments.filter(p => p.createdAt >= fromMs);
+  const tx = m.walletTx.filter(t => t.createdAt >= fromMs);
+  const reasons = {};
+  cancelled.forEach(o => { const r = o.cancelReason || 'student_cancelled'; reasons[r] = (reasons[r] || 0) + 1; });
+  return {
+    placed: orders.length, delivered: delivered.length, cancelled: cancelled.length,
+    active: orders.filter(o => !['delivered', 'cancelled'].includes(o.status)).length,
+    gmv: sum(delivered, 'totalAmount'), fees: sum(delivered, 'deliveryFee'),
+    platform: sum(delivered, 'platformFeeJmd'), payouts: sum(delivered, 'dasherPayoutJmd'),
+    cardPaid: pays.filter(p => p.status === 'paid' || p.status === 'credited' || p.status === 'verified'),
+    cardPending: pays.filter(p => p.status === 'pending'),
+    topups: tx.filter(t => t.type === 'topup_card').reduce((s, t) => s + (Number(t.amountJmd) || 0), 0),
+    refundsCoins: tx.filter(t => t.type === 'order_refund').length,
+    refundsCard: tx.filter(t => t.type === 'order_refund_card').length,
+    lateCredits: tx.filter(t => t.type === 'late_payment_credit').length,
+    reasons,
+  };
+}
+
+function Ventures({ services, checks, todayStr, onSaveService, onDeleteService, onSaveCheck }) {
+  const api = DESKTOP?.venture;
+  const { confirm, ConfirmUI } = useConfirm();
+  const [cfg, setCfg] = useState(ventureConfig);
+  const [view, setView] = useState('overview');
+  const [o, setO] = useState(null);
+  const [money, setMoney] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [range, setRange] = useState(7);
+  const [term, setTerm] = useState({ text: '', running: null, last: {} });
+  const [doc, setDoc] = useState(null);
+  const [svcForm, setSvcForm] = useState(null);
+  const termRef = useRef(null);
+
+  const load = async () => {
+    if (!api) return;
+    setLoading(true);
+    const ov = await api.overview(cfg.dir);
+    setO(ov);
+    setMoney(ov.ok && ov.firebaseProject ? await api.money(ov.firebaseProject, 30) : { ok: false, error: ov.ok ? 'No Firebase project in this folder' : ov.error });
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [cfg.dir]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!api) return;
+    return api.onOutput(p => setTerm(t => ({
+      text: (t.text + (p.chunk || '')).slice(-60000),
+      running: p.done ? null : t.running,
+      last: p.done ? { ...t.last, [p.id]: { code: p.code, at: Date.now() } } : t.last,
+    })));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (termRef.current) termRef.current.scrollTop = termRef.current.scrollHeight; }, [term.text]);
+
+  if (!api) return (
+    <div className="section venture"><div className="card agenda-empty">Ventures only works in the Mac app, because it reads project folders on this computer.</div></div>
+  );
+
+  const pickFolder = async () => {
+    const dir = await api.pick();
+    if (!dir) return;
+    const next = { name: dir.split('/').pop(), dir };
+    localStorage.setItem('jc_venture', JSON.stringify(next));
+    setCfg(next); setMoney(null); setO(null);
+  };
+  const run = async id => {
+    setView('terminal');
+    setTerm(t => ({ ...t, text: t.text + (t.text ? '\n' : ''), running: id }));
+    const r = await api.run(cfg.dir, id);
+    if (!r.ok) setTerm(t => ({ ...t, text: t.text + `${r.error}\n`, running: null }));
+  };
+  const openDoc = async file => { const r = await api.doc(cfg.dir, file); setDoc({ file, text: r.ok ? r.text : r.error }); };
+
+  // ── Daily check: findings come from the real state, not a tick-box ───────
+  const now = Date.now();
+  const startOfToday = parseLocal(todayStr).getTime();
+  const findings = [];
+  const add = (lv, t) => findings.push({ lv, t });
+  if (o?.ok) {
+    const missing = o.secrets.filter(s => !s.set);
+    if (missing.length) add('danger', `${missing.length} key${missing.length === 1 ? ' is' : 's are'} empty: ${missing.map(s => s.key).join(', ')}.`);
+    const fake = o.secrets.filter(s => s.set && /FYGARO|STRIPE|SECRET|KEY_ID/.test(s.key) && !/WIPAY/.test(s.key) && looksPlaceholder(s) && !/demo|emul/.test(s.file));
+    if (fake.length) add('danger', `${fake.map(s => `${s.key} (${s.file})`).join(', ')} still looks like a placeholder. Card payments can't work with a fake key.`);
+    const trackedSecrets = o.files.filter(f => f.tracked && (f.kind === 'credential' || f.file === '.env'));
+    if (trackedSecrets.length) add('danger', `${trackedSecrets.map(f => f.file).join(', ')} is committed to git. Anyone with the repo has it.`);
+    if (o.secrets.some(s => /WIPAY/.test(s.key))) add('warn', 'WiPay settings are still in the project, but WiPay was replaced by Fygaro. Remove them.');
+    if (o.git) {
+      if (o.git.dirty.length) add('warn', `${o.git.dirty.length} file${o.git.dirty.length === 1 ? '' : 's'} changed but not committed.`);
+      if (o.git.ahead) add('warn', `${o.git.ahead} commit${o.git.ahead === 1 ? '' : 's'} not pushed to GitHub.`);
+      if (o.git.behind) add('warn', `${o.git.behind} commit${o.git.behind === 1 ? '' : 's'} on GitHub you don't have here.`);
+    }
+  }
+  let today = null, win = null;
+  if (money?.ok) {
+    today = ventureStats(money, startOfToday);
+    win = ventureStats(money, now - range * 86400000);
+    const stuck = money.payments.filter(p => p.status === 'pending' && now - p.createdAt > 20 * 60000 && now - p.createdAt < 3 * 86400000);
+    if (stuck.length) add('warn', `${stuck.length} card payment${stuck.length === 1 ? '' : 's'} started in the last 3 days never completed (${J(stuck.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0))}). Abandoned, or a webhook problem?`);
+    const week = ventureStats(money, now - 7 * 86400000);
+    if (week.refundsCoins) add('warn', `${week.refundsCoins} refund${week.refundsCoins === 1 ? '' : 's'} this week went back as coins, not to the card. Check each one.`);
+    if (week.lateCredits) add('warn', `${week.lateCredits} payment${week.lateCredits === 1 ? '' : 's'} this week landed after the order was cancelled.`);
+    const noDasher = week.reasons.no_dasher || 0;
+    if (noDasher) add(noDasher >= 3 ? 'danger' : 'warn', `${noDasher} order${noDasher === 1 ? '' : 's'} this week cancelled because no runner took ${noDasher === 1 ? 'it' : 'them'}. That's lost money and a lost customer.`);
+    const timeouts = week.reasons.payment_timeout || 0;
+    if (timeouts) add('warn', `${timeouts} order${timeouts === 1 ? '' : 's'} this week timed out waiting for payment.`);
+    if (week.placed === 0) add('warn', 'No orders in the last 7 days.');
+    if (!findings.some(f => f.lv !== 'ok')) add('ok', 'Money, keys and code all look clean.');
+  } else if (money && !money.ok) add('danger', `Couldn't read live data: ${money.error}`);
+  const order = { danger: 0, warn: 1, ok: 2 };
+  findings.sort((a, b) => order[a.lv] - order[b.lv]);
+
+  const checkedToday = checks.some(c => c.date === todayStr);
+  const streak = (() => { const days = new Set(checks.map(c => c.date)); let n = 0, d = days.has(todayStr) ? todayStr : addDays(todayStr, -1); while (days.has(d)) { n++; d = addDays(d, -1); } return n; })();
+  const markChecked = () => onSaveCheck({ date: todayStr, venture: cfg.name, issues: findings.filter(f => f.lv !== 'ok').length, orders: today?.placed ?? null, platform: today?.platform ?? null });
+
+  // 14-day chart
+  const chart = money?.ok ? Array.from({ length: 14 }, (_, i) => {
+    const d = addDays(todayStr, i - 13);
+    const dayOrders = money.orders.filter(x => dayKey(x.createdAt) === d);
+    const del = dayOrders.filter(x => x.status === 'delivered');
+    return { d, label: fmtDate(d, { month: 'numeric', day: 'numeric' }), delivered: del.length, cancelled: dayOrders.filter(x => x.status === 'cancelled').length, platform: del.reduce((s, x) => s + (Number(x.platformFeeJmd) || 0), 0) };
+  }) : [];
+
+  const svcMeta = id => services.find(s => s.serviceId === id) || {};
+  const autoServices = ventureServices(o);
+  const customServices = services.filter(s => s.custom);
+  const monthly = services.reduce((s, x) => s + (Number(x.monthlyCost) || 0), 0);
+  const tt = { background:'rgba(var(--b1),0.96)', border:'1px solid rgba(212,166,74,0.3)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
+  const axis = { fill:'#7f6758', fontSize:10 };
+
+  return (
+    <div className="section venture">
+      <div className="sched-bar">
+        <div className="sched-range">
+          <div className="sched-title" style={{ marginLeft: 0 }}>{cfg.name}</div>
+          <button className="vt-path" onClick={pickFolder} title="Change folder">{cfg.dir.replace(/^\/Users\/[^/]+/, '~')}</button>
+        </div>
+        <div className="seg">
+          {[['overview','Overview'],['money','Money'],['keys','Keys'],['services','Services'],['terminal','Terminal'],['docs','Docs']].map(([id, label]) => (
+            <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
+          ))}
+        </div>
+        <button className="btn-ghost" onClick={load} disabled={loading}>{loading ? 'Reading…' : '↻ Refresh'}</button>
+      </div>
+
+      {o && !o.ok && <div className="card agenda-empty">{o.error}. <button className="link-btn" onClick={pickFolder}>Choose the folder</button></div>}
+
+      {view === 'overview' && o?.ok && (<>
+        <div className="grid-2">
+          <div className="fin-tile"><span>Orders today</span><b>{today ? today.placed : '…'}</b><span className="fin-delta">{today ? `${today.delivered} delivered · ${today.active} live` : ''}</span></div>
+          <div className="fin-tile"><span>Your cut today</span><b className="good">{today ? J(today.platform) : '…'}</b><span className="fin-delta">{today ? `of ${J(today.fees)} in fees` : ''}</span></div>
+          <div className="fin-tile"><span>Card payments today</span><b>{today ? J(today.cardPaid.reduce((s, p) => s + (Number(p.amountJmd) || 0), 0)) : '…'}</b><span className="fin-delta">{today ? `${today.cardPaid.length} paid · ${today.cardPending.length} pending` : ''}</span></div>
+          <div className="fin-tile"><span>Needs attention</span><b className={findings.some(f => f.lv === 'danger') ? 'bad' : findings.some(f => f.lv === 'warn') ? 'warn' : 'good'}>{findings.filter(f => f.lv !== 'ok').length}</b><span className="fin-delta">{money?.fetchedAt ? `read ${ago(money.fetchedAt)}` : ''}</span></div>
+        </div>
+
+        <div className="card span-8">
+          <div className="row-between" style={{ marginBottom: '0.25rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>Daily check · {fmtDate(todayStr, { weekday:'long', month:'short', day:'numeric' })}</span>
+            <span className="fin-delta">{streak > 0 ? `🔥 ${streak} day${streak === 1 ? '' : 's'} in a row` : 'no streak yet'}</span>
+          </div>
+          <ul className="fin-findings" style={{ borderTop: 'none', marginTop: 0 }}>
+            {loading && !findings.length && <li className="ok">Reading the project…</li>}
+            {findings.map((f, i) => <li key={i} className={f.lv}>{f.t}</li>)}
+          </ul>
+          <div className="vt-check-foot">
+            {checkedToday
+              ? <span className="good">✓ Checked today · +10 XP</span>
+              : <button className="btn-primary" onClick={markChecked} disabled={loading || !money}>I've read today's check</button>}
+            <span className="fin-delta">Findings are worked out from the live project, not typed in. +10 XP a day for looking.</span>
+          </div>
+        </div>
+
+        <div className="card span-4">
+          <div className="card-label">Code</div>
+          {!o.git ? <div className="agenda-empty small">Not a git repository.</div> : (<>
+            <dl className="fin-kv">
+              <div><dt>Branch</dt><dd>{o.git.branch}</dd></div>
+              <div><dt>Uncommitted</dt><dd className={o.git.dirty.length ? 'warn' : 'good'}>{o.git.dirty.length || 'Clean'}</dd></div>
+              <div><dt>Not pushed</dt><dd className={o.git.ahead ? 'warn' : 'good'}>{o.git.ahead || 'None'}</dd></div>
+            </dl>
+            <div className="card-label" style={{ margin: '0.9rem 0 0.4rem' }}>Latest commits</div>
+            {o.git.commits.slice(0, 5).map(c => (
+              <div key={c.hash} className="vt-commit"><span>{c.subject}</span><em>{ago(c.at)}</em></div>
+            ))}
+          </>)}
+        </div>
+      </>)}
+
+      {view === 'money' && (
+        !money ? <div className="card agenda-empty">Reading live data…</div>
+        : !money.ok ? <div className="card agenda-empty">{money.error}</div> : (<>
+          <div className="row-between">
+            <span className="fin-delta">Read-only, straight from Dorm Dash's database · {ago(money.fetchedAt)}</span>
+            <div className="seg">{[[1,'Today'],[7,'7 days'],[30,'30 days']].map(([d, l]) => <button key={d} className={range === d ? 'on' : ''} onClick={() => setRange(d)}>{l}</button>)}</div>
+          </div>
+          {(() => { const s = range === 1 ? today : win; return (<>
+            <div className="grid-2">
+              <div className="fin-tile"><span>Orders</span><b>{s.placed}</b><span className="fin-delta">{s.delivered} delivered · {s.cancelled} cancelled</span></div>
+              <div className="fin-tile"><span>Your cut</span><b className="good">{J(s.platform)}</b><span className="fin-delta">runners earned {J(s.payouts)}</span></div>
+              <div className="fin-tile"><span>Food sold</span><b>{J(s.gmv)}</b><span className="fin-delta">delivered orders</span></div>
+              <div className="fin-tile"><span>Completion</span><b className={s.placed && s.delivered / s.placed < 0.7 ? 'bad' : 'good'}>{s.placed ? `${Math.round((s.delivered / s.placed) * 100)}%` : '—'}</b><span className="fin-delta">of orders delivered</span></div>
+            </div>
+            <div className="card span-8">
+              <div className="row-between" style={{ marginBottom: '0.75rem' }}>
+                <span className="card-label" style={{ margin: 0 }}>Last 14 days</span>
+                <span className="fin-legend"><i className="l-inc"/>Delivered<i className="l-exp"/>Cancelled<i className="l-net"/>Your cut</span>
+              </div>
+              <ResponsiveContainer width="100%" height={CHART_H(160)}>
+                <ComposedChart data={chart} margin={{ left: 0, right: 8, top: 6, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,166,74,0.08)"/>
+                  <XAxis dataKey="label" tick={axis}/>
+                  <YAxis yAxisId="n" tick={axis} width={28} allowDecimals={false}/>
+                  <YAxis yAxisId="j" orientation="right" tick={axis} width={40} tickFormatter={Jk}/>
+                  <Tooltip contentStyle={tt} formatter={(v, n) => (n === 'Your cut' ? J(v) : v)}/>
+                  <Bar yAxisId="n" dataKey="delivered" name="Delivered" stackId="o" fill="#e6c47c" maxBarSize={22} radius={[0,0,0,0]}/>
+                  <Bar yAxisId="n" dataKey="cancelled" name="Cancelled" stackId="o" fill="#ff6a45" maxBarSize={22} radius={[3,3,0,0]}/>
+                  <Line yAxisId="j" type="monotone" dataKey="platform" name="Your cut" stroke="#f2ddab" strokeWidth={2} dot={{ r: 2 }}/>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card span-4">
+              <div className="card-label">Payments</div>
+              <dl className="fin-kv">
+                <div><dt>Card payments received</dt><dd>{J(s.cardPaid.reduce((a, p) => a + (Number(p.amountJmd) || 0), 0))} · {s.cardPaid.length}</dd></div>
+                <div><dt>Started, never finished</dt><dd className={s.cardPending.length ? 'warn' : ''}>{s.cardPending.length}</dd></div>
+                <div><dt>Coin top-ups</dt><dd>{J(s.topups)}</dd></div>
+                <div><dt>Refunds to card</dt><dd>{s.refundsCard}</dd></div>
+                <div><dt>Refunds as coins</dt><dd className={s.refundsCoins ? 'warn' : ''}>{s.refundsCoins}</dd></div>
+                <div><dt>Paid after cancel</dt><dd className={s.lateCredits ? 'warn' : ''}>{s.lateCredits}</dd></div>
+              </dl>
+              {Object.keys(s.reasons).length > 0 && (<>
+                <div className="card-label" style={{ margin: '0.9rem 0 0.4rem' }}>Why orders were cancelled</div>
+                {Object.entries(s.reasons).sort((a, b) => b[1] - a[1]).map(([r, n]) => <div key={r} className="row-between cl-line"><span>{r.replace(/_/g, ' ')}</span><span>{n}</span></div>)}
+              </>)}
+            </div>
+          </>); })()}
+          <div className="card">
+            <div className="card-label">Latest orders</div>
+            <div className="vt-table">
+              <div className="vt-row head"><span>When</span><span>Store</span><span>Status</span><span>Payment</span><span>Total</span><span>Your cut</span></div>
+              {money.orders.slice(0, 15).map(x => (
+                <div key={x.id} className="vt-row">
+                  <span>{ago(x.createdAt)}</span><span className="name">{x.storeName || '—'}</span>
+                  <span className={x.status === 'delivered' ? 'good' : x.status === 'cancelled' ? 'bad' : 'warn'}>{(x.status || '').replace(/_/g, ' ')}{x.cancelReason ? ` · ${x.cancelReason.replace(/_/g, ' ')}` : ''}</span>
+                  <span>{x.paymentMethod ? `${x.paymentMethod === 'tokens' ? 'coins' : 'card'} · ${(x.paymentStatus || '').replace(/_/g, ' ')}` : '—'}</span>
+                  <span>{J(x.totalAmount || 0)}</span><span>{x.status === 'delivered' ? J(x.platformFeeJmd || 0) : '—'}</span>
+                </div>
+              ))}
+              {money.orders.length === 0 && <div className="agenda-empty small">No orders in the last 30 days.</div>}
+            </div>
+          </div>
+        </>)
+      )}
+
+      {view === 'keys' && o?.ok && (<>
+        <div className="card span-8">
+          <div className="card-label">Keys and settings · values never leave this Mac</div>
+          <div className="vt-table keys">
+            <div className="vt-row head"><span>Key</span><span>File</span><span>Value</span><span>Status</span></div>
+            {o.secrets.map((s, i) => {
+              const bad = !s.set ? 'Empty' : /WIPAY/.test(s.key) ? 'Unused' : looksPlaceholder(s) && !/demo|emul/.test(s.file) && !s.public ? 'Placeholder?' : '';
+              return (
+                <div key={i} className="vt-row" title={keyNote(s.key)}>
+                  <span className="name">{s.key}</span><span>{s.file}</span><span className="mono">{s.masked || '—'}</span>
+                  <span className={bad ? 'bad' : s.public ? '' : 'good'}>{bad || (s.public ? 'Public' : 'Set')}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="card span-4">
+          <div className="card-label">Secret files</div>
+          {o.files.map(f => (
+            <div key={f.file} className="row-between cl-line">
+              <span>{f.file}</span>
+              <span className={f.tracked && (f.kind === 'credential' || f.file === '.env') ? 'bad' : f.tracked ? 'warn' : 'good'}>{f.tracked ? 'in git' : 'not in git'}</span>
+            </div>
+          ))}
+          <ul className="fin-assume">
+            <li>"Public" keys ship inside the app anyway; rules and App Check protect them.</li>
+            <li>Anything marked "in git" is visible to everyone with the repository.</li>
+            <li>Hover a key to see what it's for.</li>
+          </ul>
+        </div>
+      </>)}
+
+      {view === 'services' && o?.ok && (<>
+        <div className="row-between">
+          <span className="fin-delta">Everything Dorm Dash depends on. Monthly cost: <b className={monthly ? 'warn' : ''}>{J(monthly)}</b></span>
+          <button className="btn-primary" onClick={() => setSvcForm({ custom: true })}><Icons.plus size={13}/> Service</button>
+        </div>
+        <div className="goal-grid">
+          {[...autoServices, ...customServices.map(s => ({ id: s.serviceId, name: s.name, does: s.does, url: s.url, custom: true }))].map(s => {
+            const meta = svcMeta(s.id);
+            const days = meta.renewsOn ? Math.round((parseLocal(meta.renewsOn) - parseLocal(todayStr)) / 864e5) : null;
+            return (
+              <div key={s.id} className="card vt-svc">
+                <div className="focus-head">
+                  <div><div className="focus-title">{s.name}</div><div className="focus-meta">{s.does}</div></div>
+                  <button className="icon-btn" title="Cost, renewal, notes" onClick={() => setSvcForm({ ...meta, serviceId: s.id, name: s.name, does: s.does, url: s.url, custom: !!s.custom })}><Icons.edit size={12}/></button>
+                </div>
+                <div className="goal-foot">
+                  <span>{Number(meta.monthlyCost) > 0 ? `${J(meta.monthlyCost)}/mo` : 'Free or not set'}</span>
+                  {days !== null && <span className={days <= 7 ? 'bad' : ''}>{days < 0 ? `Renewal ${-days}d overdue` : days === 0 ? 'Renews today' : `Renews in ${days}d`}</span>}
+                </div>
+                {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
+                {s.url && <a className="btn-ghost goal-log" href={s.url} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+              </div>
+            );
+          })}
+        </div>
+      </>)}
+
+      {view === 'terminal' && o?.ok && (<>
+        <div className="card span-4">
+          <div className="card-label">Safe checks</div>
+          <div className="vt-checks">
+            {o.checks.map(c => {
+              const last = term.last[c.id];
+              return (
+                <button key={c.id} className="btn-ghost vt-run" disabled={!!term.running} onClick={() => run(c.id)} title={c.cmd}>
+                  <span>{term.running === c.id ? '● ' : '▶ '}{c.label}</span>
+                  {last && <em className={last.code === 0 ? 'good' : 'bad'}>{last.code === 0 ? 'passed' : `failed (${last.code})`}</em>}
+                </button>
+              );
+            })}
+          </div>
+          <ul className="fin-assume">
+            <li>These only read and test. Nothing here deploys or changes the live app.</li>
+            <li>Deploys stay in your own terminal, on purpose.</li>
+          </ul>
+        </div>
+        <div className="card span-8 vt-term-card">
+          <div className="row-between" style={{ marginBottom: '0.5rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>{term.running ? 'Running…' : 'Output'}</span>
+            <span className="row-gap">
+              {term.running && <button className="btn-ghost tk-carry" onClick={() => api.stop()}>Stop</button>}
+              <button className="btn-ghost tk-carry" onClick={() => setTerm(t => ({ ...t, text: '' }))}>Clear</button>
+            </span>
+          </div>
+          <pre className="vt-term" ref={termRef}>{term.text || 'Pick a check on the left. Its output shows up here.'}</pre>
+        </div>
+      </>)}
+
+      {view === 'docs' && o?.ok && (<>
+        <div className="card span-4">
+          <div className="card-label">Project notes</div>
+          {o.docs.length === 0 ? <div className="agenda-empty small">No .md files at the top of the project.</div>
+            : o.docs.map(f => <button key={f} className={`cl-row ${doc?.file === f ? 'on' : ''}`} style={{ gridTemplateColumns: '1fr' }} onClick={() => openDoc(f)}><span className="cl-row-name">{f.replace(/\.md$/i, '').replace(/_/g, ' ')}</span></button>)}
+        </div>
+        <div className="card span-8">
+          <div className="card-label">{doc ? doc.file : 'Pick a note'}</div>
+          <pre className="vt-doc">{doc ? doc.text : 'Your own setup notes for payments, pricing and deployment live in the project. Read them here without opening the code.'}</pre>
+        </div>
+      </>)}
+
+      {svcForm && (
+        <ServiceModal data={svcForm}
+          onSave={d => { onSaveService(d); setSvcForm(null); }}
+          onDelete={svcForm.id && svcForm.custom ? async () => { if (await confirm({ message: `Remove ${svcForm.name}?`, label: 'Remove', danger: true })) { onDeleteService(svcForm.id); setSvcForm(null); } } : null}
+          onClose={() => setSvcForm(null)}/>
+      )}
+      {ConfirmUI}
+    </div>
+  );
+}
+
+function ServiceModal({ data, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({ name: '', does: '', url: '', monthlyCost: '', renewsOn: '', note: '', ...data });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const save = () => {
+    if (!f.name.trim()) return;
+    onSave({ ...f, name: f.name.trim(), serviceId: f.serviceId || `custom-${Date.now().toString(36)}`, monthlyCost: f.monthlyCost === '' ? '' : Number(f.monthlyCost) });
+  };
+  return (
+    <Modal title={data.serviceId ? f.name : 'New Service'} onClose={onClose}>
+      {data.custom && (<>
+        <Field label="Service"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Twilio, domain registrar"/></Field>
+        <Field label="What it does for the business"><input className="input" value={f.does} onChange={e => s('does', e.target.value)}/></Field>
+        <Field label="Dashboard link"><input className="input" value={f.url} onChange={e => s('url', e.target.value)} placeholder="https://"/></Field>
+      </>)}
+      <div className="grid-2">
+        <Field label="Monthly cost (J$)"><input className="input" type="number" min="0" value={f.monthlyCost} onChange={e => s('monthlyCost', e.target.value)} placeholder="0"/></Field>
+        <Field label="Renews / bills on"><input className="input" type="date" value={f.renewsOn || ''} onChange={e => s('renewsOn', e.target.value)}/></Field>
+      </div>
+      <Field label="Notes"><textarea className="input" style={{ minHeight: 64, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)} placeholder="Which account it's under, plan, limits. Not passwords."/></Field>
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Remove service</button>}
     </Modal>
   );
 }
@@ -5292,7 +6370,7 @@ function useConfirm() {
       zIndex:9999,backdropFilter:'blur(4px)',padding:'1rem',
     }}>
       <div style={{
-        background:'rgba(17,7,8,0.98)',
+        background:'rgba(var(--b1),0.98)',
         border:'1px solid rgba(255,255,255,0.1)',
         borderRadius:14,padding:'1.5rem',maxWidth:320,width:'100%',
         boxShadow:'0 20px 60px rgba(0,0,0,0.8)',
@@ -5315,8 +6393,8 @@ function useConfirm() {
           <button onClick={handleYes} style={{
             flex:1,padding:'0.6rem',borderRadius:8,cursor:'pointer',
             fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700,
-            background: state.danger ? 'rgba(255,90,54,0.15)' : 'rgba(230,57,70,0.12)',
-            border: `1px solid ${state.danger ? 'rgba(255,90,54,0.4)' : 'rgba(230,57,70,0.35)'}`,
+            background: state.danger ? 'rgba(255,90,54,0.15)' : 'rgba(var(--p3),0.12)',
+            border: `1px solid ${state.danger ? 'rgba(255,90,54,0.4)' : 'rgba(var(--p3),0.35)'}`,
             color: state.danger ? '#ff5a36' : 'var(--bolt)',
           }}>{state.label}</button>
         </div>
