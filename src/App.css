@@ -2824,3 +2824,11 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .pager-nums i { font-style: normal; color: var(--ink-3); padding: 0 0.1rem; }
 .pager-count { margin-left: auto; font-size: 12px; color: var(--ink-3); white-space: nowrap; }
 @media (max-width: 520px) { .pager-count { margin-left: 0; width: 100%; } .pager-step { padding: 0.32rem 0.5rem; } }
+
+
+/* ─── Services: grouped, with how each one bills and what was really paid ─ */
+.svc-group { font-family: var(--title); font-size: 24px; line-height: 1; color: var(--paper); margin-top: 0.5rem; display: flex; align-items: center; gap: 0.7rem; }
+.svc-group::after { content: ''; flex: 1; border-top: 1px dashed rgba(212,166,74,0.35); }
+.svc-bills { font-size: 12.5px; line-height: 1.5; color: var(--ink-2); padding-left: 0.7rem; border-left: 3px solid var(--teal-400); }
+.svc-foot { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: auto; }
+.vt-svc .fin-kv dd { font-size: 13px; }

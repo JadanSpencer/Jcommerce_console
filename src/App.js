@@ -1629,7 +1629,7 @@ function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
-        {tab==='ventures' && <Ventures ventures={ventures} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
+        {tab==='ventures' && <Ventures ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
           onSaveVenture={d => { const { id, ...data } = d; id ? update('ventures', id, data) : add('ventures', data); }}
           onDeleteVenture={v => {
             const firstId = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
@@ -4104,8 +4104,8 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   const [view, setView]     = useState('overview');
   const [form, setForm]     = useState(null);
   const [txType, setTxType] = useState('all');
-  const dayPager = usePager(7, `${month}|${txType}|${search}`);
   const [search, setSearch] = useState('');
+  const dayPager = usePager(7, `${month}|${txType}|${search}`);
   const [horizon, setHorizon] = useState(6);
   const [investAdvice, setInvestAdvice]   = useState(null);
   const [investLoading, setInvestLoading] = useState(false);
@@ -5842,22 +5842,52 @@ const createdSec = x => x.createdAt?.seconds ?? Infinity;
 const byCreated = (a, b) => createdSec(a) - createdSec(b);
 const fullUrl = u => (/^https?:\/\//i.test(u) ? u : `https://${u}`);
 
+// Every outside service a venture depends on, worked out from its code.
+// `bills` says how the service charges; the amounts you actually pay come
+// from the bills you log (they are real Finance entries), because none of
+// these companies offers a way to read your spend with the logins on this Mac.
+const SERVICE_GROUPS = ['Runs the app', 'Payments', 'Alerts and media', 'Build and ship', 'Dashboards', 'Added by you'];
 function ventureServices(o) {
   if (!o?.ok) return [];
-  const p = o.firebaseProject;
+  const p = o.firebaseProject, u = o.uses || {};
   const list = [];
-  if (p) list.push(
-    { id: 'firebase', name: 'Firebase', does: 'Database, logins, server functions, hosting, file storage', url: `https://console.firebase.google.com/project/${p}/overview` },
-    { id: 'firebase-usage', name: 'Firebase usage & billing', does: 'What the project is costing this month', url: `https://console.firebase.google.com/project/${p}/usage` },
-    { id: 'functions-logs', name: 'Server logs', does: 'Errors from payments, pushes and order handling', url: `https://console.cloud.google.com/logs/query?project=${p}` },
-    { id: 'gcp-keys', name: 'Google Cloud API keys', does: 'Where the Maps keys are restricted and rotated', url: `https://console.cloud.google.com/apis/credentials?project=${p}` },
-  );
-  if (o.secrets.some(s => /FYGARO/.test(s.key)) || o.docs.includes('PAYMENTS_SETUP.md')) list.push({ id: 'fygaro', name: 'Fygaro', does: 'Card payments, payouts and refunds', url: 'https://app.fygaro.com/' });
-  if (o.git?.remote) list.push({ id: 'github', name: 'GitHub', does: 'Code and automatic checks (CI)', url: o.git.remote }, ...(o.has.ci ? [{ id: 'github-ci', name: 'GitHub Actions', does: 'Did the last push pass its checks?', url: `${o.git.remote}/actions` }] : []));
-  if (o.has.vercel) list.push({ id: 'vercel', name: 'Vercel', does: 'Second web host and payment return pages', url: 'https://vercel.com/dashboard' });
-  if (o.has.expo) list.push({ id: 'expo', name: 'Expo (EAS)', does: 'Android and iOS app builds', url: 'https://expo.dev/' });
+  const add = (group, id, name, does, bills, url, cat = 'Tools') => list.push({ group, id, name, does, bills, url, cat });
+  if (p) {
+    add('Runs the app', 'firebase', 'Firebase (Google Cloud)', `Database, sign-in, server functions${u.hosting ? ', web hosting' : ''}${u.storage ? ', photo storage' : ''}${u.scheduler ? ', scheduled jobs' : ''}${u.tasks ? ', task queue' : ''}`,
+      `Pay as you go above the free quotas, on one Google Cloud bill.${u.warm ? ` ${u.warm} function${u.warm === 1 ? ' is' : 's are'} kept warm, which is a fixed charge every month even with no orders.` : ''}`,
+      `https://console.firebase.google.com/project/${p}/usage`, 'Hosting');
+    add('Runs the app', 'gcp-bill', 'Google Cloud bill', 'The one place that shows what Google has really charged this month', 'This is the actual figure for Firebase, Maps and reCAPTCHA together. Read it here, then log it.', `https://console.cloud.google.com/billing/linkedaccount?project=${p}`, 'Hosting');
+    if (u.maps) add('Runs the app', 'maps', 'Google Maps Platform', 'Maps in the Android and iPhone apps', 'Charged per map load above a monthly free allowance, on the Google Cloud bill. An unrestricted key can be run up by anyone.', `https://console.cloud.google.com/google/maps-apis/metrics?project=${p}`, 'Hosting');
+    if (u.appCheck) add('Runs the app', 'recaptcha', 'reCAPTCHA Enterprise (App Check)', 'Proves requests come from the real web app', 'Free up to a monthly number of checks, then charged per check, on the Google Cloud bill.', `https://console.cloud.google.com/security/recaptcha?project=${p}`, 'Hosting');
+    if (u.googleSignIn) add('Runs the app', 'google-signin', 'Google Sign-In', 'Signing in with a Google account', 'Free.', `https://console.cloud.google.com/apis/credentials?project=${p}`);
+  }
+  if (o.has.vercel) add('Runs the app', 'vercel', 'Vercel', 'Second web host and payment return pages', "Free on the Hobby plan, but check the terms: Vercel's free plan is meant for non-commercial sites. Pro is a monthly fee per member.", 'https://vercel.com/dashboard', 'Hosting');
+  if (o.secrets.some(x => /FYGARO/.test(x.key)) || o.docs.includes('PAYMENTS_SETUP.md')) add('Payments', 'fygaro', 'Fygaro', 'Card payments, payouts and refunds', 'A fee on every card payment, at the rate in your Fygaro agreement. No payments, no cost.', 'https://app.fygaro.com/');
+  if (u.ntfy) add('Alerts and media', 'ntfy', 'ntfy', 'Order alerts on each store phone', 'Free, with a shared daily message limit (your code notes say about 250 a day, and busy times can be refused). A paid account removes that.', 'https://ntfy.sh/account');
+  if (u.photoroom) add('Alerts and media', 'photoroom', 'Photoroom API', 'Cuts the background out of store and menu photos', 'A small free image allowance, then charged per image.', 'https://app.photoroom.com/api-dashboard');
+  if (u.push) add('Alerts and media', 'push', 'Push notifications', 'Expo push for the apps, Firebase Cloud Messaging for the web app', 'Free.', 'https://expo.dev/');
+  if (o.git?.remote) {
+    add('Build and ship', 'github', 'GitHub', 'Code, history and Dependabot updates', 'Free for this use.', o.git.remote);
+    if (o.has.ci) add('Build and ship', 'github-ci', 'GitHub Actions', 'Automatic checks on every push', 'Free minutes each month for private repositories, then charged per minute.', `${o.git.remote}/actions`);
+  }
+  if (o.has.expo) add('Build and ship', 'expo', 'Expo (EAS Build)', 'Builds the Android and iPhone apps', 'Free plan has a limited number of builds a month and a slower queue. Paid plans are a monthly fee.', 'https://expo.dev/');
+  if (u.play) add('Build and ship', 'play', 'Google Play Console', 'Publishing the Android app', 'One-time US$25 registration. No monthly fee.', 'https://play.google.com/console');
+  if (p) {
+    add('Dashboards', 'functions-logs', 'Server logs', 'Errors from payments, pushes and order handling', 'No cost of its own.', `https://console.cloud.google.com/logs/query?project=${p}`);
+    add('Dashboards', 'gcp-keys', 'Google Cloud API keys', 'Where the Maps keys are restricted and rotated', 'No cost of its own.', `https://console.cloud.google.com/apis/credentials?project=${p}`);
+  }
   return list;
 }
+// What a service is planned to cost per month, from what you entered
+const COST_TYPES = [['monthly', 'Every month'], ['yearly', 'Every year'], ['once', 'One-time'], ['usage', 'Depends on use'], ['free', 'Free']];
+const svcMonthly = m => { const a = Number(m.monthlyCost) || 0, t = m.costType || 'monthly'; return t === 'monthly' || t === 'usage' ? a : t === 'yearly' ? a / 12 : 0; };
+const svcPlanText = m => {
+  const a = Number(m.monthlyCost) || 0, t = m.costType || (a ? 'monthly' : '');
+  if (t === 'free') return 'Free';
+  if (t === 'usage') return a ? `About ${J(a)} a month, by use` : 'Depends on use';
+  if (!a) return 'Not set';
+  return t === 'yearly' ? `${J(a)} a year` : t === 'once' ? `${J(a)} one-time` : `${J(a)} a month`;
+};
 
 // Turn raw orders/payments into the numbers that matter for a window of days
 function ventureStats(m, fromMs) {
@@ -5946,7 +5976,7 @@ function ventureHealth(v, d, { services, items, todayStr }) {
   const issues = findings.filter(f => f.lv !== 'ok');
   return {
     findings, issues, worst: issues[0]?.lv || 'ok', today, hasOrders, moves,
-    monthly: services.reduce((s, x) => s + (Number(x.monthlyCost) || 0), 0),
+    monthly: Math.round(services.reduce((s, x) => s + svcMonthly(x), 0)),
   };
 }
 
@@ -5982,7 +6012,7 @@ function launchPlan(v, items, todayStr) {
   };
 }
 
-function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function Ventures({ ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP?.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const acrossPager = usePager(6), comingPager = usePager(6);
@@ -6046,6 +6076,7 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
       <VentureRoom key={current.id} v={current} hex={hex(current)} d={data[current.id]} h={health[current.id]} reload={() => loadOne(current)}
         services={of(services, current)} items={of(items, current)} checks={of(checks, current)} checkedToday={checkedToday(current)} todayStr={todayStr}
         onEdit={() => setForm(current)}
+        bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, ventureId: current.id })}
         onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
         onSaveCheck={d => onSaveCheck({ ...d, ventureId: current.id, venture: current.name })}
         onSaveItem={d => onSaveItem({ ...d, ventureId: current.id })} onDeleteItem={onDeleteItem} onAddTodo={onAddTodo}/>
@@ -6144,12 +6175,17 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
   );
 }
 
-function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
   const [view, setView] = useState(v.launchDate ? 'launch' : 'overview');
   const [openDay, setOpenDay] = useState(null);
+  const [billForm, setBillForm] = useState(null);
+  const [gcpBilling, setGcpBilling] = useState(null);
+  const billPager = usePager(6);
+  const fbProject = d?.o?.ok ? d.o.firebaseProject : '';
+  useEffect(() => { setGcpBilling(null); if (fbProject) api.billing(fbProject).then(setGcpBilling); }, [fbProject]); // eslint-disable-line react-hooks/exhaustive-deps
   const phasePagers = [usePager(5), usePager(5)];
   const roadPager = usePager(8), movePager = usePager(8), donePager = usePager(5), logPager = usePager(5);
   const orderPager = usePager(10), keyPager = usePager(12), peoplePager = usePager(8), linkPager = usePager(8);
@@ -6551,33 +6587,75 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
         </div>
       </>)}
 
-      {view === 'services' && (<>
-        <div className="row-between">
-          <span className="fin-delta">Everything {v.name} depends on. Monthly cost: <b className={monthly ? 'warn' : ''}>{J(monthly)}</b></span>
-          <button className="btn-primary" onClick={() => setSvcForm({ custom: true })}><Icons.plus size={13}/> Service</button>
-        </div>
-        {autoServices.length + customServices.length === 0 && <div className="card agenda-empty">No services yet. Add what this venture pays for or relies on: domain, hosting, phone plan, payment provider.</div>}
-        <div className="goal-grid">
-          {[...autoServices, ...customServices.map(s => ({ id: s.serviceId, name: s.name, does: s.does, url: s.url, custom: true }))].map(s => {
-            const meta = svcMeta(s.id);
-            const days = meta.renewsOn ? Math.round((parseLocal(meta.renewsOn) - parseLocal(todayStr)) / 864e5) : null;
-            return (
-              <div key={s.id} className="card vt-svc">
-                <div className="focus-head">
-                  <div><div className="focus-title">{s.name}</div><div className="focus-meta">{s.does}</div></div>
-                  <button className="icon-btn" title="Cost, renewal, notes" onClick={() => setSvcForm({ ...meta, serviceId: s.id, name: s.name, does: s.does, url: s.url, custom: !!s.custom })}><Icons.edit size={12}/></button>
-                </div>
-                <div className="goal-foot">
-                  <span>{Number(meta.monthlyCost) > 0 ? `${J(meta.monthlyCost)}/mo` : 'Free or not set'}</span>
-                  {days !== null && <span className={days <= 7 ? 'bad' : ''}>{days < 0 ? `Renewal ${-days}d overdue` : days === 0 ? 'Renews today' : `Renews in ${days}d`}</span>}
-                </div>
-                {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
-                {s.url && <a className="btn-ghost goal-log" href={fullUrl(s.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+      {view === 'services' && (() => {
+        const month = todayStr.slice(0, 7);
+        const all = [...autoServices, ...customServices.map(x => ({ group: 'Added by you', id: x.serviceId, name: x.name, does: x.does, url: x.url, bills: '', cat: 'Tools', custom: true }))];
+        const paid = (id, from) => bills.filter(f => f.serviceId === id && (!from || (f.date || '') >= from)).reduce((t, f) => t + (Number(f.amount) || 0), 0);
+        const paidMonth = bills.filter(f => (f.date || '').startsWith(month)).reduce((t, f) => t + (Number(f.amount) || 0), 0);
+        const paidEver = bills.reduce((t, f) => t + (Number(f.amount) || 0), 0);
+        const priced = all.filter(x => svcMeta(x.id).costType || Number(svcMeta(x.id).monthlyCost) > 0).length;
+        const sortedBills = [...bills].sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+        const billPg = billPager(sortedBills.length);
+        return (<>
+          <div className="grid-2">
+            <div className="fin-tile"><span>Services</span><b>{all.length}</b><span className="fin-delta">{priced} priced by you · found in the code</span></div>
+            <div className="fin-tile"><span>Planned</span><b className={monthly ? 'warn' : ''}>{J(monthly)}</b><span className="fin-delta">a month, from what you entered</span></div>
+            <div className="fin-tile"><span>Actually paid this month</span><b className={paidMonth > monthly && monthly ? 'bad' : ''}>{J(paidMonth)}</b><span className="fin-delta">from bills you logged</span></div>
+            <div className="fin-tile"><span>Paid so far</span><b>{J(paidEver)}</b><span className="fin-delta">{bills.length} bill{bills.length === 1 ? '' : 's'} in Finance</span></div>
+          </div>
+          <div className="row-between">
+            <span className="fin-delta">
+              {fbProject && (gcpBilling === null ? 'Checking Google Cloud billing…' : !gcpBilling.ok ? `Could not check Google Cloud billing (${gcpBilling.error}).`
+                : gcpBilling.enabled ? <b className="warn">Google Cloud billing is on: this project can run up a bill.</b> : <b className="good">Google Cloud billing is off: this project is on free limits only.</b>)}
+            </span>
+            <button className="btn-primary" onClick={() => setSvcForm({ custom: true })}><Icons.plus size={13}/> Service</button>
+          </div>
+          {all.length === 0 && <div className="card agenda-empty">No services yet. Add what this venture pays for or relies on: domain, hosting, phone plan, payment provider.</div>}
+          {SERVICE_GROUPS.filter(g => all.some(x => x.group === g)).map(g => (
+            <React.Fragment key={g}>
+              <div className="svc-group">{g}</div>
+              <div className="goal-grid">
+                {all.filter(x => x.group === g).map(x => {
+                  const meta = svcMeta(x.id);
+                  const days = meta.renewsOn ? Math.round((parseLocal(meta.renewsOn) - parseLocal(todayStr)) / 864e5) : null;
+                  const pm = paid(x.id, `${month}-01`), pe = paid(x.id);
+                  return (
+                    <div key={x.id} className="card vt-svc">
+                      <div className="focus-head">
+                        <div><div className="focus-title">{x.name}</div><div className="focus-meta">{x.does}</div></div>
+                        <button className="icon-btn" title="Cost, renewal, notes" onClick={() => setSvcForm({ ...meta, serviceId: x.id, name: x.name, does: x.does, url: x.url, custom: !!x.custom })}><Icons.edit size={12}/></button>
+                      </div>
+                      {x.bills && <div className="svc-bills">{x.bills}</div>}
+                      <dl className="fin-kv">
+                        <div><dt>Planned</dt><dd className={svcPlanText(meta) === 'Not set' ? 'warn' : ''}>{svcPlanText(meta)}</dd></div>
+                        <div><dt>Paid this month</dt><dd>{pm ? J(pm) : 'Nothing logged'}</dd></div>
+                        {pe > pm && <div><dt>Paid so far</dt><dd>{J(pe)}</dd></div>}
+                        {days !== null && <div><dt>Renews</dt><dd className={days <= 7 ? 'bad' : ''}>{days < 0 ? `${-days}d overdue` : days === 0 ? 'today' : `in ${days}d`}</dd></div>}
+                      </dl>
+                      {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
+                      <div className="svc-foot">
+                        <button className="btn-ghost tk-carry" onClick={() => setBillForm({ serviceId: x.id, name: x.name, category: x.cat || 'Tools' })}>Log a bill</button>
+                        {x.url && <a className="btn-ghost tk-carry" href={fullUrl(x.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            );
-          })}
-        </div>
-      </>)}
+            </React.Fragment>
+          ))}
+          <div className="card">
+            <div className="card-label">Bills logged · these are real Finance expenses</div>
+            {sortedBills.length === 0 ? <div className="agenda-empty small">Nothing logged yet. When a charge lands, press "Log a bill" on that service.</div> : pageOf(sortedBills, billPg).map(f => (
+              <div key={f.id} className="tk-row old">
+                <div className="tk-main"><div className="tk-title">{f.description}</div><div className="tk-note">{f.date ? fmtDate(f.date, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'No date'} · {f.category}</div></div>
+                <span className="mono">{J(f.amount)}</span>
+              </div>
+            ))}
+            <Pager pg={billPg} noun="bills"/>
+            <div className="goal-hint" style={{ marginTop: '0.75rem' }}>None of these companies lets the console read your spend with the logins on this Mac, and Google has no way to fetch the amount at all. So "actual" means what you logged from the real bill.</div>
+          </div>
+        </>);
+      })()}
 
       {view === 'people' && (<>
         <div className="card span-7">
@@ -6661,6 +6739,10 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
           onSave={d => { onSaveService(d); setSvcForm(null); }}
           onDelete={svcForm.id && svcForm.custom ? async () => { if (await confirm({ message: `Remove ${svcForm.name}?`, label: 'Remove', danger: true })) { onDeleteService(svcForm.id); setSvcForm(null); } } : null}
           onClose={() => setSvcForm(null)}/>
+      )}
+      {billForm && (
+        <BillModal data={billForm} todayStr={todayStr} ventureName={v.name}
+          onSave={d => { onAddBill(d); setBillForm(null); }} onClose={() => setBillForm(null)}/>
       )}
       {itemForm && (
         <VentureItemModal data={itemForm} todayStr={todayStr}
@@ -6747,26 +6829,54 @@ function VentureItemModal({ data, todayStr, onSave, onDelete, onClose }) {
 }
 
 function ServiceModal({ data, onSave, onDelete, onClose }) {
-  const [f, setF] = useState({ name: '', does: '', url: '', monthlyCost: '', renewsOn: '', note: '', ...data });
+  const [f, setF] = useState({ name: '', does: '', url: '', monthlyCost: '', costType: '', renewsOn: '', note: '', ...data });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const type = f.costType || 'monthly';
   const save = () => {
     if (!f.name.trim()) return;
-    onSave({ ...f, name: f.name.trim(), serviceId: f.serviceId || `custom-${Date.now().toString(36)}`, monthlyCost: f.monthlyCost === '' ? '' : Number(f.monthlyCost) });
+    onSave({ ...f, name: f.name.trim(), costType: type, serviceId: f.serviceId || `custom-${Date.now().toString(36)}`, monthlyCost: f.monthlyCost === '' || type === 'free' ? '' : Number(f.monthlyCost) });
   };
   return (
     <Modal title={data.serviceId ? f.name : 'New Service'} onClose={onClose}>
       {data.custom && (<>
-        <Field label="Service"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Twilio, domain registrar"/></Field>
+        <Field label="Service"><input className="input" autoFocus value={f.name} onChange={e => s('name', e.target.value)} placeholder="e.g. Domain, phone plan, bank account"/></Field>
         <Field label="What it does for the business"><input className="input" value={f.does} onChange={e => s('does', e.target.value)}/></Field>
         <Field label="Dashboard link"><input className="input" value={f.url} onChange={e => s('url', e.target.value)} placeholder="https://"/></Field>
       </>)}
       <div className="grid-2">
-        <Field label="Monthly cost (J$)"><input className="input" type="number" min="0" value={f.monthlyCost} onChange={e => s('monthlyCost', e.target.value)} placeholder="0"/></Field>
-        <Field label="Renews / bills on"><input className="input" type="date" value={f.renewsOn || ''} onChange={e => s('renewsOn', e.target.value)}/></Field>
+        <Field label="How it charges"><select className="input" value={type} onChange={e => s('costType', e.target.value)}>{COST_TYPES.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></Field>
+        {type !== 'free' && <Field label={type === 'usage' ? 'Rough monthly amount (J$, optional)' : type === 'yearly' ? 'Amount a year (J$)' : type === 'once' ? 'One-time amount (J$)' : 'Amount a month (J$)'}><input className="input" type="number" min="0" value={f.monthlyCost} onChange={e => s('monthlyCost', e.target.value)} placeholder="0"/></Field>}
       </div>
+      {(type === 'monthly' || type === 'yearly') && <Field label="Next bill / renewal"><input className="input" type="date" value={f.renewsOn || ''} onChange={e => s('renewsOn', e.target.value)}/></Field>}
       <Field label="Notes"><textarea className="input" style={{ minHeight: 64, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)} placeholder="Which account it's under, plan, limits. Not passwords."/></Field>
+      <div className="focus-preview"><div>This is the plan. What you really pay is counted from the bills you log on the service.</div></div>
       <ModalFoot onClose={onClose} onSave={save}/>
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Remove service</button>}
+    </Modal>
+  );
+}
+
+// A real charge from a service. Saved as a Finance expense tied to the venture.
+function BillModal({ data, todayStr, ventureName, onSave, onClose }) {
+  const [amount, setAmount] = useState('');
+  const [date, setDate] = useState(todayStr);
+  const [category, setCategory] = useState(data.category || 'Tools');
+  const [note, setNote] = useState('');
+  const save = () => {
+    const n = Number(amount);
+    if (!(n > 0)) return;
+    onSave({ type: 'expense', amount: n, category, date, serviceId: data.serviceId, description: `${ventureName} · ${data.name}${note.trim() ? ` · ${note.trim()}` : ''}` });
+  };
+  return (
+    <Modal title={`Bill · ${data.name}`} onClose={onClose}>
+      <div className="grid-2">
+        <Field label="Amount charged (J$)"><input className="input" type="number" min="0" autoFocus value={amount} onChange={e => setAmount(e.target.value)} placeholder="0"/></Field>
+        <Field label="Date charged"><input className="input" type="date" max={todayStr} value={date} onChange={e => setDate(e.target.value)}/></Field>
+      </div>
+      <Field label="Finance category"><select className="input" value={category} onChange={e => setCategory(e.target.value)}>{EXPENSE_CATS.map(c => <option key={c}>{c}</option>)}</select></Field>
+      <Field label="Note (optional)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. October invoice, converted from US$12"/></Field>
+      <div className="focus-preview"><div>Goes into Finance as an expense, so it counts against this month's profit and budgets.</div></div>
+      <ModalFoot onClose={onClose} onSave={save}/>
     </Modal>
   );
 }

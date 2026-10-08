@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('desktop', {
   venture: {
     overview: dir => ipcRenderer.invoke('venture:overview', dir),
     money: (project, days) => ipcRenderer.invoke('venture:money', { project, days }),
+    billing: project => ipcRenderer.invoke('venture:billing', project),
     pick: () => ipcRenderer.invoke('venture:pick'),
     open: dir => ipcRenderer.invoke('venture:open', dir),
     doc: (dir, file) => ipcRenderer.invoke('venture:doc', { dir, file }),

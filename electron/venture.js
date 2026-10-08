@@ -94,6 +94,30 @@ async function overview(dir) {
   let docs = [];
   try { docs = (await fs.readdir(dir)).filter(f => /\.md$/i.test(f)).sort(); } catch {}
 
+  // Which outside services the code actually uses (read from the source, names only)
+  let fnSrc = '';
+  try {
+    for (const f of await fs.readdir(path.join(dir, 'functions', 'src'))) {
+      if (/\.(ts|js)$/.test(f) && !/campusDistances/.test(f)) fnSrc += await fs.readFile(path.join(dir, 'functions', 'src', f), 'utf8').catch(() => '');
+    }
+  } catch {}
+  const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
+  const fb = await readJson(path.join(dir, 'firebase.json'));
+  const appJson = await readJson(path.join(dir, 'app.json'));
+  const keyNames = secrets.map(x => x.key).join(' ');
+  const uses = {
+    photoroom: /photoroom/i.test(fnSrc),
+    ntfy: /ntfy/i.test(fnSrc),
+    maps: !!deps['react-native-maps'] || /GOOGLE_MAPS/.test(keyNames),
+    appCheck: /RECAPTCHA/.test(keyNames) || /enforceAppCheck/.test(fnSrc),
+    push: !!deps['expo-notifications'] || /VAPID/.test(keyNames),
+    googleSignIn: !!deps['@react-native-google-signin/google-signin'],
+    play: !!(appJson?.expo?.android?.package) && await exists(path.join(dir, 'eas.json')),
+    hosting: !!fb?.hosting, storage: !!fb?.storage,
+    scheduler: /onSchedule\(/.test(fnSrc), tasks: /onTaskDispatched/.test(fnSrc),
+    warm: (fnSrc.match(/minInstances:\s*[1-9]/g) || []).length,
+  };
+
   const scripts = Object.keys(pkg?.scripts || {}), fnScripts = Object.keys(fnPkg?.scripts || {});
   const checks = Object.entries(CHECKS)
     .filter(([, c]) => (!c.script || scripts.includes(c.script)) && (!c.fnScript || fnScripts.includes(c.fnScript)))
@@ -103,7 +127,7 @@ async function overview(dir) {
   return {
     ok: true, dir, name: pkg?.name || path.basename(dir),
     firebaseProject: rc?.projects?.default || '',
-    git, secrets, files, docs, checks,
+    git, secrets, files, docs, checks, uses,
     has: { vercel: await exists(path.join(dir, 'vercel.json')), expo: await exists(path.join(dir, 'eas.json')) || !!pkg?.dependencies?.expo, ci: await exists(path.join(dir, '.github', 'workflows')), functions: !!fnPkg },
   };
 }
@@ -171,9 +195,24 @@ async function money(project, days = 30) {
   }
 }
 
+// Is Google Cloud billing switched on for the project? (Read-only. Google has
+// no API for the amount spent; that only shows in the billing report.)
+async function billing(project) {
+  if (!/^[a-z0-9-]+$/.test(project || '')) return { ok: false, error: 'No project' };
+  try {
+    const call = async token => fetch(`https://cloudbilling.googleapis.com/v1/projects/${project}/billingInfo`, { headers: { Authorization: `Bearer ${token}` } });
+    let r = await call(await cliToken(false));
+    if (r.status === 401) r = await call(await cliToken(true));
+    const j = await r.json();
+    if (!r.ok) return { ok: false, error: j?.error?.message || `HTTP ${r.status}` };
+    return { ok: true, enabled: !!j.billingEnabled, hasAccount: !!j.billingAccountName };
+  } catch (e) { return { ok: false, error: e.message || 'Could not check' }; }
+}
+
 function register(getWindow) {
   let running = null;
   ipcMain.handle('venture:overview', (_e, dir) => overview(dir));
+  ipcMain.handle('venture:billing', (_e, project) => billing(project));
   ipcMain.handle('venture:money', (_e, { project, days }) => money(project, days));
   ipcMain.handle('venture:pick', async () => {
     const r = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'], message: 'Choose the project folder' });
