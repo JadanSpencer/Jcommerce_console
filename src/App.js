@@ -72,8 +72,23 @@ const STATUS_COLOR = {
   Negotiating:'#e8a030', Paid:'#1adb8a', Flaked:'#ff5a36', Lost:'#ff5a36'
 };
 const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-const EXPENSE_CATS = ['Hosting','AI API','Tools','Transport','Food','Education','Other'];
-const INCOME_CATS = ['Setup Fee','First Deposit','Second Deposit','Monthly Retainer','Completion Fee','Freelance','Other'];
+const EXPENSE_CATS = ['Hosting','AI API','Tools','Transport','Food','Education','Bills','Personal','Other'];
+const INCOME_CATS = ['Setup Fee','First Deposit','Second Deposit','Monthly Retainer','Completion Fee','Freelance','Wages','Allowance','Gift','Other'];
+// The size of a transaction, always positive: the direction comes from its
+// type, never from the sign. Tolerates text like "1,500" from older entries.
+const amountOf = f => {
+  const raw = f?.amount;
+  const n = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(n) ? Math.round(Math.abs(n) * 100) / 100 : 0;
+};
+const isIncome = f => f.type === 'income';
+const signedAmount = f => (isIncome(f) ? amountOf(f) : -amountOf(f));
+// Work money or personal money. An explicit choice wins; otherwise anything
+// tied to a client or venture is work, and everyday categories are personal.
+const PERSONAL_CATS = new Set(['Transport','Food','Education','Bills','Personal','Wages','Allowance','Gift']);
+const scopeOf = f => (f.scope === 'work' || f.scope === 'personal') ? f.scope
+  : (f.ventureId || f.pipelineLeadId) ? 'work' : PERSONAL_CATS.has(f.category) ? 'personal' : 'work';
+const SCOPES = [['all', 'All money'], ['work', 'Work'], ['personal', 'Personal']];
 const GOAL_CATS = ['Revenue','Clients','Skills','Health','Personal'];
 const BLOCK_COLORS = {
   Work:'#e63946', Coding:'#f0c060', Outreach:'#1adb8a',
@@ -287,8 +302,8 @@ function goalProgress(g, { finances = [], leads = [], timers = [] } = {}) {
   switch (g.kind) {
     case 'milestone': return g.status === 'done' || g.completedAt ? 1 : 0;
     case 'steps':   return (g.steps || []).filter(s => s.done).length;
-    case 'revenue': return finances.filter(f => f.type === 'income' && inRange(f.date)).reduce((s, f) => s + (Number(f.amount) || 0), 0);
-    case 'profit':  return finances.filter(f => inRange(f.date)).reduce((s, f) => s + (f.type === 'income' ? 1 : -1) * (Number(f.amount) || 0), 0);
+    case 'revenue': return finances.filter(f => f.type === 'income' && inRange(f.date)).reduce((s, f) => s + amountOf(f), 0);
+    case 'profit':  return finances.filter(f => inRange(f.date)).reduce((s, f) => s + signedAmount(f), 0);
     case 'clients': return leads.filter(l => l.status === 'Paid' && inRange(l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : ''))).length;
     case 'focus':   return timers.reduce((s, t) => s + (t.sessions || []).filter(x => inRange(localDateStr(new Date(x.end)))).reduce((a, x) => a + (Number(x.sec) || 0), 0), 0) / 3600;
     default:        return Number(g.current) || 0;
@@ -618,8 +633,8 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
   const last7  = financesSorted.slice(i7);
   const prev7  = financesSorted.slice(i14, i7);
 
-  const rev7  = last7.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
-  const rev14 = prev7.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
+  const rev7  = last7.filter(f=>f.type==='income').reduce((s,f)=>s+amountOf(f),0);
+  const rev14 = prev7.filter(f=>f.type==='income').reduce((s,f)=>s+amountOf(f),0);
   const revDelta = rev14 > 0 ? Math.round(((rev7-rev14)/rev14)*100) : (rev7>0?100:0);
 
   // Lead velocity — new leads this week vs last
@@ -1445,8 +1460,8 @@ function App() {
     else await logPayment(lead, stage, amount, date);
   };
 
-  const totalIncome   = finances.filter(f=>f.type==='income').reduce((s,f)=>s+(Number(f.amount)||0),0);
-  const totalExpenses = finances.filter(f=>f.type==='expense').reduce((s,f)=>s+(Number(f.amount)||0),0);
+  const totalIncome   = finances.filter(isIncome).reduce((s,f)=>s+amountOf(f),0);
+  const totalExpenses = finances.filter(f=>!isIncome(f)).reduce((s,f)=>s+amountOf(f),0);
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
@@ -1866,7 +1881,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   const last3 = [1, 2, 3].map(i => addMonths(thisMonth, -i));
   const avgInc = last3.reduce((s, m) => s + sumMonth(m, 'income'), 0) / 3;
   const avgExp = last3.reduce((s, m) => s + sumMonth(m, 'expense'), 0) / 3;
-  const cash = finances.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0);
+  const cash = finances.reduce((s, f) => s + signedAmount(f), 0);
   const clients = leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
   const arrears = clients.map(l => ({ l, months: retainerArrears(l, finances, todayStr) })).filter(x => x.months.length);
   const owedRet = arrears.reduce((s, x) => s + x.months.length * (Number(x.l.retainerAmount) || 0), 0);
@@ -4061,7 +4076,6 @@ const daysInMonth = mk => { const [y, m] = mk.split('-').map(Number); return new
 const J = n => `${n < 0 ? '−' : ''}J$${Math.abs(Math.round(n)).toLocaleString()}`;
 const Jk = n => Math.abs(n) >= 1000 ? `${n < 0 ? '−' : ''}${Math.round(Math.abs(n) / 1000)}k` : `${Math.round(n)}`;
 const pctChange = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 100) : null);
-const amountOf = f => Number(f.amount) || 0;
 
 // Retainer months that were due (since the client started) but never collected.
 // Only Active clients owe retainers; Paused and Churned don't accrue.
@@ -4095,7 +4109,13 @@ function SectionGhost({ src }) {
   return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
 }
 
-function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
+function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
+  // Work, personal, or both. `finances` below is always the chosen slice, so
+  // every total, chart and list on the page agrees with the switch.
+  const [scope, setScopeRaw] = useState(() => { try { return localStorage.getItem('jc_fin_scope') || 'all'; } catch { return 'all'; } });
+  const setScope = v => { setScopeRaw(v); try { localStorage.setItem('jc_fin_scope', v); } catch {} };
+  const finances = useMemo(() => (scope === 'all' ? allFinances : allFinances.filter(f => scopeOf(f) === scope)), [allFinances, scope]);
+  const personalOnly = scope === 'personal';
   const { confirm, ConfirmUI } = useConfirm();
   const todayStr  = localDateStr();
   const thisMonth = monthOf(todayStr);
@@ -4105,7 +4125,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   const [form, setForm]     = useState(null);
   const [txType, setTxType] = useState('all');
   const [search, setSearch] = useState('');
-  const dayPager = usePager(7, `${month}|${txType}|${search}`);
+  const dayPager = usePager(7, `${month}|${txType}|${search}|${scope}`);
   const [horizon, setHorizon] = useState(6);
   const [investAdvice, setInvestAdvice]   = useState(null);
   const [investLoading, setInvestLoading] = useState(false);
@@ -4123,10 +4143,20 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
     return m;
   }, [finances]);
   const agg = k => byMonth[k] || { inc: 0, exp: 0, cats: {} };
+  const splitByMonth = useMemo(() => {
+    const m = {};
+    allFinances.forEach(f => {
+      if (!f.date) return;
+      const k = monthOf(f.date), w = scopeOf(f) === 'work';
+      m[k] = m[k] || { wInc: 0, wExp: 0, pInc: 0, pExp: 0 };
+      m[k][isIncome(f) ? (w ? 'wInc' : 'pInc') : (w ? 'wExp' : 'pExp')] += amountOf(f);
+    });
+    return m;
+  }, [allFinances]);
 
   const cur = agg(month), prev = agg(addMonths(month, -1));
   const net = cur.inc - cur.exp;
-  const target = minProfitForLevel(level);
+  const target = personalOnly ? 0 : minProfitForLevel(level);   // the level minimum is a business target
   const isCurrent = month === thisMonth;
   const isFuture  = month > thisMonth;
   const dim = daysInMonth(month);
@@ -4137,20 +4167,20 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   const avgInc = last3.reduce((s, m) => s + m.inc, 0) / 3;
   const avgExp = last3.reduce((s, m) => s + m.exp, 0) / 3;
   const avgNet = avgInc - avgExp;
-  const cash = finances.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0);
+  const cash = finances.reduce((s, f) => s + signedAmount(f), 0);
   const runway = avgExp > 0 ? Math.max(0, cash) / avgExp : Infinity;
 
   // ── Clients: retainers and money owed ──────────────────────────────────────
-  const paidClients = leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
+  const paidClients = personalOnly ? [] : leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
   const mrr = paidClients.filter(l => l.clientStatus !== 'Paused').reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
   const retainerIn = (l, mk) => !!(l.retainerLog || {})[mk] ||
-    finances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
+    allFinances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
   const retainers = paidClients.filter(l => Number(l.retainerAmount) > 0 && l.clientStatus !== 'Paused')
     .map(l => ({ l, amount: Number(l.retainerAmount), due: Number(l.retainerDueDay) || 1, got: retainerIn(l, thisMonth) }));
-  const overdueRet = retainers.map(r => { const months = retainerArrears(r.l, finances, todayStr); return { ...r, months, amount: months.length * r.amount }; }).filter(r => r.months.length);
+  const overdueRet = retainers.map(r => { const months = retainerArrears(r.l, allFinances, todayStr); return { ...r, months, amount: months.length * r.amount }; }).filter(r => r.months.length);
   const pendingRet = retainers.filter(r => !r.got && r.due >= today);
   const setupOwed = paidClients.map(l => {
-    const paid = finances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
+    const paid = allFinances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
     return { l, due: Math.max(0, (Number(l.value) || 0) - paid) };
   }).filter(x => x.due > 0);
   const owed = overdueRet.reduce((s, r) => s + r.amount, 0) + setupOwed.reduce((s, x) => s + x.due, 0);
@@ -4177,7 +4207,9 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   if (!finances.length) add('danger', "Nothing logged. Money you don't record is money you can't manage.");
   else if (isCurrent && sinceLog >= 7) add('warn', `Nothing logged in ${sinceLog} days. Log every dollar the day it moves.`);
 
-  if (!isFuture) {
+  if (!isFuture && personalOnly) {
+    if (cur.inc + cur.exp > 0) add(net >= 0 ? 'ok' : 'danger', net >= 0 ? `Personal money is ${J(net)} up this month.` : `You spent ${J(-net)} more of your own money than came in this month.`);
+  } else if (!isFuture) {
     if (net >= target) add('ok', `${isCurrent ? 'Target already cleared' : 'Target met'}: ${J(net)} against the ${J(target)} Level ${level} minimum.`);
     else if (isCurrent && projNet >= target) add('warn', `On course for the ${J(target)} minimum only if the ${J(pendingIncome)} in retainers still due actually arrives.`);
     else if (isCurrent) add('danger', `At this pace you finish ${J(gap)} short of the ${J(target)} Level ${level} minimum. That's ${J(perDay)} more profit every day, starting today.`);
@@ -4230,24 +4262,39 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
     const daily = {};
     finances.filter(f => monthOf(f.date) === month).forEach(f => {
       const d = Number(f.date.slice(8));
-      daily[d] = (daily[d] || 0) + (f.type === 'income' ? amountOf(f) : -amountOf(f));
+      daily[d] = (daily[d] || 0) + signedAmount(f);
     });
+    // Both kinds side by side, for the "All money" view
+    const split = { work: {}, personal: {} };
+    allFinances.filter(f => monthOf(f.date) === month).forEach(f => {
+      const d = Number(f.date.slice(8)), k = scopeOf(f);
+      split[k][d] = (split[k][d] || 0) + signedAmount(f);
+    });
+    let runW = 0, runP = 0;
     const lastActual = isCurrent ? today : isFuture ? 0 : dim;
     let run = 0;
     return Array.from({ length: dim }, (_, i) => {
       const d = i + 1;
       run += daily[d] || 0;
       const row = { day: d, pace: Math.round((target * d) / dim) };
-      if (d <= lastActual) row.actual = run;
+      runW += split.work[d] || 0; runP += split.personal[d] || 0;
+      if (d <= lastActual) { row.actual = run; row.work = runW; row.personal = runP; }
       if (isCurrent && d >= today) row.projected = Math.round(net + ((projNet - net) * (d - today)) / Math.max(1, dim - today));
       return row;
     });
-  }, [finances, month, isCurrent, isFuture, today, dim, target, net, projNet]);
+  }, [finances, allFinances, month, isCurrent, isFuture, today, dim, target, net, projNet]);
 
   const trend = Array.from({ length: 12 }, (_, i) => {
     const mk = addMonths(thisMonth, i - 11), a = agg(mk);
-    return { mk, label: monthName(mk, { month:'short' }), income: a.inc, expenses: a.exp, net: a.inc - a.exp };
+    return { mk, label: monthName(mk, { month:'short' }), income: a.inc, expenses: a.exp, net: a.inc - a.exp, ...(splitByMonth[mk] || { wInc: 0, wExp: 0, pInc: 0, pExp: 0 }) };
   });
+  // This month, each kind on its own and together
+  const kinds = ['work', 'personal'].map(k => {
+    const rows = allFinances.filter(f => monthOf(f.date) === month && scopeOf(f) === k);
+    const inc = rows.filter(isIncome).reduce((t, f) => t + amountOf(f), 0), exp = rows.filter(f => !isIncome(f)).reduce((t, f) => t + amountOf(f), 0);
+    return { k, label: k === 'work' ? 'Work' : 'Personal', inc, exp, net: inc - exp, n: rows.length };
+  });
+  const together = { inc: kinds[0].inc + kinds[1].inc, exp: kinds[0].exp + kinds[1].exp };
 
   const expCats = Object.entries(cur.cats).sort((a, b) => b[1] - a[1]);
   const maxCat = Math.max(1, ...expCats.map(([, v]) => v), ...expCats.map(([c]) => budgetOf(c)));
@@ -4293,6 +4340,9 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           <button className="btn-ghost sched-today" onClick={() => setMonth(thisMonth)} disabled={isCurrent}>This month</button>
           <div className="sched-title">{monthName(month)}</div>
         </div>
+        <div className="seg" title="Which money every number and chart on this page counts">
+          {SCOPES.map(([id, label]) => <button key={id} className={scope === id ? 'on' : ''} onClick={() => setScope(id)}>{label}</button>)}
+        </div>
         <div className="seg">
           {[['overview','Overview'],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
             <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
@@ -4308,19 +4358,19 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           <div className="fin-net-row">
             <div>
               <div className={`fin-net ${net >= 0 ? 'pos' : 'neg'}`}>{J(net)}</div>
-              <div className="fin-net-sub">net profit · {J(cur.inc)} in · {J(cur.exp)} out</div>
+              <div className="fin-net-sub">{scope === 'work' ? 'work profit' : personalOnly ? 'personal money, in minus out' : 'net, work and personal together'} · {J(cur.inc)} in · {J(cur.exp)} out</div>
             </div>
-            <div className="fin-target">
+            {!personalOnly && <div className="fin-target">
               <div className="fin-target-num">{J(target)}</div>
               <div className="fin-net-sub">Level {level} minimum</div>
-            </div>
+            </div>}
           </div>
-          <div className="fin-bar">
+          {!personalOnly && <div className="fin-bar">
             <div className="fin-bar-fill" style={{ width: `${Math.max(0, Math.min(100, (net / target) * 100))}%` }}/>
             {isCurrent && <div className="fin-bar-proj" style={{ width: `${Math.max(0, Math.min(100, (projNet / target) * 100))}%` }}/>}
             {isCurrent && <div className="fin-bar-today" style={{ left: `${(today / dim) * 100}%` }} title="Where you should be today"/>}
-          </div>
-          <div className="fin-bar-legend">
+          </div>}
+          <div className="fin-bar-legend" style={personalOnly ? { display: 'none' } : undefined}>
             {isCurrent
               ? <>Projected <b className={projNet >= target ? 'good' : 'bad'}>{J(projNet)}</b> · {daysLeft} day{daysLeft === 1 ? '' : 's'} left{perDay > 0 && <> · need <b className="bad">{J(perDay)}/day</b></>}</>
               : <>{net >= target ? 'Target met' : `Short by ${J(target - net)}`}</>}
@@ -4356,10 +4406,34 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           <div className="fin-tile"><span>Transactions</span><b>{finances.filter(f => monthOf(f.date) === month).length}</b><span className="fin-delta">{sinceLog === null ? 'none yet' : sinceLog === 0 ? 'logged today' : `last ${sinceLog}d ago`}</span></div>
         </div>
 
+        <div className="card fin-split">
+          <div className="card-label">Work and personal · {monthName(month, { month:'long' })}</div>
+          <div className="fin-split-grid">
+            {kinds.map(x => (
+              <button key={x.k} className={`fin-split-col ${x.k} ${scope === x.k ? 'on' : ''}`} onClick={() => setScope(scope === x.k ? 'all' : x.k)} title={`Show only ${x.label.toLowerCase()} money`}>
+                <em>{x.label}</em>
+                <b className={x.net < 0 ? 'bad' : ''}>{J(x.net)}</b>
+                <span><i className="good">+{J(x.inc)}</i><i className="bad">−{J(x.exp).replace('−', '')}</i></span>
+                <u>{x.n} transaction{x.n === 1 ? '' : 's'}</u>
+              </button>
+            ))}
+            <button className={`fin-split-col both ${scope === 'all' ? 'on' : ''}`} onClick={() => setScope('all')} title="Show all money">
+              <em>Together</em>
+              <b className={together.inc - together.exp < 0 ? 'bad' : ''}>{J(together.inc - together.exp)}</b>
+              <span><i className="good">+{J(together.inc)}</i><i className="bad">−{J(together.exp).replace('−', '')}</i></span>
+              <u>{kinds[0].n + kinds[1].n} transaction{kinds[0].n + kinds[1].n === 1 ? '' : 's'}</u>
+            </button>
+          </div>
+          <div className="fin-split-bar" title="Share of this month's spending">
+            {together.exp > 0 && <><i className="w" style={{ width: `${(kinds[0].exp / together.exp) * 100}%` }}/><i className="p" style={{ width: `${(kinds[1].exp / together.exp) * 100}%` }}/></>}
+          </div>
+          <div className="fin-delta">{together.exp > 0 ? `Of every J$100 spent this month, J$${Math.round((kinds[0].exp / together.exp) * 100)} was work and J$${Math.round((kinds[1].exp / together.exp) * 100)} was personal.` : 'Nothing spent yet this month.'}</div>
+        </div>
+
         <div className="card span-8">
           <div className="row-between" style={{ marginBottom:'0.75rem' }}>
-            <span className="card-label" style={{ margin:0 }}>Profit pace</span>
-            <span className="fin-legend"><i className="l-actual"/>Actual<i className="l-proj"/>Projected<i className="l-pace"/>Required pace</span>
+            <span className="card-label" style={{ margin:0 }}>{personalOnly ? 'Personal money this month' : 'Profit pace'}</span>
+            <span className="fin-legend">{scope === 'all' ? <><i className="l-actual"/>Together<i className="l-work"/>Work<i className="l-pers"/>Personal</> : <><i className="l-actual"/>Actual</>}<i className="l-proj"/>Projected{!personalOnly && <><i className="l-pace"/>Required pace</>}</span>
           </div>
           <ResponsiveContainer width="100%" height={CHART_H(170)}>
             <ComposedChart data={paceData} margin={{ left:0, right:8, top:6, bottom:0 }}>
@@ -4370,10 +4444,12 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
               <XAxis dataKey="day" tick={axis} interval={4}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)} labelFormatter={d => `${monthName(month, { month:'short' })} ${d}`}/>
-              <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4" label={{ value:'Minimum', fill:'#d3a855', fontSize:10, position:'insideTopLeft' }}/>
+              {!personalOnly && <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4" label={{ value:'Minimum', fill:'#d3a855', fontSize:10, position:'insideTopLeft' }}/>}
               <ReferenceLine y={0} stroke="rgba(255,255,255,0.15)"/>
-              <Line type="linear" dataKey="pace" name="Required pace" stroke="rgba(211,168,85,0.45)" strokeWidth={1.5} dot={false}/>
-              <Area type="stepAfter" dataKey="actual" name="Actual" stroke="#e6c47c" fill="url(#finAct)" strokeWidth={2} connectNulls={false}/>
+              {!personalOnly && <Line type="linear" dataKey="pace" name="Required pace" stroke="rgba(211,168,85,0.45)" strokeWidth={1.5} dot={false}/>}
+              {scope === 'all' && <Line type="stepAfter" dataKey="work" name="Work" stroke="#ff9a4a" strokeWidth={1.6} dot={false} connectNulls={false}/>}
+              {scope === 'all' && <Line type="stepAfter" dataKey="personal" name="Personal" stroke="#3ab88e" strokeWidth={1.6} dot={false} connectNulls={false}/>}
+              <Area type="stepAfter" dataKey="actual" name={scope === 'all' ? 'Together' : 'Actual'} stroke="#e6c47c" fill="url(#finAct)" strokeWidth={2} connectNulls={false}/>
               <Line type="linear" dataKey="projected" name="Projected" stroke="#ff9a4a" strokeDasharray="4 4" strokeWidth={2} dot={false}/>
             </ComposedChart>
           </ResponsiveContainer>
@@ -4409,7 +4485,9 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
         <div className="card">
           <div className="row-between" style={{ marginBottom:'0.75rem' }}>
             <span className="card-label" style={{ margin:0 }}>12 months · click a month to open it</span>
-            <span className="fin-legend"><i className="l-inc"/>Income<i className="l-exp"/>Expenses<i className="l-net"/>Net</span>
+            <span className="fin-legend">{scope === 'all'
+              ? <><i className="l-inc"/>Work in<i className="l-pinc"/>Personal in<i className="l-exp"/>Work out<i className="l-pexp"/>Personal out<i className="l-net"/>Net together</>
+              : <><i className="l-inc"/>Income<i className="l-exp"/>Expenses<i className="l-net"/>Net</>}</span>
           </div>
           <ResponsiveContainer width="100%" height={CHART_H(150)}>
             <ComposedChart data={trend} margin={{ left:0, right:8, top:6, bottom:0 }} onClick={e => e?.activePayload?.[0] && setMonth(e.activePayload[0].payload.mk)}>
@@ -4417,14 +4495,21 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
               <XAxis dataKey="label" tick={axis}/>
               <YAxis tick={axis} width={40} tickFormatter={Jk}/>
               <Tooltip contentStyle={tt} formatter={v => J(v)} cursor={{ fill:'rgba(212,166,74,0.07)' }}/>
-              <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4"/>
-              <Bar dataKey="income" name="Income" maxBarSize={22} radius={[3,3,0,0]}>
-                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#f2ddab' : 'rgba(212,166,74,0.6)'}/>)}
-              </Bar>
-              <Bar dataKey="expenses" name="Expenses" maxBarSize={22} radius={[3,3,0,0]}>
-                {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#ff6a45' : 'rgba(255,106,69,0.5)'}/>)}
-              </Bar>
-              <Line type="monotone" dataKey="net" name="Net" stroke="#e6c47c" strokeWidth={2} dot={{ r:2.5 }}/>
+              {!personalOnly && <ReferenceLine y={target} stroke="#d3a855" strokeDasharray="5 4"/>}
+              {scope === 'all' ? [
+                <Bar key="wi" dataKey="wInc" name="Work in" stackId="in" fill="#e6c47c" maxBarSize={22}/>,
+                <Bar key="pi" dataKey="pInc" name="Personal in" stackId="in" fill="#3ab88e" maxBarSize={22} radius={[3,3,0,0]}/>,
+                <Bar key="we" dataKey="wExp" name="Work out" stackId="out" fill="#ff6a45" maxBarSize={22}/>,
+                <Bar key="pe" dataKey="pExp" name="Personal out" stackId="out" fill="#a8483a" maxBarSize={22} radius={[3,3,0,0]}/>,
+              ] : [
+                <Bar key="i" dataKey="income" name="Income" maxBarSize={22} radius={[3,3,0,0]}>
+                  {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#f2ddab' : 'rgba(212,166,74,0.6)'}/>)}
+                </Bar>,
+                <Bar key="e" dataKey="expenses" name="Expenses" maxBarSize={22} radius={[3,3,0,0]}>
+                  {trend.map(t => <Cell key={t.mk} fill={t.mk === month ? '#ff6a45' : 'rgba(255,106,69,0.5)'}/>)}
+                </Bar>,
+              ]}
+              <Line type="monotone" dataKey="net" name={scope === 'all' ? 'Net together' : 'Net'} stroke="#f2ddab" strokeWidth={2} dot={{ r:2.5 }}/>
             </ComposedChart>
           </ResponsiveContainer>
         </div>
@@ -4448,7 +4533,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
               <div key={g.date} className="fin-day">
                 <div className="fin-day-head">
                   <span>{g.date ? fmtDate(g.date, { weekday:'short', month:'short', day:'numeric', ...(q ? { year:'numeric' } : {}) }) : 'No date'}</span>
-                  <span>{J(g.items.reduce((s, f) => s + (f.type === 'income' ? amountOf(f) : -amountOf(f)), 0))}</span>
+                  <span>{J(g.items.reduce((s, f) => s + signedAmount(f), 0))}</span>
                 </div>
                 {g.items.map(f => {
                   const client = leads.find(l => l.id === f.pipelineLeadId);
@@ -4457,7 +4542,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
                       <span className="fin-tx-dot"/>
                       <span className="fin-tx-main">
                         <span className="fin-tx-desc">{f.description}</span>
-                        <span className="fin-tx-meta">{f.category}{client ? ` · ${client.businessName}` : ''}{f.paymentStage && f.paymentStage !== f.category ? ` · ${f.paymentStage}` : ''}</span>
+                        <span className="fin-tx-meta"><i className={`fin-kind ${scopeOf(f)}`}>{scopeOf(f)}</i>{f.category}{client ? ` · ${client.businessName}` : ''}{f.paymentStage && f.paymentStage !== f.category ? ` · ${f.paymentStage}` : ''}</span>
                       </span>
                       <span className="fin-tx-amt">{f.type === 'income' ? '+' : '−'}{J(amountOf(f)).replace('−', '')}</span>
                     </button>
@@ -4645,11 +4730,14 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const cats = f.type === 'income' ? INCOME_CATS : EXPENSE_CATS;
   const category = cats.includes(f.category) ? f.category : (f.category || cats[0]);
-  const valid = f.description.trim() && Number(f.amount) > 0 && f.date;
+  const amt = Math.round(Math.abs(Number(f.amount)) * 100) / 100;
+  const valid = f.description.trim() && amt > 0 && f.date;
+  // Work or personal: follows the category until you choose it yourself
+  const kind = f.scope || scopeOf({ ...f, category });
   const setType = t => setF(p => ({ ...p, type: t, category: (t === 'income' ? INCOME_CATS : EXPENSE_CATS)[0], ...(t === 'expense' ? { pipelineLeadId: '' } : {}) }));
   const save = () => {
     if (!valid) return;
-    const out = { ...f, category, amount: Number(f.amount), description: f.description.trim() };
+    const out = { ...f, category, amount: amt, scope: kind, description: f.description.trim() };
     if (!out.pipelineLeadId) delete out.pipelineLeadId;
     // Client payments carry their stage so retainers and balances owed update
     else if (out.type === 'income' && PAYMENT_STAGES.includes(category)) out.paymentStage = category;
@@ -4672,6 +4760,12 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
       <Field label="Category">
         <div className="sched-cals">
           {cats.map(c => <button key={c} type="button" className={`sched-cal ${category === c ? 'on' : ''}`} style={{ '--c': f.type === 'income' ? '#e63946' : '#ff6a45' }} onClick={() => s('category', c)}><span className="dot"/>{c}</button>)}
+        </div>
+      </Field>
+      <Field label="Whose money is this?">
+        <div className="seg seg-full">
+          <button type="button" className={kind === 'work' ? 'on' : ''} onClick={() => s('scope', 'work')}>Work</button>
+          <button type="button" className={kind === 'personal' ? 'on' : ''} onClick={() => s('scope', 'personal')}>Personal</button>
         </div>
       </Field>
       <div className="grid-2">
@@ -6076,7 +6170,7 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
       <VentureRoom key={current.id} v={current} hex={hex(current)} d={data[current.id]} h={health[current.id]} reload={() => loadOne(current)}
         services={of(services, current)} items={of(items, current)} checks={of(checks, current)} checkedToday={checkedToday(current)} todayStr={todayStr}
         onEdit={() => setForm(current)}
-        bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, ventureId: current.id })}
+        bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, scope: 'work', ventureId: current.id })}
         onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
         onSaveCheck={d => onSaveCheck({ ...d, ventureId: current.id, venture: current.name })}
         onSaveItem={d => onSaveItem({ ...d, ventureId: current.id })} onDeleteItem={onDeleteItem} onAddTodo={onAddTodo}/>
@@ -6590,9 +6684,9 @@ function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, it
       {view === 'services' && (() => {
         const month = todayStr.slice(0, 7);
         const all = [...autoServices, ...customServices.map(x => ({ group: 'Added by you', id: x.serviceId, name: x.name, does: x.does, url: x.url, bills: '', cat: 'Tools', custom: true }))];
-        const paid = (id, from) => bills.filter(f => f.serviceId === id && (!from || (f.date || '') >= from)).reduce((t, f) => t + (Number(f.amount) || 0), 0);
-        const paidMonth = bills.filter(f => (f.date || '').startsWith(month)).reduce((t, f) => t + (Number(f.amount) || 0), 0);
-        const paidEver = bills.reduce((t, f) => t + (Number(f.amount) || 0), 0);
+        const paid = (id, from) => bills.filter(f => f.serviceId === id && (!from || (f.date || '') >= from)).reduce((t, f) => t + amountOf(f), 0);
+        const paidMonth = bills.filter(f => (f.date || '').startsWith(month)).reduce((t, f) => t + amountOf(f), 0);
+        const paidEver = bills.reduce((t, f) => t + amountOf(f), 0);
         const priced = all.filter(x => svcMeta(x.id).costType || Number(svcMeta(x.id).monthlyCost) > 0).length;
         const sortedBills = [...bills].sort((x, y) => (y.date || '').localeCompare(x.date || ''));
         const billPg = billPager(sortedBills.length);
