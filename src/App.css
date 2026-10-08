@@ -2650,3 +2650,101 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
   .jp-mark { font-size: 110px; right: 0.4rem; -webkit-text-stroke-color: rgba(var(--p3), 0.2); }
   .page-seal { width: 28px; height: 38px; font-size: 14px; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOTION — how ink behaves
+   Things are stamped, brushed, written or printed onto the page. Short,
+   decisive moves with a little overshoot; nothing floats or pulses.
+   Every keyframe only describes where a thing starts, so it always
+   lands on its normal resting style. Reduced-motion is respected by
+   the rule at the top of this file.
+═══════════════════════════════════════════════════════════════════ */
+:root { --snap: cubic-bezier(0.2, 0.9, 0.25, 1.15); --ease-out: cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* A page prints in, panel by panel */
+@keyframes panelIn { from { opacity: 0; translate: 0 18px; clip-path: inset(0 0 100% 0); } to { clip-path: inset(-24px); } }
+.section > :not(.ghost-art):not(.modal-overlay) { animation: panelIn 0.5s var(--ease-out) backwards; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(2) { animation-delay: 0.05s; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(3) { animation-delay: 0.10s; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(4) { animation-delay: 0.15s; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(5) { animation-delay: 0.20s; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(6) { animation-delay: 0.25s; }
+.section > :not(.ghost-art):not(.modal-overlay):nth-child(n+7) { animation-delay: 0.30s; }
+.vt-grid > *, .goal-grid > *, .focus-grid > *, .home-quads > *, .dash-row > * { animation: panelIn 0.45s var(--ease-out) backwards; }
+:is(.vt-grid, .goal-grid, .focus-grid, .home-quads, .dash-row) > :nth-child(2) { animation-delay: 0.06s; }
+:is(.vt-grid, .goal-grid, .focus-grid, .home-quads, .dash-row) > :nth-child(3) { animation-delay: 0.12s; }
+:is(.vt-grid, .goal-grid, .focus-grid, .home-quads, .dash-row) > :nth-child(n+4) { animation-delay: 0.18s; }
+
+/* The title: seal comes down first, the word slides in, the brush follows */
+@keyframes stampIn { 0% { opacity: 0; scale: 2.2; rotate: 14deg; } 55% { opacity: 1; scale: 0.9; } 75% { scale: 1.06; } }
+@keyframes wordIn { from { opacity: 0; translate: -22px 0; transform: skewX(-12deg); } }
+@keyframes brushIn { from { transform: scaleX(0); opacity: 0.4; } }
+.page-seal { animation: stampIn 0.42s var(--snap) backwards; }
+.page-title > span:last-child { display: inline-block; animation: wordIn 0.4s var(--ease-out) 0.1s backwards; }
+.app .page-title::after { transform-origin: left center; animation: brushIn 0.5s var(--ease-out) 0.32s backwards; }
+
+/* Home: the greeting lands, then the note is written out */
+@keyframes writeOn { from { clip-path: inset(-10% 100% -10% 0); } to { clip-path: inset(-10% -2% -10% 0); } }
+.home-jp { animation: wordIn 0.4s var(--ease-out) backwards; }
+.home-greet { animation: wordIn 0.5s var(--ease-out) 0.08s backwards; transform-origin: left bottom; }
+.home-verdict { animation: writeOn 1s steps(34, end) 0.5s backwards; }
+.agenda-empty, .goal-hint, .fin-health-line { animation: writeOn 0.8s steps(26, end) 0.35s backwards; }
+
+/* Seals and stamps hit the page */
+.xp-chip { animation: stampIn 0.45s var(--snap) backwards; }
+.brand-gem { animation: stampIn 0.5s var(--snap) 0.15s backwards; }
+.vt-stage, .tk-due, .jp-stamp { animation: stampIn 0.38s var(--snap) 0.25s backwards; }
+.fab { transition: rotate 0.2s var(--snap), translate 0.12s; }
+.fab:hover { rotate: 4deg; }
+.fab:active { translate: 2px 2px; }
+
+/* Ticking something off: the mark is stamped and a line is drawn through */
+@keyframes strike { from { background-size: 0% 2px; } }
+.tk-row.done .tk-title, .home-check.done .home-check-title {
+  text-decoration: none; display: inline-block; max-width: 100%;
+  background: linear-gradient(currentColor, currentColor) left 54% / 100% 2px no-repeat;
+  animation: strike 0.35s var(--ease-out) backwards;
+}
+.tk-row.done .check-btn svg, .home-check.done .check-btn svg { animation: stampIn 0.35s var(--snap) backwards; }
+.tk-xp { animation: stampIn 0.4s var(--snap) 0.1s backwards; }
+.check-btn:active { transform: scale(0.8); }
+
+/* Bars fill like ink soaking along a strip */
+@keyframes soak { from { transform: scaleX(0); } }
+.xp-fill, .fin-bar-fill, .fin-bar-proj, .goal-fill, .splash-fill { transform-origin: left center; animation: soak 0.9s var(--ease-out) 0.2s backwards; }
+
+/* Lists settle in one line after another */
+@keyframes lineIn { from { opacity: 0; translate: -10px 0; } }
+.fin-findings li, .tk-list .tk-row, .vt-log { animation: lineIn 0.32s var(--ease-out) backwards; }
+:is(.fin-findings li, .tk-list .tk-row, .vt-log):nth-child(2) { animation-delay: 0.04s; }
+:is(.fin-findings li, .tk-list .tk-row, .vt-log):nth-child(3) { animation-delay: 0.08s; }
+:is(.fin-findings li, .tk-list .tk-row, .vt-log):nth-child(4) { animation-delay: 0.12s; }
+:is(.fin-findings li, .tk-list .tk-row, .vt-log):nth-child(5) { animation-delay: 0.16s; }
+:is(.fin-findings li, .tk-list .tk-row, .vt-log):nth-child(n+6) { animation-delay: 0.20s; }
+
+/* Controls: pressed, not faded */
+@keyframes inkIn { from { scale: 0.86; opacity: 0.4; } }
+.seg button.on, .vt-tabs button.on, .tab-btn.active { animation: inkIn 0.22s var(--snap) backwards; }
+.btn-ghost, .icon-btn { transition: translate 0.1s, border-color 0.15s, color 0.15s, background 0.15s; }
+.btn-ghost:hover { translate: 0 -1px; }
+.btn-ghost:active, .icon-btn:active { translate: 1px 1px; transform: none; }
+.vt-card { transition: translate 0.16s var(--snap), border-color 0.15s; }
+
+/* Sidebar: the red tab slides onto the current page */
+@keyframes tabIn { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(-6px -6px -6px 0); } }
+@media (min-width: 760px) {
+  .nav-btn.active { animation: tabIn 0.26s var(--ease-out) backwards; }
+  .nav-btn .nav-icon { transition: translate 0.16s var(--snap); }
+  .nav-btn:hover:not(.active) .nav-icon { translate: 3px 0; }
+  .nav-btn:active { translate: 1px 1px; }
+}
+
+/* Dialogs are slapped down like a new panel */
+@keyframes slapIn { from { opacity: 0; translate: 0 26px; scale: 0.96; rotate: -1.2deg; } }
+@keyframes veilIn { from { opacity: 0; } }
+.modal-overlay, .cmdk-overlay { animation: veilIn 0.18s ease backwards; }
+.modal, .cmdk { animation: slapIn 0.3s var(--snap) backwards; }
+
+/* The tall mark drops in behind everything, a beat late */
+.jp-mark { animation: jpIn 0.7s var(--ease-out) 0.15s backwards; }

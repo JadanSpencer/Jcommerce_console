@@ -1548,7 +1548,7 @@ function App() {
             <div className="brand-sub">Founder Console</div>
           </div>
         </div>
-        <div className="page-title">
+        <div className="page-title" key={tab}>
           <span className="page-seal" lang="ja" aria-hidden="true">{currentNav.jp}</span>
           <span>{currentNav.label}</span>
         </div>
@@ -1592,7 +1592,7 @@ function App() {
             </button>
           )}
           <button className="icon-btn" title="Sign out" onClick={()=>signOut(auth)}><Icons.logout size={14}/></button>
-          <div className="xp-chip">
+          <div className="xp-chip" key={xp}>
             <span className="xp-chip-lv">L{level}</span>
             <span className="xp-chip-sep">·</span>
             <span className="xp-chip-xp">{xp} XP</span>
