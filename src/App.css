@@ -2306,3 +2306,112 @@ body { transition: background-color 0.6s ease; }
   .vt-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
   .vt-tabs button { flex: none; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   PLAIN — the finishing pass that takes decoration away
+   Flat surfaces, hairlines, one sans for text and numbers, serif only
+   for the page title and greeting, colour only where it means something.
+   No glows, no sheen, no grain, no floating embers, no corner brackets.
+═══════════════════════════════════════════════════════════════════ */
+:root {
+  --r0: 2px; --r1: 4px; --r2: 6px; --r3: 8px; --r4: 10px;
+  --tide-lg: 10px; --tide-md: 8px; --tide-sm: 6px; --tide-rev: 8px;
+  --mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  --fm: 'Inter', system-ui, -apple-system, sans-serif;
+  --line: rgba(255,255,255,0.085);
+  --line-2: rgba(255,255,255,0.16);
+  --fill: rgba(255,255,255,0.028);
+}
+body { font-variant-numeric: tabular-nums; }
+body::after, .app::before, .app::after, .card::before, .card::after, .header::after, .bottom-nav::before,
+.hero::before, .hero::after, .stat-card::before, .stat-card::after, .modal::before, .nav-btn.active::before { display: none !important; }
+body *, body *::before, body *::after { text-shadow: none !important; letter-spacing: normal !important; text-transform: none !important; }
+.app *:not(.modal):not(.cmdk):not(.toast) { box-shadow: none !important; }
+.app *:not(.modal-overlay):not(.cmdk-overlay) { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+.vt-term, .vt-doc, .mono, .vt-table.keys .vt-row .name, .vt-path, kbd, code, pre { font-family: var(--mono) !important; }
+
+/* Type */
+.page-title > span:last-child, .home-greet, .sched-title, .cl-name, .fin-net.pos, .goal-cur, .nav-foot-lv, .splash-wordmark, .chat-name {
+  background: none; -webkit-text-fill-color: currentColor; color: var(--ink-0); animation: none;
+}
+.app .page-title { font-size: 21px; font-weight: 500; gap: 0.6rem; }
+.app .page-title-icon { color: var(--ink-3); filter: none !important; }
+.app .page-title-icon svg { width: 18px; height: 18px; }
+.app .home-greet { font-weight: 500; letter-spacing: -0.01em !important; }
+.sched-title, .cl-name, .focus-title, .goal-cur, .nav-foot-lv, .brand-name { font-family: var(--fs); }
+.sched-title { font-size: 16px; font-weight: 600; }
+.cl-name { font-size: 20px; font-weight: 600; }
+.focus-title { font-size: 15px; font-weight: 600; }
+.card-label, .hero-eye, .cmdk-group {
+  font-family: var(--fs); font-size: 12.5px; font-weight: 600; color: var(--ink-2) !important; opacity: 1; margin-bottom: 0.8rem;
+}
+.fin-delta, .focus-meta, .goal-foot, .fin-net-sub, .tk-note, .home-streak, .vt-commit em, .nav-foot-xp, .brand-sub { font-size: 12px; }
+.agenda-empty, .agenda-empty.small { font-family: var(--fs); font-style: normal; text-align: left; font-size: 13px; padding: 0.6rem 0; color: var(--ink-3); }
+.app .fin-net { font-family: var(--fs); font-weight: 600; letter-spacing: -0.03em !important; }
+
+/* Surfaces */
+.card { background: var(--fill); border: 1px solid var(--line); border-radius: 8px; padding: 1.1rem 1.2rem; }
+.card:hover { border-color: var(--line); }
+.vt-card:hover { transform: none; border-color: var(--line-2); border-top-color: var(--c); }
+.header { background: var(--abyss-900); border-bottom: 1px solid var(--line); }
+.modal { border-radius: 10px; }
+.fin-tile { border: none; border-left: 1px solid var(--line-2); border-radius: 0; padding: 0.15rem 0 0.15rem 0.95rem; gap: 2px; }
+.fin-tile > span:first-child { font-family: var(--fs); font-size: 12.5px; color: var(--ink-2); }
+.app .fin-tile b { font-family: var(--fs); font-size: 23px; font-weight: 600; letter-spacing: -0.02em !important; }
+.fin-kv dd { font-weight: 500; }
+
+/* Controls */
+.btn-primary { background: var(--teal-500); color: #fff; border: 1px solid transparent; border-radius: 6px; font-weight: 600; }
+.btn-primary:hover { filter: none; background: var(--teal-400); border-color: transparent; }
+.btn-primary.icon-only { border-radius: 6px; }
+.btn-ghost { background: transparent; border: 1px solid var(--line); border-radius: 6px; }
+.btn-ghost:hover, .btn-ghost:active { border-color: var(--line-2); }
+.btn-ghost.on { border-color: var(--line-2); color: var(--ink-0); background: rgba(255,255,255,0.06); }
+.icon-btn, .input, .pill, .badge, .tk-due, .vt-stage, .vt-path, .cmdk-btn { border-radius: 6px; }
+.seg { border-radius: 6px; background: transparent; border: 1px solid var(--line); }
+.seg button { border-radius: 4px; }
+.seg button.on, .tab-btn.active { background: rgba(255,255,255,0.09); color: var(--ink-0); }
+.vt-tabs button { border-radius: 6px; background: transparent; border-color: var(--line); font-family: var(--fs); font-size: 12.5px; }
+.vt-tabs button.on { background: rgba(255,255,255,0.08); border-color: var(--line-2); color: var(--ink-0); }
+.vt-tabs em { border-radius: 4px; }
+.xp-chip { border: 1px solid var(--line); background: transparent; border-radius: 6px; }
+.xp-chip-lv { color: var(--ink-0); }
+.xp-chip-lv, .xp-chip-xp { font-family: var(--fs); }
+.fab { width: 44px; height: 44px; background: var(--abyss-700); border: 1px solid var(--line-2); color: var(--ink-1) !important; }
+.fab-pip { animation: none; }
+
+/* Sidebar and brand */
+.brand-gem { background: none; border: 1px solid var(--line-2); border-radius: 6px; }
+.brand-gem::before { color: var(--ink-0); }
+.brand-name { font-weight: 600; }
+.nav-btn .nav-icon, .nav-btn.active .nav-icon { filter: none !important; }
+.nav-btn.active .nav-icon { color: var(--teal-300); }
+@media (min-width: 760px) {
+  .bottom-nav { background: var(--abyss-950); border-right: 1px solid var(--line); }
+  .nav-btn, .nav-toggle { border-radius: 6px; }
+  .nav-btn.active { color: var(--ink-0); background: rgba(255,255,255,0.065); }
+  .nav-lbl { font-size: 13.5px; }
+  .fab { bottom: 1.25rem; right: 1.25rem; width: 44px; height: 44px; }
+}
+@media (max-width: 759px) {
+  .bottom-nav { background: var(--abyss-950); border-top: 1px solid var(--line); }
+  .app .nav-lbl { font-size: 10px; }
+}
+
+/* PLAIN, second pass: one serif (page title, greeting), opaque cards, plain hero */
+:root { --fe: 'Inter', system-ui, -apple-system, sans-serif; }
+.page-title, .home-greet, .splash-wordmark, .signin-card .splash-wordmark { font-family: 'Fraunces', Georgia, serif; }
+.card { background: color-mix(in srgb, rgb(var(--b2)) 90%, white 2.5%); }
+.card.home-hero, .home-hero { background: none !important; border: none; padding: 0.4rem 0 0.6rem; }
+.home-date { font-size: 12.5px; color: var(--ink-3); }
+.home-stats > * { border: none !important; background: none !important; border-left: 1px solid var(--line-2) !important; border-radius: 0 !important; padding: 0.1rem 0 0.1rem 0.9rem !important; }
+.fin-target-num { color: var(--ink-1); font-size: 18px; }
+.fin-health { border-top-width: 1px; }
+.fin-health-label { font-size: 17px; }
+.fin-health-line { font-style: normal; color: var(--ink-2); }
+.btn-primary { background: var(--teal-600); }
+.btn-primary:hover { background: var(--teal-500); }
+.link-btn { text-decoration-color: rgba(255,255,255,0.25); }
+.app .goal-cur, .app .hero-big, .app .stat-value { letter-spacing: -0.02em !important; }
+.card { background: rgba(var(--b2), 0.9); }

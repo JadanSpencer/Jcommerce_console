@@ -680,7 +680,7 @@ function VelocityTracker({ leads, finances, habits, todos, todayStr, xp }) {
         opacity:0.6}}/>
 
       <div className="card-label" style={{marginBottom:'0.75rem'}}>
-        ⚡ Business Velocity
+        Business velocity
       </div>
 
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.625rem'}}>
@@ -1539,7 +1539,6 @@ function App() {
       {/* Ambient orbs */}
       <div className="orb orb-1" />
       <div className="orb orb-2" />
-      <Particles palette={theme.embers}/>
 
       <header className="header">
         <div className="brand">
@@ -1554,7 +1553,7 @@ function App() {
           <span>{currentNav.label}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--bolt)'}}>📄</button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--ink-2)'}}><Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M8 13h8M8 17h5" /></button>
           <button
             onClick={requestPermission}
             title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
@@ -2045,7 +2044,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
               <div key={h.id} className={`home-check ${done ? 'done' : ''}`}>
                 <button className="check-btn" onClick={() => onToggleHabit(h, todayStr)} style={{ color: done ? 'var(--sea-400)' : 'var(--mist-3)' }}>{done ? <Icons.check size={20}/> : <Icons.circle size={20}/>}</button>
                 <span className="home-check-title">{h.name}</span>
-                {s > 0 && <span className="home-streak">🔥{s}</span>}
+                {s > 0 && <span className="home-streak">{s}d</span>}
               </div>
             );
           })}
@@ -2440,7 +2439,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         <span style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
                         <span className="badge" style={{background:`${STATUS_COLOR[l.status]}18`,color:STATUS_COLOR[l.status],border:`1px solid ${STATUS_COLOR[l.status]}28`}}>{l.status}</span>
                         {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
-                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff5a36',border:'1px solid rgba(239,68,68,0.2)'}}>🔥 High</span>}
+                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff5a36',border:'1px solid rgba(239,68,68,0.2)'}}>High</span>}
                         {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
                         {!['Paid','Flaked','Lost'].includes(l.status) && l.nextActionDate && l.nextActionDate <= todayStr && <span className="badge badge-danger">Follow up{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' today'}</span>}
                         {!['Paid','Flaked','Lost'].includes(l.status) && !l.nextActionDate && <span className="badge" style={{background:'rgba(230,196,124,0.1)',color:'var(--gold-300)',border:'1px solid rgba(230,196,124,0.3)'}}>No next step</span>}
@@ -2538,14 +2537,14 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                             };
                             window._openInvoice && window._openInvoice(inv);
                           }}>
-                          📄 Invoice
+                          Invoice
                         </button>
                         <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(var(--p3),0.25)',color:'var(--bolt)',background:'rgba(var(--p3),0.05)'}}
                           onClick={async ()=>{
                             const prompt = `LEAD ANALYSIS REQUEST\n\nBusiness: ${l.businessName}\nStatus: ${l.status}\nLocation: ${l.location||'Jamaica'}\nValue: J$${Number(l.value||0).toLocaleString()}\nPhone: ${l.phone||'Not found'}\nNotes: ${l.notes||'None'}\nLast action: ${l.nextAction||'None'} on ${l.nextActionDate||'N/A'}\nOutreach draft: ${l.outreachDraft||'None'}\n\nAs my business AI, analyse this lead and tell me:\n1. What is the best next move right now?\n2. What should I say to them?\n3. What is the probability of closing?\n4. Any red flags?`;
                             window._openJaxonChat && window._openJaxonChat(prompt);
                           }}>
-                          ⚡ Ask JAXON
+                          Ask JAXON
                         </button>
                         <button className="icon-btn mint-btn" onClick={()=>setPayForm(l)}><Icons.dollar size={13}/></button>
                         <button className="icon-btn" onClick={()=>setForm(l)}><Icons.edit size={13}/></button>
@@ -2783,7 +2782,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
                   <div className="hb-main">
                     <div className="hb-name">{h.name}</div>
                     <div className="hb-meta">
-                      <span className={streak ? 'hb-fire' : ''}>🔥 {streak}</span>
+                      <span className={streak ? 'hb-fire' : ''}>{streak}d streak</span>
                       <span>best {best}</span>
                       <span className={rate >= 0.8 ? 'good' : rate < 0.5 ? 'bad' : ''}>{Math.round(rate * 100)}% · 30d</span>
                       {h.archivedAt && <span>archived {fmtDate(h.archivedAt, { month:'short', day:'numeric' })}</span>}
@@ -4621,7 +4620,7 @@ function InvestAdvisor({cash,avgExp,avgNet,runway,mrr,target,advice,loading,onFe
         {investable > 0 && avgNet >= target && <li className="ok">Reserve covered and profit on target. Up to {J(investable)} can work for you.</li>}
       </ul>
       <button className="btn-primary" style={{ marginTop:'1rem', opacity: loading ? 0.7 : 1 }} onClick={onFetch} disabled={loading}>
-        {loading ? 'JAXON is analysing…' : '⚡ Ask JAXON for reinvestment advice'}
+        {loading ? 'JAXON is analysing…' : 'Ask JAXON for reinvestment advice'}
       </button>
     </div>
     <div className="card span-4">
@@ -5537,7 +5536,7 @@ function ResearchLauncher() {
         <label style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',display:'block',marginBottom:6}}>Research Period</label>
         <div style={{display:'flex',gap:'0.375rem'}}>{[6,12,24,48,72].map(h=>(<button key={h} className={`pill ${hours===h?'active':''}`} style={{padding:'0.28rem 0.6rem'}} onClick={()=>setHours(h)}>{h}h</button>))}</div>
       </div>
-      <button className="btn-primary" style={{justifyContent:'center',opacity:loading?0.7:1}} onClick={launch} disabled={loading||!topic.trim()}>{loading?'Launching...':'⚡ Launch Research'}</button>
+      <button className="btn-primary" style={{justifyContent:'center',opacity:loading?0.7:1}} onClick={launch} disabled={loading||!topic.trim()}>{loading?'Launching...':'Launch research'}</button>
     </div>
   );
 }
@@ -5812,7 +5811,7 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
       </div>
       <div style={{background:'rgba(var(--p3),0.06)',border:'1px solid rgba(var(--p3),0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
       <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
-      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>📄 {DESKTOP ? 'Save Invoice PDF' : 'Download Invoice'}</button>
+      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>{DESKTOP ? 'Save invoice PDF' : 'Download invoice'}</button>
       <ModalFoot onClose={onClose}/>
       </>
     </Modal>
@@ -6227,11 +6226,11 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
         <div className="card span-8">
           <div className="row-between" style={{ marginBottom: '0.25rem' }}>
             <span className="card-label" style={{ margin: 0 }}>Daily check · {fmtDate(todayStr, { weekday:'long', month:'short', day:'numeric' })}</span>
-            <span className="fin-delta">{streak > 0 ? `🔥 ${streak} day${streak === 1 ? '' : 's'} in a row` : 'no streak yet'}</span>
+            <span className="fin-delta">{streak > 0 ? `${streak} day${streak === 1 ? '' : 's'} in a row` : 'no streak yet'}</span>
           </div>
           <ul className="fin-findings" style={{ borderTop: 'none', marginTop: 0 }}>
             {loading && <li className="ok">Reading the project…</li>}
-            {findings.map((f, i) => <li key={i} className={f.lv}>{f.t}</li>)}
+            {!(loading && h.worst === 'ok') && findings.map((f, i) => <li key={i} className={f.lv}>{f.t}</li>)}
           </ul>
           <div className="vt-check-foot">
             {checkedToday
