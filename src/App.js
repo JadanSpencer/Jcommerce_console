@@ -1614,7 +1614,10 @@ function App() {
 
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={tab}>{currentNav.jp}</div>
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
+        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
+          const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
+          return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
+        })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
@@ -1848,7 +1851,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -1941,6 +1944,10 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   todos.filter(t => t.addedDate > todayStr && t.addedDate <= addDays(todayStr, 3) && !taskDone(t))
     .sort((a, b) => a.addedDate.localeCompare(b.addedDate)).slice(0, 3)
     .forEach(t => push(t.addedDate === addDays(todayStr, 1) ? 'danger' : 'warn', `${t.title} is due ${t.addedDate === addDays(todayStr, 1) ? 'tomorrow' : fmtDate(t.addedDate, { weekday:'long' })}.`, 'Tasks', go('todos')));
+  launchToday.forEach(l => {
+    if (l.daysLeft < 0 || !(l.today + l.late)) return;
+    push(l.late ? 'danger' : 'warn', `${l.name} launch${l.daysLeft === 0 ? ' is today' : ` in ${l.daysLeft} day${l.daysLeft === 1 ? '' : 's'}`}: ${l.today} step${l.today === 1 ? '' : 's'} for today${l.late ? `, ${l.late} behind` : ''}.`, 'Launch plan', go('ventures'));
+  });
   if (DESKTOP?.venture && venturesUnchecked.length) push(hour >= 12 ? 'warn' : 'info', `Daily check not read today: ${venturesUnchecked.join(', ')}.`, 'Ventures', go('ventures'));
   if (hour >= 18 && !wroteTide) push('info', "Write tonight's Tide Log before bed. +15 XP.", null, null);
   const order = { danger: 0, warn: 1, info: 2 };
@@ -2560,25 +2567,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
             })}
           </div>
 
-          {/* Pagination */}
-          {pageCount > 1 && (
-            <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:'0.5rem',paddingTop:'0.25rem'}}>
-              <button className="icon-btn" onClick={()=>setPage(p=>Math.max(0,p-1))} disabled={page===0}>
-                ←
-              </button>
-              {Array.from({length:pageCount},(_,i)=>(
-                <button key={i}
-                  className={`pill ${page===i?'active':''}`}
-                  style={{minWidth:32,justifyContent:'center'}}
-                  onClick={()=>setPage(i)}>
-                  {i+1}
-                </button>
-              ))}
-              <button className="icon-btn" onClick={()=>setPage(p=>Math.min(pageCount-1,p+1))} disabled={page===pageCount-1}>
-                →
-              </button>
-            </div>
-          )}
+          <Pager pg={{ page, pages: Math.max(1, pageCount), size: PER_PAGE, total: filtered.length, from: page * PER_PAGE, to: Math.min(filtered.length, (page + 1) * PER_PAGE), setPage }} noun="leads"/>
         </>
       )}
 
@@ -2852,6 +2841,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const [form, setForm] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [star, setStar] = useState(false);
+  const upPager = usePager(6), oldPager = usePager(6);
   const yesterday = addDays(todayStr, -1);
 
   const today = todos.filter(t => t.addedDate === todayStr);
@@ -2883,6 +2873,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
     if (await confirm({ message: `Delete "${t.title}"?`, label: 'Delete', danger: true })) onDelete(t.id);
   };
 
+  const upPg = upPager(upcoming.length), oldPg = oldPager(unfinished.length);
   return (
     <div className="section tasks">
       <div className="sched-bar">
@@ -2930,7 +2921,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
           <span className="card-label" style={{ margin:0 }}>Unfinished · last 7 days</span>
           {unfinished.length > 1 && <button className="link-btn" onClick={carryAll}>Carry all</button>}
         </div>
-        {unfinished.length === 0 ? <div className="agenda-empty small">Nothing left behind.</div> : unfinished.map(t => (
+        {unfinished.length === 0 ? <div className="agenda-empty small">Nothing left behind.</div> : pageOf(unfinished, oldPg).map(t => (
           <div key={t.id} className="tk-row old">
             <div className="tk-main">
               <div className="tk-title">{t.title}</div>
@@ -2939,13 +2930,14 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
             <button className="btn-ghost tk-carry" onClick={() => carry(t)}>Carry to today</button>
           </div>
         ))}
+        <Pager pg={oldPg} noun="tasks"/>
         <div className="goal-hint" style={{ marginTop:'0.75rem' }}>A task only counts on the day it's planned. Carrying it forward gives you another shot; the missed day still counts.</div>
       </div>
 
       {upcoming.length > 0 && (
         <div className="card tk-list">
           <div className="card-label">Coming up · {upcoming.length}</div>
-          {upcoming.map(t => {
+          {pageOf(upcoming, upPg).map(t => {
             const n = daysTo(t.addedDate);
             return (
               <div key={t.id} className="tk-row old">
@@ -2959,6 +2951,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
               </div>
             );
           })}
+          <Pager pg={upPg} noun="tasks"/>
           <div className="goal-hint" style={{ marginTop:'0.75rem' }}>These land in Today on their date. Finish early if you can; the date is the last day, not the plan.</div>
         </div>
       )}
@@ -4111,6 +4104,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
   const [view, setView]     = useState('overview');
   const [form, setForm]     = useState(null);
   const [txType, setTxType] = useState('all');
+  const dayPager = usePager(7, `${month}|${txType}|${search}`);
   const [search, setSearch] = useState('');
   const [horizon, setHorizon] = useState(6);
   const [investAdvice, setInvestAdvice]   = useState(null);
@@ -4450,7 +4444,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
           </div>
           {txGroups.length === 0
             ? <div className="agenda-empty">{q ? 'No matches.' : `Nothing logged in ${monthName(month, { month:'long' })}.`} <button className="link-btn" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}>Log a transaction</button></div>
-            : txGroups.map(g => (
+            : pageOf(txGroups, dayPager(txGroups.length)).map(g => (
               <div key={g.date} className="fin-day">
                 <div className="fin-day-head">
                   <span>{g.date ? fmtDate(g.date, { weekday:'short', month:'short', day:'numeric', ...(q ? { year:'numeric' } : {}) }) : 'No date'}</span>
@@ -4471,6 +4465,7 @@ function Finance({finances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudg
                 })}
               </div>
             ))}
+          {txGroups.length > 0 && <Pager pg={dayPager(txGroups.length)} noun="days"/>}
         </div>
       </>)}
 
@@ -5955,9 +5950,42 @@ function ventureHealth(v, d, { services, items, todayStr }) {
   };
 }
 
+// ── Launch plan: a dated run-up to opening day, then the phases after it ────
+// Steps are ordinary moves with a phase. Launch steps carry a date, so the
+// daily check, Home and "Do today" all work on them without extra wiring.
+const PHASES = [
+  { id: 'launch',  label: 'Soft launch',                   jp: '開店' },  // opening the shop
+  { id: 'gateway', label: 'Closed test and card payments', jp: '決済' },  // payments
+  { id: 'app',     label: 'Public app launch',             jp: '公開' },  // going public
+];
+function launchPlan(v, items, todayStr) {
+  if (!v.launchDate) return null;
+  const diff = (a, b) => Math.round((parseLocal(a) - parseLocal(b)) / 864e5);
+  const steps = items.filter(i => i.kind === 'move' && i.phase === 'launch' && i.due)
+    .sort((a, b) => a.due.localeCompare(b.due) || byCreated(a, b));
+  const start = v.planStart || steps[0]?.due || todayStr;
+  const days = [];
+  for (let d = start, n = 1; d <= v.launchDate && n < 120; d = addDays(d, 1), n++) {
+    const mine = steps.filter(x => x.due === d);
+    const open = mine.filter(x => !x.done).length;
+    days.push({
+      date: d, n, title: v.dayTitles?.[d] || '', steps: mine, open, isLaunch: d === v.launchDate,
+      state: d === todayStr ? 'today' : mine.length && !open ? 'done' : d < todayStr && open ? 'late' : d < todayStr ? 'past' : 'ahead',
+    });
+  }
+  const late = steps.filter(x => !x.done && x.due < todayStr);
+  return {
+    steps, days, late, start, daysLeft: diff(v.launchDate, todayStr),
+    done: steps.filter(x => x.done).length,
+    today: days.find(d => d.date === todayStr) || null,
+    phases: PHASES.slice(1).map(ph => ({ ...ph, steps: items.filter(i => i.kind === 'move' && i.phase === ph.id).sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || byCreated(a, b)) })),
+  };
+}
+
 function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP?.venture;
   const { confirm, ConfirmUI } = useConfirm();
+  const acrossPager = usePager(6), comingPager = usePager(6);
   const [sel, setSelRaw] = useState(() => { try { return localStorage.getItem('jc_venture_sel') || 'all'; } catch { return 'all'; } });
   const [data, setData] = useState({});
   const [form, setForm] = useState(null);
@@ -6073,6 +6101,9 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
                 <dl className="fin-kv">
                   {h.today && <div><dt>Today</dt><dd>{h.today.placed} orders · <span className="good">{J(h.today.platform)}</span></dd></div>}
                   {git && <div><dt>Code</dt><dd className={git.dirty.length || git.ahead ? 'warn' : ''}>{git.dirty.length ? `${git.dirty.length} uncommitted` : git.ahead ? `${git.ahead} not pushed` : 'clean'}{git.commits[0] ? ` · ${ago(git.commits[0].at)}` : ''}</dd></div>}
+                  {v.launchDate && (() => { const lp = launchPlan(v, of(items, v), todayStr); return (
+                    <div><dt>Launch</dt><dd className={lp.late.length ? 'bad' : lp.daysLeft <= 3 ? 'warn' : ''}>{lp.daysLeft > 0 ? `in ${lp.daysLeft} day${lp.daysLeft === 1 ? '' : 's'}` : lp.daysLeft === 0 ? 'today' : 'launched'} · {lp.done}/{lp.steps.length} steps</dd></div>
+                  ); })()}
                   <div><dt>Next move</dt><dd className={next ? (next.due && next.due < todayStr ? 'bad' : '') : 'warn'}>{next ? `${next.title}${next.due ? ` · ${fmtDate(next.due, { month: 'short', day: 'numeric' })}` : ''}` : 'none written'}</dd></div>
                   <div><dt>Running cost</dt><dd>{h.monthly ? `${J(h.monthly)}/mo` : '—'}</dd></div>
                 </dl>
@@ -6089,14 +6120,14 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
           <div className="card-label">Across everything</div>
           {across.length === 0 ? <div className="agenda-empty small">Nothing needs you in any venture.</div> : (
             <ul className="fin-findings" style={{ borderTop: 'none', marginTop: 0 }}>
-              {across.slice(0, 10).map((f, i) => <li key={i} className={f.lv}><button className="link-btn" onClick={() => setSel(f.v.id)}>{f.v.name}</button> · {f.t}</li>)}
+              {pageOf(across, acrossPager(across.length)).map((f, i) => <li key={i} className={f.lv}><button className="link-btn" onClick={() => setSel(f.v.id)}>{f.v.name}</button> · {f.t}</li>)}
             </ul>
           )}
-          {across.length > 10 && <div className="goal-hint">{across.length - 10} more inside the ventures.</div>}
+          <Pager pg={acrossPager(across.length)} noun="things"/>
         </div>
         <div className="card span-4">
           <div className="card-label">Next 14 days</div>
-          {coming.length === 0 ? <div className="agenda-empty small">No dated moves or bills coming up.</div> : coming.slice(0, 10).map((c, i) => {
+          {coming.length === 0 ? <div className="agenda-empty small">No dated moves or bills coming up.</div> : pageOf(coming, comingPager(coming.length)).map((c, i) => {
             const n = Math.round((parseLocal(c.date) - parseLocal(todayStr)) / 864e5);
             return (
               <div key={i} className="tk-row old">
@@ -6105,6 +6136,7 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
               </div>
             );
           })}
+          <Pager pg={comingPager(coming.length)} noun="dates"/>
         </div>
       </>)}
       {modal}{ConfirmUI}
@@ -6116,7 +6148,11 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
-  const [view, setView] = useState('overview');
+  const [view, setView] = useState(v.launchDate ? 'launch' : 'overview');
+  const [openDay, setOpenDay] = useState(null);
+  const phasePagers = [usePager(5), usePager(5)];
+  const roadPager = usePager(8), movePager = usePager(8), donePager = usePager(5), logPager = usePager(5);
+  const orderPager = usePager(10), keyPager = usePager(12), peoplePager = usePager(8), linkPager = usePager(8);
   const [range, setRange] = useState(7);
   const [term, setTerm] = useState({ text: '', running: null, last: {} });
   const [doc, setDoc] = useState(null);
@@ -6167,7 +6203,9 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
   const tt = { background:'rgba(var(--b1),0.96)', border:'1px solid rgba(212,166,74,0.3)', borderRadius:'10px', color:'#e8d6c3', fontSize:'12px' };
   const axis = { fill:'#7f6758', fontSize:10 };
   const hasFolder = !!o?.ok;
-  const tabs = [['overview','Overview'], ['plan',`Plan${moves.length ? ` · ${moves.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
+  const plan = launchPlan(v, items, todayStr);
+  const backlog = moves.filter(m => !m.phase);
+  const tabs = [...(plan ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
     ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : [])];
 
   const addMove = () => {
@@ -6196,6 +6234,30 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
     );
   };
 
+  // A launch step: the whole instruction is readable, not cut short
+  const stepRow = m => (
+    <div key={m.id} className={`lp-step ${m.done ? 'done' : ''} ${!m.done && m.due && m.due < todayStr ? 'late' : ''}`}>
+      <button className="check-btn" onClick={() => toggleMove(m)} style={{ color: m.done ? '#ff9a4a' : 'var(--mist-3)' }}>{m.done ? <Icons.check size={24}/> : <Icons.circle size={24}/>}</button>
+      <div className="lp-step-main">
+        <div className="lp-step-title">{m.title}</div>
+        {m.note && <div className="lp-step-note">{m.note}</div>}
+        {!m.done && m.due && m.due < todayStr && <div className="lp-step-late">Was for {fmtDate(m.due, { weekday: 'long', month: 'short', day: 'numeric' })}. Do it first.</div>}
+      </div>
+      <div className="lp-step-side">
+        {m.done ? <span className="tk-xp">+{XP_PER_MOVE}</span>
+          : m.sentOn === todayStr ? <span className="fin-delta">in today's tasks</span>
+          : <button className="btn-ghost tk-carry" onClick={() => toTasks(m)}>Do today</button>}
+        <button className="icon-btn" onClick={() => setItemForm({ ...m })}><Icons.edit size={12}/></button>
+      </div>
+    </div>
+  );
+  const shownDay = plan ? (plan.days.find(d => d.date === openDay) || plan.today || plan.days.find(d => d.open) || plan.days[plan.days.length - 1]) : null;
+  const roadPg = roadPager(plan ? plan.days.length : 0);
+  // The road opens on the page that holds the day being shown
+  const shownIdx = plan && shownDay ? plan.days.findIndex(d => d.date === shownDay.date) : -1;
+  useEffect(() => { if (shownIdx >= 0) roadPg.setPage(Math.floor(shownIdx / roadPg.size)); }, [shownIdx]); // eslint-disable-line react-hooks/exhaustive-deps
+  const planPct = plan && plan.steps.length ? Math.round((plan.done / plan.steps.length) * 100) : 0;
+
   return (<>
       <div className="sched-bar">
         <div className="sched-range">
@@ -6213,6 +6275,82 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
         </span>
       </div>
       {v.tagline && <div className="fin-delta vt-tagline">{v.tagline}</div>}
+
+      {view === 'launch' && plan && (<>
+        <div className="card lp-hero">
+          <div className="lp-count">
+            <div className="lp-num" key={plan.daysLeft}>{plan.daysLeft > 0 ? plan.daysLeft : plan.daysLeft === 0 ? 'GO' : 'LIVE'}</div>
+            <div>
+              <div className="lp-cap">{plan.daysLeft > 1 ? 'days to soft launch' : plan.daysLeft === 1 ? 'day to soft launch' : plan.daysLeft === 0 ? 'Soft launch is today' : `Soft launched ${-plan.daysLeft} day${plan.daysLeft === -1 ? '' : 's'} ago`}</div>
+              <div className="lp-jp" lang="ja" aria-hidden="true">{plan.daysLeft > 0 ? `開店まであと${plan.daysLeft}日` : '開店'}</div>
+              <div className="fin-delta">{fmtDate(v.launchDate, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
+            </div>
+          </div>
+          <div className="lp-right">
+            <div className="row-between">
+              <span className="card-label" style={{ margin: 0 }}>{plan.today ? (plan.today.isLaunch ? 'Launch day' : `Day ${plan.today.n} of ${plan.days.length - 1}`) : plan.daysLeft > 0 ? 'Not started yet' : 'After launch'}{plan.today?.title ? ` · ${plan.today.title}` : ''}</span>
+              <span className="fin-delta">{plan.done}/{plan.steps.length} steps · {planPct}%</span>
+            </div>
+            <div className="lp-strip" style={{ '--n': plan.days.length }}>
+              {plan.days.map(d => (
+                <button key={d.date} className={`lp-day ${d.state} ${shownDay?.date === d.date ? 'sel' : ''} ${d.isLaunch ? 'launch' : ''}`} onClick={() => setOpenDay(d.date)}
+                  title={`${fmtDate(d.date, { weekday: 'long', month: 'short', day: 'numeric' })}${d.title ? ` · ${d.title}` : ''} · ${d.steps.length - d.open}/${d.steps.length} done`}>
+                  <b lang={d.isLaunch ? 'ja' : undefined}>{d.isLaunch ? '開' : d.n}</b>
+                  <i>{fmtDate(d.date, { weekday: 'short' }).slice(0, 2)}</i>
+                </button>
+              ))}
+            </div>
+            <div className="xp-track"><div className="xp-fill" style={{ width: `${planPct}%` }}/></div>
+            {plan.late.length > 0 && <div className="lp-warn">{plan.late.length} step{plan.late.length === 1 ? '' : 's'} behind. The date doesn't move, so today's list just got longer.</div>}
+          </div>
+        </div>
+
+        <div className="card span-8">
+          <div className="row-between" style={{ marginBottom: '0.5rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>
+              {shownDay.date === todayStr ? "Today's orders" : shownDay.isLaunch ? 'Launch day' : `Day ${shownDay.n}`} · {fmtDate(shownDay.date, { weekday: 'long', month: 'short', day: 'numeric' })}
+            </span>
+            <span className="row-gap">
+              {shownDay.date !== todayStr && plan.today && <button className="link-btn" onClick={() => setOpenDay(null)}>Back to today</button>}
+              <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'move', phase: 'launch', due: shownDay.date })}><Icons.plus size={12}/> Step</button>
+            </span>
+          </div>
+          {shownDay.title && <div className="lp-day-title">{shownDay.title}</div>}
+          {shownDay.date === todayStr && plan.late.map(stepRow)}
+          {shownDay.steps.length === 0 && !(shownDay.date === todayStr && plan.late.length) ? <div className="agenda-empty small">Nothing set for this day.</div> : shownDay.steps.map(stepRow)}
+          {shownDay.steps.length > 0 && !shownDay.open && !(shownDay.date === todayStr && plan.late.length) && (
+            <div className="lp-cleared"><b className="jp-stamp" lang="ja" aria-hidden="true">済</b><span>Day cleared. {shownDay.date === todayStr ? 'Stop here or pull tomorrow forward.' : ''}</span></div>
+          )}
+        </div>
+
+        <div className="card span-4">
+          <div className="card-label">The road</div>
+          <div className="lp-road">
+            {pageOf(plan.days, roadPg).map(d => (
+              <button key={d.date} className={`lp-road-row ${d.state} ${shownDay.date === d.date ? 'sel' : ''}`} onClick={() => setOpenDay(d.date)}>
+                <b lang={d.isLaunch ? 'ja' : undefined}>{d.isLaunch ? '開' : d.n}</b>
+                <span><em>{d.title || (d.isLaunch ? 'Soft launch' : '—')}</em><i>{fmtDate(d.date, { weekday: 'short', month: 'short', day: 'numeric' })}</i></span>
+                <u>{d.steps.length - d.open}/{d.steps.length}</u>
+              </button>
+            ))}
+          </div>
+          <Pager pg={roadPg} noun="days"/>
+        </div>
+
+        {plan.phases.map((ph, i) => (
+          <div key={ph.id} className="card span-6 lp-phase">
+            <div className="row-between" style={{ marginBottom: '0.5rem' }}>
+              <span className="lp-phase-head"><b className="page-seal" lang="ja" aria-hidden="true">{ph.jp}</b><span><em>After launch · phase {i + 2}</em>{ph.label}</span></span>
+              <span className="row-gap">
+                <span className="fin-delta">{ph.steps.filter(x => x.done).length}/{ph.steps.length}</span>
+                <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'move', phase: ph.id })}><Icons.plus size={12}/> Step</button>
+              </span>
+            </div>
+            {ph.steps.length === 0 ? <div className="agenda-empty small">No steps yet.</div> : pageOf(ph.steps, phasePagers[i](ph.steps.length)).map(stepRow)}
+            <Pager pg={phasePagers[i](ph.steps.length)} noun="steps"/>
+          </div>
+        ))}
+      </>)}
 
       {view === 'overview' && (<>
         <div className="grid-2">
@@ -6284,16 +6422,18 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
 
       {view === 'plan' && (<>
         <div className="card span-7 tk-list">
-          <div className="card-label">Moves · what happens next</div>
+          <div className="card-label">{plan ? 'Other moves · not tied to a launch phase' : 'Moves · what happens next'}</div>
           <div className="vt-add">
             <input className="input" value={moveTitle} onChange={e => setMoveTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && addMove()} placeholder="The next concrete step, e.g. sign up 3 more runners"/>
             <input className="input" type="date" value={moveDue} min={todayStr} onChange={e => setMoveDue(e.target.value)} title="By when (optional)"/>
             <button className="btn-primary icon-only" onClick={addMove}><Icons.plus size={16}/></button>
           </div>
-          {moves.length === 0 ? <div className="agenda-empty small">No open moves. Write the next one.</div> : moves.map(moveRow)}
-          {doneMoves.length > 0 && (<>
-            <div className="card-label" style={{ margin: '1rem 0 0.4rem' }}>Done · {doneMoves.length}</div>
-            {doneMoves.slice(0, 8).map(moveRow)}
+          {backlog.length === 0 ? <div className="agenda-empty small">No open moves outside the launch plan. Write the next one.</div> : pageOf(backlog, movePager(backlog.length)).map(moveRow)}
+          <Pager pg={movePager(backlog.length)} noun="moves"/>
+          {doneMoves.some(m => !m.phase) && (<>
+            <div className="card-label" style={{ margin: '1rem 0 0.4rem' }}>Done · {doneMoves.filter(m => !m.phase).length}</div>
+            {pageOf(doneMoves.filter(m => !m.phase), donePager(doneMoves.filter(m => !m.phase).length)).map(moveRow)}
+            <Pager pg={donePager(doneMoves.filter(m => !m.phase).length)} noun="done"/>
           </>)}
           <div className="goal-hint" style={{ marginTop: '0.75rem' }}>Finishing a move is worth +{XP_PER_MOVE} XP. "Do today" also copies it into today's Tasks, so it counts toward your five.</div>
         </div>
@@ -6301,12 +6441,13 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
           <div className="card-label">Log · decisions and what happened</div>
           <textarea className="input" style={{ minHeight: 70, resize: 'vertical' }} value={logText} onChange={e => setLogText(e.target.value)} placeholder="What did you decide or learn today? Future you will want the reason."/>
           <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '0.5rem 0 0.75rem' }}><button className="btn-ghost" onClick={addLog} disabled={!logText.trim()}>Add to log</button></div>
-          {log.length === 0 ? <div className="agenda-empty small">Nothing logged yet.</div> : log.slice(0, 30).map(l => (
+          {log.length === 0 ? <div className="agenda-empty small">Nothing logged yet.</div> : pageOf(log, logPager(log.length)).map(l => (
             <div key={l.id} className="vt-log">
               <div className="row-between"><em>{fmtDate(l.date, { weekday: 'short', month: 'short', day: 'numeric' })}</em><button className="icon-btn danger-btn" onClick={() => removeItem(l, 'this log entry')}><Icons.trash size={11}/></button></div>
               <p>{l.text}</p>
             </div>
           ))}
+          <Pager pg={logPager(log.length)} noun="entries"/>
         </div>
       </>)}
 
@@ -6360,7 +6501,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
             <div className="card-label">Latest orders</div>
             <div className="vt-table">
               <div className="vt-row head"><span>When</span><span>Store</span><span>Status</span><span>Payment</span><span>Total</span><span>Your cut</span></div>
-              {money.orders.slice(0, 15).map(x => (
+              {pageOf(money.orders, orderPager(money.orders.length)).map(x => (
                 <div key={x.id} className="vt-row">
                   <span>{ago(x.createdAt)}</span><span className="name">{x.storeName || '—'}</span>
                   <span className={x.status === 'delivered' ? 'good' : x.status === 'cancelled' ? 'bad' : 'warn'}>{(x.status || '').replace(/_/g, ' ')}{x.cancelReason ? ` · ${x.cancelReason.replace(/_/g, ' ')}` : ''}</span>
@@ -6370,6 +6511,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
               ))}
               {money.orders.length === 0 && <div className="agenda-empty small">No orders in the last 30 days.</div>}
             </div>
+            <Pager pg={orderPager(money.orders.length)} noun="orders"/>
           </div>
       </>)}
 
@@ -6379,7 +6521,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
           {o.secrets.length === 0 ? <div className="agenda-empty small">No .env files found in this project.</div> : (
             <div className="vt-table keys">
               <div className="vt-row head"><span>Key</span><span>File</span><span>Value</span><span>Status</span></div>
-              {o.secrets.map((s, i) => {
+              {pageOf(o.secrets, keyPager(o.secrets.length)).map((s, i) => {
                 const bad = !s.set ? 'Empty' : /WIPAY/.test(s.key) ? 'Unused' : looksPlaceholder(s) && !/demo|emul/.test(s.file) && !s.public ? 'Placeholder?' : '';
                 return (
                   <div key={i} className="vt-row" title={keyNote(s.key)}>
@@ -6390,6 +6532,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
               })}
             </div>
           )}
+          {o.secrets.length > 0 && <Pager pg={keyPager(o.secrets.length)} noun="keys"/>}
         </div>
         <div className="card span-4">
           <div className="card-label">Secret files</div>
@@ -6442,7 +6585,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
             <span className="card-label" style={{ margin: 0 }}>People · {people.length}</span>
             <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'person' })}><Icons.plus size={12}/> Person</button>
           </div>
-          {people.length === 0 ? <div className="agenda-empty small">Partners, investors, team, suppliers. Who is this venture tied to, and on what terms?</div> : people.map(p => (
+          {people.length === 0 ? <div className="agenda-empty small">Partners, investors, team, suppliers. Who is this venture tied to, and on what terms?</div> : pageOf(people, peoplePager(people.length)).map(p => (
             <div key={p.id} className="tk-row old">
               <div className="tk-main">
                 <div className="tk-title">{p.name} <span className="vt-role">{p.role}</span></div>
@@ -6452,19 +6595,21 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
               <button className="icon-btn" onClick={() => setItemForm({ ...p })}><Icons.edit size={12}/></button>
             </div>
           ))}
+          <Pager pg={peoplePager(people.length)} noun="people"/>
         </div>
         <div className="card span-5">
           <div className="row-between" style={{ marginBottom: '0.6rem' }}>
             <span className="card-label" style={{ margin: 0 }}>Links · {links.length}</span>
             <button className="btn-ghost tk-carry" onClick={() => setItemForm({ kind: 'link' })}><Icons.plus size={12}/> Link</button>
           </div>
-          {links.length === 0 ? <div className="agenda-empty small">The live site, admin panel, shared drive, social pages. One click from here.</div> : links.map(l => (
+          {links.length === 0 ? <div className="agenda-empty small">The live site, admin panel, shared drive, social pages. One click from here.</div> : pageOf(links, linkPager(links.length)).map(l => (
             <div key={l.id} className="tk-row old">
               <div className="tk-main"><div className="tk-title">{l.label}</div><div className="tk-note">{l.url}</div></div>
               <a className="btn-ghost tk-carry" href={fullUrl(l.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>
               <button className="icon-btn" onClick={() => setItemForm({ ...l })}><Icons.edit size={12}/></button>
             </div>
           ))}
+          <Pager pg={linkPager(links.length)} noun="links"/>
         </div>
       </>)}
 
@@ -6540,6 +6685,10 @@ function VentureModal({ data, todayStr, onPick, onSave, onDelete, onClose }) {
         <Field label="Stage"><select className="input" value={f.stage} onChange={e => s('stage', e.target.value)}>{VENTURE_STAGES.map(x => <option key={x}>{x}</option>)}</select></Field>
         <Field label="Started on (optional)"><input className="input" type="date" max={todayStr} value={f.startedOn || ''} onChange={e => s('startedOn', e.target.value)}/></Field>
       </div>
+      <div className="grid-2">
+        <Field label="Launch date (optional)"><input className="input" type="date" value={f.launchDate || ''} onChange={e => s('launchDate', e.target.value)}/></Field>
+        <Field label="Run-up starts"><input className="input" type="date" value={f.planStart || ''} max={f.launchDate || undefined} onChange={e => s('planStart', e.target.value)}/></Field>
+      </div>
       <Field label="Project folder on this Mac (optional)">
         <div className="row-gap">
           <button type="button" className="vt-path" style={{ marginLeft: 0 }} onClick={pick}>{f.dir ? f.dir.replace(/^\/Users\/[^/]+/, '~') : 'Choose a folder…'}</button>
@@ -6572,7 +6721,10 @@ function VentureItemModal({ data, todayStr, onSave, onDelete, onClose }) {
     <Modal title={kind === 'move' ? 'Move' : kind === 'person' ? (data.id ? f.name : 'New Person') : (data.id ? f.label : 'New Link')} onClose={onClose}>
       {kind === 'move' && (<>
         <Field label="Move"><input className="input" autoFocus value={f.title || ''} onChange={e => s('title', e.target.value)}/></Field>
-        <Field label="By when (optional)"><input className="input" type="date" value={f.due || ''} onChange={e => s('due', e.target.value)}/></Field>
+        <div className="grid-2">
+          <Field label="By when (optional)"><input className="input" type="date" value={f.due || ''} onChange={e => s('due', e.target.value)}/></Field>
+          <Field label="Launch phase"><select className="input" value={f.phase || ''} onChange={e => s('phase', e.target.value)}><option value="">None</option>{PHASES.map(ph => <option key={ph.id} value={ph.id}>{ph.label}</option>)}</select></Field>
+        </div>
         <Field label="Note"><textarea className="input" style={{ minHeight: 56, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)}/></Field>
       </>)}
       {kind === 'person' && (<>
@@ -6803,6 +6955,40 @@ function useConfirm() {
   ) : null;
 
   return { confirm, ConfirmUI };
+}
+
+// ─── PAGINATION ───────────────────────────────────────────────────────────────
+// usePager keeps the page; call what it returns with the list length to get the
+// slice bounds. Long lists show a fixed number of rows and a Pager underneath.
+function usePager(size, resetKey) {
+  const [page, setPage] = useState(0);
+  useEffect(() => { setPage(0); }, [resetKey]);
+  return total => {
+    const pages = Math.max(1, Math.ceil(total / size));
+    const at = Math.min(page, pages - 1);
+    return { page: at, pages, size, total, from: at * size, to: Math.min(total, at * size + size), setPage };
+  };
+}
+const pageOf = (list, pg) => list.slice(pg.from, pg.to);
+function Pager({ pg, noun = 'rows' }) {
+  if (pg.pages <= 1) return null;
+  // 1 … 4 5 6 … 12: first, last and the neighbours of the current page
+  const nums = [...new Set([0, pg.page - 1, pg.page, pg.page + 1, pg.pages - 1].filter(n => n >= 0 && n < pg.pages))].sort((a, b) => a - b);
+  return (
+    <nav className="pager" aria-label="Pages">
+      <button className="pager-step" onClick={() => pg.setPage(pg.page - 1)} disabled={pg.page === 0} aria-label="Previous page">‹ Prev</button>
+      <span className="pager-nums">
+        {nums.map((n, i) => (
+          <React.Fragment key={n}>
+            {i > 0 && n - nums[i - 1] > 1 && <i>…</i>}
+            <button className={n === pg.page ? 'on' : ''} onClick={() => pg.setPage(n)} aria-current={n === pg.page ? 'page' : undefined}>{n + 1}</button>
+          </React.Fragment>
+        ))}
+      </span>
+      <button className="pager-step" onClick={() => pg.setPage(pg.page + 1)} disabled={pg.page === pg.pages - 1} aria-label="Next page">Next ›</button>
+      <span className="pager-count">{pg.from + 1}–{pg.to} of {pg.total} {noun}</span>
+    </nav>
+  );
 }
 
 function Modal({title,onClose,children}) {
