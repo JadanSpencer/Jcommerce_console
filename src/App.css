@@ -24,7 +24,7 @@
    palette so every reading in the app lights up correctly.
 ═══════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,500;1,9..144,600;1,9..144,900&family=Caveat:wght@600;700&family=Zen+Antique&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 /* ─── DESIGN TOKENS ──────────────────────────────────────────────── */
 :root {
@@ -2327,7 +2327,8 @@ body { font-variant-numeric: tabular-nums; }
 body::after, .app::before, .app::after, .card::before, .card::after, .header::after, .bottom-nav::before,
 .hero::before, .hero::after, .stat-card::before, .stat-card::after, .modal::before, .nav-btn.active::before { display: none !important; }
 body *, body *::before, body *::after { text-shadow: none !important; letter-spacing: normal !important; text-transform: none !important; }
-.app *:not(.modal):not(.cmdk):not(.toast) { box-shadow: none !important; }
+@property --sh { syntax: '*'; inherits: false; initial-value: none; }
+.app *:not(.modal):not(.cmdk):not(.toast) { box-shadow: var(--sh) !important; }
 .app *:not(.modal-overlay):not(.cmdk-overlay) { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .vt-term, .vt-doc, .mono, .vt-table.keys .vt-row .name, .vt-path, kbd, code, pre { font-family: var(--mono) !important; }
 
@@ -2415,3 +2416,237 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .link-btn { text-decoration-color: rgba(255,255,255,0.25); }
 .app .goal-cur, .app .hero-big, .app .stat-value { letter-spacing: -0.02em !important; }
 .card { background: rgba(var(--b2), 0.9); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   INK & SEAL — the console's own hand
+   A manga page in red, gold and ink: panels with hard ink shadows,
+   screentone dots, heavy italic titles with a brush stroke under them,
+   red seal stamps, and handwritten notes in the margins. Nothing glows;
+   everything looks printed, stamped or written.
+═══════════════════════════════════════════════════════════════════ */
+:root {
+  --r0: 1px; --r1: 2px; --r2: 3px; --r3: 4px; --r4: 5px;
+  --tide-lg: 4px; --tide-md: 3px; --tide-sm: 3px; --tide-rev: 3px;
+  --display: 'Fraunces', Georgia, serif;
+  --hand: 'Caveat', 'Bradley Hand', cursive;
+  --ink-line: #000;
+  --seal: #c8202f;
+  --paper: #f3e6cf;
+}
+
+/* Screentone: dots gathering toward the bottom-right corner of the page */
+.section::after {
+  content: ''; position: fixed; z-index: -1; pointer-events: none;
+  top: var(--nh); right: 0; bottom: 0; left: var(--sw, 0px);
+  background-image: radial-gradient(rgba(var(--p3),0.42) 1.1px, transparent 1.8px);
+  background-size: 10px 10px;
+  -webkit-mask-image: linear-gradient(135deg, transparent 38%, rgba(0,0,0,0.3) 66%, #000 100%);
+  mask-image: linear-gradient(135deg, transparent 38%, rgba(0,0,0,0.3) 66%, #000 100%);
+}
+.ghost-art img { opacity: 0.3; }
+@media (min-width: 760px) { .ghost-art img { opacity: 0.34; } }
+
+/* Titles: heavy italic, with a brush stroke underneath */
+.page-title, .home-greet, .splash-wordmark, .brand-name, .sched-title, .cl-name, .modal-head > div:first-child, .modal-title {
+  font-family: var(--display) !important; font-style: italic; font-weight: 900 !important;
+}
+.app .page-title { font-size: 30px; color: var(--paper); position: relative; padding-bottom: 6px; letter-spacing: -0.01em !important; }
+.app .page-title > span:last-child { color: var(--paper); }
+.app .page-title::after {
+  content: ''; position: absolute; left: 26px; right: -14px; bottom: -3px; height: 9px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 9' preserveAspectRatio='none'%3E%3Cpath d='M2 6 C 30 1, 55 8, 90 4 S 150 2, 198 5' fill='none' stroke='%23d4a64a' stroke-width='2.6' stroke-linecap='round'/%3E%3Cpath d='M30 8 C 70 5, 120 8, 170 6' fill='none' stroke='%23d4a64a' stroke-width='1' stroke-linecap='round' opacity='.6'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.app .page-title-icon { color: var(--teal-300); }
+.app .home-greet { font-size: 46px; line-height: 1.02; color: var(--paper); letter-spacing: -0.02em !important; }
+.sched-title { font-size: 22px; color: var(--paper); }
+.cl-name { font-size: 26px; }
+.brand-name { font-size: 19px; color: var(--paper); }
+.brand-sub { font-family: var(--hand); font-size: 14px; color: var(--gold-300); }
+
+/* Numbers that matter are set in the display face, upright */
+.app .fin-tile b, .app .fin-net, .home-stats b, .goal-cur, .fin-target-num, .app .hero-big, .app .stat-value, .nav-foot-lv, .home-lv {
+  font-family: var(--display) !important; font-weight: 700; font-style: normal; letter-spacing: -0.01em !important;
+}
+.app .fin-tile b { font-size: 27px; }
+.home-stats b { font-size: 26px; }
+
+/* Card headings: italic serif in gold, led by a short rule */
+.card-label, .hero-eye {
+  font-family: var(--display); font-style: italic; font-weight: 600; font-size: 15.5px;
+  color: var(--gold-300) !important; display: flex; align-items: center; gap: 0.55rem;
+}
+.card-label::before, .hero-eye::before { content: ''; width: 16px; height: 2px; background: var(--teal-300); flex: none; }
+.row-between > .card-label { display: inline-flex; }
+.fin-tile > span:first-child { font-family: var(--display); font-style: italic; font-size: 14px; color: var(--gold-300); }
+.home-stats span { font-family: var(--display) !important; font-style: italic; font-size: 13px !important; color: var(--gold-300) !important; }
+
+/* Handwritten margin notes */
+.home-verdict, .agenda-empty, .agenda-empty.small, .fin-health-line, .goal-hint {
+  font-family: var(--hand); font-style: normal; color: var(--gold-200);
+}
+.home-verdict { font-size: 25px; line-height: 1.15; margin-top: 0.5rem; }
+.agenda-empty, .agenda-empty.small { font-size: 19px; line-height: 1.25; color: var(--ink-2); }
+.agenda-empty .link-btn { font-family: var(--hand); }
+.fin-health-line { font-size: 18px; }
+.goal-hint { font-size: 16.5px; line-height: 1.3; color: var(--ink-2); }
+
+/* Panels: ink border, hard shadow, no blur */
+.card { --sh: 5px 5px 0 var(--ink-line); background: rgba(var(--b2), 0.96); border: 1.5px solid color-mix(in srgb, rgb(var(--p6)) 55%, #000); border-radius: 3px; }
+.card:hover { border-color: color-mix(in srgb, rgb(var(--p6)) 55%, #000); }
+.card.home-hero, .home-hero { --sh: none; }
+.card .card { --sh: none; }
+.vt-card { border-top: 4px solid var(--c); }
+.vt-card:hover { --sh: 7px 7px 0 var(--ink-line); translate: -2px -2px; border-top-color: var(--c); }
+.modal { --sh: 10px 10px 0 #000; border: 1.5px solid var(--gold-500); border-radius: 4px; }
+.fin-tile { border-left: 3px solid var(--teal-400); padding-left: 0.9rem; }
+.home-stats > * { border-left: 3px solid var(--teal-400) !important; }
+.header { background: rgb(var(--b1)); border-bottom: 2px solid var(--ink-line); }
+
+/* Buttons: printed blocks you press down */
+.btn-primary {
+  --sh: 3px 3px 0 var(--ink-line); background: var(--teal-500); color: #fff; font-weight: 700;
+  border: 1.5px solid var(--ink-line); border-radius: 3px; transition: translate 0.08s, background 0.15s;
+}
+.btn-primary:hover { background: var(--teal-400); border-color: var(--ink-line); }
+.btn-primary:active { --sh: 1px 1px 0 var(--ink-line); translate: 2px 2px; transform: none; }
+.btn-ghost { border: 1.5px solid var(--line-2); border-radius: 3px; background: rgba(var(--b1),0.7); }
+.btn-ghost:hover { border-color: var(--gold-400); color: var(--gold-200); }
+.icon-btn, .input, .pill, .badge, .cmdk-btn, .seg, .vt-tabs button, .vt-path { border-radius: 3px; }
+.seg { border: 1.5px solid var(--line-2); background: rgba(var(--b1),0.7); }
+.seg button { border-radius: 2px; }
+.seg button.on, .tab-btn.active { background: var(--teal-600); color: #fff; }
+.vt-tabs button.on { background: var(--teal-600); border-color: var(--ink-line); color: #fff; --sh: 3px 3px 0 var(--ink-line); }
+.input:focus { border-color: var(--gold-400); }
+.fab { --sh: 4px 4px 0 var(--ink-line); border-radius: 3px; background: var(--seal); border: 1.5px solid var(--ink-line); color: var(--paper) !important; rotate: -3deg; }
+
+/* Seals: stamped, a little crooked */
+.brand-gem { background: var(--seal); border: none; border-radius: 3px; rotate: -4deg; outline: 1.5px solid var(--seal); outline-offset: 2px; }
+.brand-gem::before { color: var(--paper); -webkit-text-fill-color: var(--paper); -webkit-text-stroke: 0; font-family: var(--display); font-weight: 900; font-size: 19px; }
+.xp-chip { background: var(--seal); border: none; border-radius: 2px; rotate: 2deg; outline: 1.5px solid var(--seal); outline-offset: 2px; padding: 0.3rem 0.7rem; }
+.xp-chip-lv, .xp-chip-xp { color: var(--paper); font-family: var(--display); font-weight: 700; font-size: 12.5px; }
+.xp-chip-sep { color: rgba(243,230,207,0.5); }
+.vt-stage, .tk-due {
+  font-family: var(--display); font-style: italic; font-weight: 700; font-size: 11.5px; rotate: -3deg;
+  border: 1.5px solid currentColor; border-radius: 2px; padding: 0.1rem 0.5rem; outline: 1px solid currentColor; outline-offset: 1.5px;
+}
+.tk-due { rotate: 2deg; }
+.tk-xp { font-family: var(--hand); font-size: 18px; color: var(--gold-300); }
+
+/* Sidebar: a strip of ink with a red tab on the current page */
+@media (min-width: 760px) {
+  .bottom-nav { background: #060303; border-right: 2px solid var(--ink-line); }
+  .nav-brand { border-bottom: 1px dashed rgba(212,166,74,0.3); }
+  .nav-foot { border-top: 1px dashed rgba(212,166,74,0.3); }
+  .nav-btn { border-radius: 2px; }
+  .nav-btn.active { background: var(--teal-600); color: #fff; --sh: 3px 3px 0 var(--ink-line); }
+  .nav-btn.active .nav-icon { color: #fff; }
+  .nav-btn.active .nav-lbl { font-weight: 700; }
+  .fab { bottom: 1.4rem; right: 1.6rem; width: 48px; height: 48px; }
+  .main { position: relative; }
+}
+@media (max-width: 759px) {
+  .bottom-nav { border-top: 2px solid var(--ink-line); }
+  .app .page-title { font-size: 24px; }
+  .app .home-greet { font-size: 34px; }
+  .card { --sh: 4px 4px 0 var(--ink-line); }
+}
+
+/* Lists: dashed rules like a ledger */
+.fin-kv > div, .tk-row, .vt-commit, .cl-line { border-bottom-style: dashed; border-bottom-color: rgba(255,255,255,0.1); }
+.fin-findings li.danger::before { color: var(--seal); }
+::selection { background: var(--seal); color: var(--paper); }
+
+.fin-health-label, .focus-title { font-family: var(--display); font-style: italic; font-weight: 900; }
+.focus-title { font-size: 19px; color: var(--paper); }
+.brand-sub { font-size: 15px; }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   INK & SEAL, second pass: Gang of Three titles and Japanese lettering
+   Gang of Three (Vic Fieger, freeware) carries every title. Japanese is
+   set in Zen Antique: section names as seals and tall page marks,
+   shop-sign words on the stamps, a greeting above the greeting.
+═══════════════════════════════════════════════════════════════════ */
+@font-face { font-family: 'Gang of Three'; src: url('./assets/fonts/gang-of-three.ttf') format('truetype'); font-display: swap; }
+:root {
+  --title: 'Gang of Three', 'Fraunces', Georgia, serif;
+  --jp: 'Zen Antique', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+}
+[lang="ja"] { font-family: var(--jp); font-style: normal; }
+
+/* Titles */
+.page-title, .home-greet, .splash-wordmark, .brand-name, .sched-title, .cl-name, .focus-title, .fin-health-label,
+.modal-head > div:first-child, .modal-title {
+  font-family: var(--title) !important; font-style: normal !important; font-weight: 400 !important;
+}
+.app .page-title { font-size: 38px; line-height: 1; gap: 0.9rem; padding-bottom: 2px; letter-spacing: 0.01em !important; }
+.app .page-title::after { left: 62px; bottom: -6px; }
+.app .home-greet { font-size: 60px; line-height: 0.95; letter-spacing: 0.005em !important; }
+.sched-title { font-size: 28px; line-height: 1; }
+.cl-name { font-size: 32px; line-height: 1; }
+.focus-title { font-size: 24px; line-height: 1.05; }
+.fin-health-label { font-size: 26px; }
+.brand-name { font-size: 25px; line-height: 1; color: var(--paper); }
+.nav-foot-lv, .home-lv { font-family: var(--title) !important; font-weight: 400; font-size: 20px; }
+.modal-head > div:first-child, .modal-title { font-size: 26px !important; line-height: 1; color: var(--paper); }
+.btn-primary { font-family: var(--title); font-weight: 400; font-size: 17px; letter-spacing: 0.02em !important; padding-top: 0.5rem; padding-bottom: 0.42rem; }
+.btn-primary.icon-only { padding: 0; }
+.xp-chip-lv, .xp-chip-xp { font-family: var(--title); font-weight: 400; font-size: 15px; }
+.app .fin-net { font-family: var(--title) !important; font-weight: 400; letter-spacing: 0.01em !important; }
+
+/* The section's name as a red seal beside the title */
+.page-seal {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  writing-mode: vertical-rl; text-orientation: upright;
+  width: 34px; height: 46px; font-size: 17px; line-height: 1; letter-spacing: 0.04em !important;
+  color: var(--paper); background: var(--seal); border-radius: 2px; rotate: -3deg;
+  outline: 1.5px solid var(--seal); outline-offset: 2px;
+}
+.page-title-icon { display: none; }
+
+/* A tall mark of the same name down the right edge of the page */
+.jp-mark {
+  position: fixed; z-index: 0; pointer-events: none; user-select: none;
+  top: calc(var(--nh) + 1.2rem); right: 1.4rem;
+  writing-mode: vertical-rl; text-orientation: upright;
+  font-family: var(--jp); font-size: clamp(120px, 17vw, 260px); line-height: 1; letter-spacing: 0.02em !important;
+  color: transparent; -webkit-text-stroke: 1.5px rgba(var(--p3), 0.22);
+  animation: jpIn 0.5s ease both;
+}
+@keyframes jpIn { from { opacity: 0; translate: 0 -14px; } to { opacity: 1; translate: 0 0; } }
+.main > .section { position: relative; z-index: 1; }
+
+/* Sidebar: the Japanese name sits at the end of each row */
+.nav-jp { display: none; }
+@media (min-width: 760px) {
+  .nav-jp { display: inline; font-size: 13px; color: var(--ink-3); transition: color 0.15s; }
+  .nav-btn.active .nav-jp { color: rgba(255,255,255,0.85); }
+  .nav-btn:hover .nav-jp { display: none; }
+  .nav-btn .nav-key { display: none; }
+  .nav-btn:hover .nav-key { display: inline; }
+  .nav-min .nav-jp { display: none; }
+  .header { height: 84px; }
+  :root { --nh: 84px; }
+}
+
+/* Home: a greeting above the greeting */
+.home-jp { font-size: 22px; color: var(--seal); line-height: 1; margin-bottom: 0.35rem; letter-spacing: 0.12em !important; }
+.home-date span { color: var(--gold-300); margin-left: 0.2rem; }
+
+/* Stamps */
+.vt-stage { display: inline-flex; align-items: baseline; gap: 0.4rem; }
+.vt-stage i { font-size: 11px; font-weight: 400; }
+.vt-done { display: inline-flex; align-items: center; gap: 0.6rem; }
+.jp-stamp {
+  display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+  font-family: var(--jp); font-weight: 400; font-size: 17px; color: var(--seal);
+  border: 2px solid var(--seal); border-radius: 50%; rotate: -8deg;
+}
+
+@media (max-width: 759px) {
+  .app .page-title { font-size: 28px; }
+  .app .home-greet { font-size: 40px; }
+  .jp-mark { font-size: 110px; right: 0.4rem; -webkit-text-stroke-color: rgba(var(--p3), 0.2); }
+  .page-seal { width: 28px; height: 38px; font-size: 14px; }
+}

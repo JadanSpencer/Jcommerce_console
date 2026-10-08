@@ -1465,18 +1465,18 @@ function App() {
   const todayBriefing = briefings.find(b=>b.date===todayStr) || null;
 
   const navItems = [
-    {id:'dashboard', label:'Home',     icon:Icons.home},
-    {id:'pipeline',  label:'Pipeline', icon:Icons.pipeline},
-    {id:'habits',    label:'Habits',   icon:Icons.habits},
-    {id:'todos',     label:'Tasks',    icon:Icons.tasks},
-    {id:'focus',     label:'Focus',    icon:Icons.hourglass},
-    {id:'studies',   label:'Studies',  icon:Icons.book},
-    {id:'schedule',  label:'Schedule', icon:Icons.schedule},
-    {id:'finance',   label:'Finance',  icon:Icons.finance},
-    {id:'goals',     label:'Goals',    icon:Icons.goals},
-    {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon},
-    {id:'clients',   label:'Clients',  icon:Icons.briefcase},
-    {id:'ventures',  label:'Ventures', icon:Icons.rocket},
+    {id:'dashboard', label:'Home',     icon:Icons.home, jp:'本部'},
+    {id:'pipeline',  label:'Pipeline', icon:Icons.pipeline, jp:'営業'},
+    {id:'habits',    label:'Habits',   icon:Icons.habits, jp:'習慣'},
+    {id:'todos',     label:'Tasks',    icon:Icons.tasks, jp:'任務'},
+    {id:'focus',     label:'Focus',    icon:Icons.hourglass, jp:'集中'},
+    {id:'studies',   label:'Studies',  icon:Icons.book, jp:'学業'},
+    {id:'schedule',  label:'Schedule', icon:Icons.schedule, jp:'予定'},
+    {id:'finance',   label:'Finance',  icon:Icons.finance, jp:'財務'},
+    {id:'goals',     label:'Goals',    icon:Icons.goals, jp:'目標'},
+    {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon, jp:'参謀'},
+    {id:'clients',   label:'Clients',  icon:Icons.briefcase, jp:'顧客'},
+    {id:'ventures',  label:'Ventures', icon:Icons.rocket, jp:'事業'},
   ];
   const currentNav = navItems.find(n => n.id === tab) || navItems[0];
 
@@ -1549,7 +1549,7 @@ function App() {
           </div>
         </div>
         <div className="page-title">
-          <span className="page-title-icon"><currentNav.icon /></span>
+          <span className="page-seal" lang="ja" aria-hidden="true">{currentNav.jp}</span>
           <span>{currentNav.label}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
@@ -1613,6 +1613,7 @@ function App() {
       )}
 
       <main className="main">
+        <div className="jp-mark" lang="ja" aria-hidden="true" key={tab}>{currentNav.jp}</div>
         {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
         {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
@@ -1654,6 +1655,7 @@ function App() {
           <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={i < 10 ? `${n.label} (⌘${(i+1)%10})` : n.label}>
             <span className="nav-icon"><n.icon /></span>
             <span className="nav-lbl">{n.label}</span>
+            <span className="nav-jp" lang="ja" aria-hidden="true">{n.jp}</span>
             {i < 10 && <span className="nav-key">⌘{(i+1)%10}</span>}
           </button>
         ))}
@@ -1955,8 +1957,9 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   return (
     <div className="section home">
       <div className="card home-hero span-8">
+        <div className="home-jp" lang="ja" aria-hidden="true">{hour < 12 ? 'おはよう' : hour < 18 ? 'こんにちは' : 'こんばんは'}</div>
         <div className="home-greet">{greet}, Jadan.</div>
-        <div className="home-date">{fmtDate(todayStr, { weekday:'long', month:'long', day:'numeric' })}</div>
+        <div className="home-date">{fmtDate(todayStr, { weekday:'long', month:'long', day:'numeric' })} <span lang="ja" aria-hidden="true">· {'日月火水木金土'[parseLocal(todayStr).getDay()]}曜日</span></div>
         <div className="home-verdict">{verdict}</div>
         <div className="home-stats">
           <div><b className={habitsLeft.length ? '' : 'good'}>{activeHabits.length - habitsLeft.length}/{activeHabits.length}</b><span>habits</span></div>
@@ -5824,6 +5827,8 @@ ${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
 // gets a read-only control room: the repo, the keys and the live money, plus
 // safe checks. The console never changes the other project or its data.
 const VENTURE_STAGES = ['Idea', 'Building', 'Live', 'Paused'];
+// Shop-sign words: 構想 idea, 準備中 getting ready, 営業中 open for business, 休止 paused
+const STAGE_JP = { Idea: '構想', Building: '準備中', Live: '営業中', Paused: '休止' };
 const VENTURE_HEX = ['#e6c47c', '#ff7a3d', '#3ab88e', '#6aa8ff', '#c58cff', '#ff6a8a'];
 const PERSON_ROLES = ['Partner', 'Investor', 'Team', 'Runner', 'Supplier', 'Customer', 'Advisor', 'Other'];
 const KEY_NOTES = [
@@ -6060,7 +6065,7 @@ function Ventures({ ventures, services, checks, items, todayStr, onSaveVenture, 
                     <div className="focus-title">{v.name}</div>
                     <div className="focus-meta">{v.tagline || (v.dir ? v.dir.replace(/^\/Users\/[^/]+/, '~') : 'No project folder')}</div>
                   </div>
-                  <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}</span>
+                  <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}<i lang="ja" aria-hidden="true">{STAGE_JP[v.stage || 'Building']}</i></span>
                 </div>
                 <div className={`vt-health ${h.worst}`}>
                   {d?.loading ? 'Reading the project…' : h.issues.length ? `${h.issues.length} thing${h.issues.length === 1 ? '' : 's'} need${h.issues.length === 1 ? 's' : ''} you · ${h.issues[0].t}` : h.findings[0].t}
@@ -6196,7 +6201,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
         <div className="sched-range">
           <i className="vt-dot big" style={{ '--c': hex }}/>
           <div className="sched-title" style={{ marginLeft: 0 }}>{v.name}</div>
-          <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}</span>
+          <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}<i lang="ja" aria-hidden="true">{STAGE_JP[v.stage || 'Building']}</i></span>
         </div>
         <div className="seg">
           {tabs.map(([id, label]) => <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>)}
@@ -6234,7 +6239,7 @@ function VentureRoom({ v, hex, d, h, reload, services, items, checks, checkedTod
           </ul>
           <div className="vt-check-foot">
             {checkedToday
-              ? <span className="good">✓ Checked today</span>
+              ? <span className="good vt-done"><b className="jp-stamp" lang="ja" aria-hidden="true">済</b>Checked today</span>
               : <button className="btn-primary" onClick={markChecked} disabled={loading}>I've read today's check</button>}
             <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP once a day for looking at your ventures.</span>
           </div>
