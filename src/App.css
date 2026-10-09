@@ -3185,7 +3185,3 @@ button.svc-live.connect { cursor: pointer; width: 100%; } button.svc-live.connec
 .svc-live.none { background: none; border: none; border-top: 1px dashed rgba(255,255,255,0.1); border-radius: 0; padding: 0.5rem 0 0; }
 .svc-live.none em { background: none; color: var(--ink-3); border: 1px solid var(--ink-4); }
 .svc-live.none span { color: var(--ink-3); }
-
-/* The page mark reads across, side by side, not one character on top of the other */
-.jp-mark { writing-mode: horizontal-tb; text-orientation: mixed; white-space: nowrap; font-size: clamp(110px, 13vw, 210px); letter-spacing: 0.04em !important; right: 1.6rem; }
-@media (max-width: 759px) { .jp-mark { font-size: 84px; } }

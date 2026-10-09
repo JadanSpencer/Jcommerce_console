@@ -1933,8 +1933,8 @@ function App() {
       )}
 
       <main className="main">
-        <div className="jp-mark" lang="ja" aria-hidden="true" key={tab}>{currentNav.jp}</div>
-        <SectionBoundary key={tab}>
+        <div className="jp-mark" lang="ja" aria-hidden="true" key={`mark-${tab}`}>{currentNav.jp}</div>
+        <SectionBoundary key={`section-${tab}`}>
         {tab==='dashboard' && <Dashboard lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
