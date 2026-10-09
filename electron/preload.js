@@ -4,7 +4,14 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
+  exportData: (json, filename) => ipcRenderer.invoke('data:export', { json, filename }),
   saveInvoicePdf: (html, filename) => ipcRenderer.invoke('invoice:save-pdf', { html, filename }),
+  // Live cost figures. Keys go in, but never come back out to the window.
+  live: {
+    status: () => ipcRenderer.invoke('live:status'),
+    setKey: (id, value) => ipcRenderer.invoke('live:setKey', { id, value }),
+    fetch: (source, project) => ipcRenderer.invoke('live:fetch', { source, project }),
+  },
   // Ventures: look into another project folder (read-only)
   venture: {
     overview: dir => ipcRenderer.invoke('venture:overview', dir),

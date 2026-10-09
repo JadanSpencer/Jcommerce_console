@@ -1170,6 +1170,32 @@ function HomeSky() {
 // Manga sound effects for XP: ドドン a heavy hit, ドン a hit, キラッ a glint, ガーン dismay
 const sfxFor = d => (d < 0 ? 'ガーン' : d >= 15 ? 'ドドン！' : d >= 10 ? 'ドン！' : 'キラッ');
 
+// ─── SECTION BOUNDARY ─────────────────────────────────────────────────────────
+// If one section throws while drawing, the rest of the console keeps working
+// and says what happened, instead of the whole window going blank.
+class SectionBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error('Section crashed:', error, info?.componentStack); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="section">
+        <div className="card crash">
+          <div className="card-label">This section hit a problem</div>
+          <div className="crash-title">Your data is safe. Only this page stopped.</div>
+          <p>The other sections still work from the sidebar. Try this one again, or reload the console.</p>
+          <pre>{String(this.state.error?.message || this.state.error)}</pre>
+          <div className="row-gap">
+            <button className="btn-primary" onClick={() => this.setState({ error: null })}>Try again</button>
+            <button className="btn-ghost" onClick={() => window.location.reload()}>Reload the console</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 // ─── LIVE LAYER ───────────────────────────────────────────────────────────────
 // Things that keep moving while the console is open: a clock that shows how
 // much of the day is left, a ticker of what matters right now, petals in the
@@ -1578,12 +1604,38 @@ function App() {
   const add    = async (col, data) => { try { return await addDoc(collection(db,col), {...data, createdAt:serverTimestamp()}); } catch { setError('Failed to save.'); } };
   const update = async (col, id, data) => { try { await updateDoc(doc(db,col,id), data); } catch { setError('Failed to update.'); } };
   const remove = async (col, id) => { try { await deleteDoc(doc(db,col,id)); } catch { setError('Failed to delete.'); } };
+  // Deleting a record also lets go of whatever pointed at it, so nothing is left dangling
+  const removeLead = async id => {
+    await Promise.all([...finances.filter(f => f.pipelineLeadId === id).map(f => update('finances', f.id, { pipelineLeadId: null })),
+      ...ventures.filter(v => v.clientId === id).map(v => update('ventures', v.id, { clientId: '' }))]);
+    await remove('leads', id);
+  };
+  const removeCourse = async id => {
+    await Promise.all(timers.filter(t => t.courseId === id).map(t => update('timers', t.id, { courseId: '' })));
+    await remove('courses', id);
+  };
+  // One file with everything in it, saved wherever you choose
+  const [lastBackup, setLastBackup] = useState(() => { try { return localStorage.getItem('jc_last_backup') || ''; } catch { return ''; } });
+  const backupData = async () => {
+    if (!DESKTOP?.exportData) { toast('Backups only work in the Mac app', 'bad'); return; }
+    const collections = { leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds };
+    const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), collections }, null, 1), `jcommerce-console-backup-${todayStr}.json`);
+    if (!r?.ok) return;
+    try { localStorage.setItem('jc_last_backup', todayStr); } catch {}
+    setLastBackup(todayStr);
+    toast(`Backup saved: ${Object.values(collections).reduce((t, x) => t + x.length, 0)} records`);
+  };
   // Only today and yesterday can be changed: back-filling old days used to erase penalties
   const toggleHabit = async (habit, date) => {
     if (date > todayStr || date < addDays(todayStr, -1)) return;
     await update('habits', habit.id, { completions: {...(habit.completions||{}), [date]: !habit.completions?.[date]} });
   };
-  const toggleTodo  = async (todo) => { await update('todos', todo.id, { doneOn: {...(todo.doneOn||{}), [todayStr]: !todo.doneOn?.[todayStr]} }); };
+  const toggleTodo  = async (todo) => {
+    const done = !todo.doneOn?.[todayStr];
+    await update('todos', todo.id, { doneOn: {...(todo.doneOn||{}), [todayStr]: done} });
+    // A task that came from a venture move finishes (or reopens) that move too
+    if (todo.moveId && ventureItems.some(i => i.id === todo.moveId)) await update('venture_items', todo.moveId, { done, doneAt: done ? todayStr : '' });
+  };
 
   // ── TIDE LOG — a one-line-each nightly check-in that ties the business
   // and personal sides of the day together. First entry of a given day
@@ -1830,7 +1882,7 @@ function App() {
               Briefing
             </button>
           )}
-          <button className="icon-btn" title="Sign out" onClick={()=>signOut(auth)}><Icons.logout size={14}/></button>
+          <button className="icon-btn" title="Sign out" onClick={() => { if (window.confirm('Sign out of the console? You will need your email and password to get back in.')) signOut(auth); }}><Icons.logout size={14}/></button>
           <div className="xp-chip" key={xp}>
             <span className="xp-chip-lv">L{level}</span>
             <span className="xp-chip-sep">·</span>
@@ -1861,6 +1913,9 @@ function App() {
         out.push({ t: `This month ${J(net)} net`, tab: 'finance', lv: net < 0 ? 'hot' : '' });
         courses.filter(c => c.examDate && days(c.examDate) >= 0).sort((a, b) => a.examDate.localeCompare(b.examDate)).slice(0, 2)
           .forEach(c => out.push({ t: `${c.code} exam in ${pl(days(c.examDate), 'day')}`, tab: 'studies', lv: days(c.examDate) <= 14 ? 'hot' : '' }));
+        const oweNow = debts.filter(d => d.direction === 'owe').reduce((t, d) => t + debtLeft(d), 0), owedNow = debts.filter(d => d.direction === 'owed').reduce((t, d) => t + debtLeft(d), 0);
+        if (oweNow) out.push({ t: `You owe ${J(oweNow)}`, tab: 'finance', lv: debts.some(d => d.direction === 'owe' && debtLeft(d) > 0 && d.dueDate && d.dueDate < todayStr) ? 'hot' : '' });
+        if (owedNow) out.push({ t: `${J(owedNow)} owed to you`, tab: 'finance' });
         out.push({ t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
         return out;
       })()}/>
@@ -1879,19 +1934,20 @@ function App() {
 
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={tab}>{currentNav.jp}</div>
-        {tab==='dashboard' && <Dashboard debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
+        <SectionBoundary key={tab}>
+        {tab==='dashboard' && <Dashboard lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
         })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
-        {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={id=>remove('leads',id)} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
+        {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={removeLead} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
-        {tab==='focus'    && <Focus timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
+        {tab==='focus'    && <Focus ventures={ventures} timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
         {tab==='studies'  && <Studies courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
-          onAdd={d=>add('courses',d)} onUpdate={(id,d)=>update('courses',id,d)} onDelete={id=>remove('courses',id)}
+          onAdd={d=>add('courses',d)} onUpdate={(id,d)=>update('courses',id,d)} onDelete={removeCourse}
           onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
-        {tab==='finance'  && <Finance debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
+        {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
@@ -1900,12 +1956,17 @@ function App() {
             if (doc) update('service_rounds', doc.id, { done: { ...(doc.done || {}), [serviceId]: !doc.done?.[serviceId] } });
             else add('service_rounds', { ventureId, date: todayStr, done: { [serviceId]: true } });
           }}
-          ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
+          leads={leads} timers={timers} onNav={setTab} ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
           onSaveVenture={d => { const { id, ...data } = d; id ? update('ventures', id, data) : add('ventures', data); }}
           onDeleteVenture={v => {
             const firstId = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
             ventureItems.filter(i => (i.ventureId || firstId) === v.id).forEach(i => remove('venture_items', i.id));
             ventureServices_.filter(x => (x.ventureId || firstId) === v.id).forEach(x => remove('venture_services', x.id));
+            ventureChecks.filter(x => (x.ventureId || firstId) === v.id).forEach(x => remove('venture_checks', x.id));
+            serviceRounds.filter(x => x.ventureId === v.id).forEach(x => remove('service_rounds', x.id));
+            // money and hours stay in the books; they just stop pointing at a venture that is gone
+            finances.filter(f => f.ventureId === v.id).forEach(f => update('finances', f.id, { ventureId: '' }));
+            timers.filter(t => t.ventureId === v.id).forEach(t => update('timers', t.id, { ventureId: '' }));
             remove('ventures', v.id);
           }}
           onSaveService={(d, mine) => { const { id, createdAt, ...data } = d; const existing = id ? { id } : mine.find(x => x.serviceId === d.serviceId); existing ? update('venture_services', existing.id, data) : add('venture_services', data); }}
@@ -1914,7 +1975,8 @@ function App() {
           onSaveItem={d => { const { id, createdAt, ...data } = d; id ? update('venture_items', id, data) : add('venture_items', data); }}
           onDeleteItem={id => remove('venture_items', id)}
           onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}/>}
-        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={remove}/>}
+        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
+        </SectionBoundary>
       </main>
 
       <nav className="bottom-nav">
@@ -1940,6 +2002,10 @@ function App() {
             <span className="nav-key">⌘B</span>
           </button>
         )}
+        <button className="nav-toggle nav-backup" onClick={backupData} title={lastBackup ? `Last backup ${lastBackup}` : 'No backup saved yet'}>
+          <span className="nav-icon"><Icon d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></span>
+          <span className="nav-lbl">Back up data</span>
+        </button>
         <div className="nav-foot" title={`Level ${level} · ${xpInLevel} / 500 XP`}>
           <div className="nav-foot-lv">{navMin ? `L${level}` : `Level ${level}`}</div>
           <div className="nav-rank"><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</div>
@@ -1979,7 +2045,7 @@ function App() {
       {/* Shortcut: invoice icon in header */}
 
       {paletteOpen && (
-        <CommandPalette sections={navItems} leads={leads} habits={habits} timers={timers} todos={todos} todayStr={todayStr}
+        <CommandPalette ventures={ventures} courses={courses} onBackup={backupData} sections={navItems} leads={leads} habits={habits} timers={timers} todos={todos} todayStr={todayStr}
           run={paletteRun} onClose={() => setPaletteOpen(false)}/>
       )}
       <div className="toasts" aria-live="polite">
@@ -2123,7 +2189,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], lastBackup = '', onBackup, todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -2218,6 +2284,12 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   todos.filter(t => t.addedDate > todayStr && t.addedDate <= addDays(todayStr, 3) && !taskDone(t))
     .sort((a, b) => a.addedDate.localeCompare(b.addedDate)).slice(0, 3)
     .forEach(t => push(t.addedDate === addDays(todayStr, 1) ? 'danger' : 'warn', `${t.title} is due ${t.addedDate === addDays(todayStr, 1) ? 'tomorrow' : fmtDate(t.addedDate, { weekday:'long' })}.`, 'Tasks', go('todos')));
+  const oweOpen = debts.filter(d => d.direction === 'owe' && debtLeft(d) > 0 && d.dueDate);
+  oweOpen.filter(d => d.dueDate < todayStr).forEach(d => push('danger', `You owe ${d.person} ${J(debtLeft(d))} and the date has passed.`, 'Debts', go('finance')));
+  oweOpen.filter(d => d.dueDate >= todayStr && d.dueDate <= addDays(todayStr, 3)).forEach(d => push('warn', `${J(debtLeft(d))} is due to ${d.person} ${d.dueDate === todayStr ? 'today' : `on ${fmtDate(d.dueDate, { weekday: 'long' })}`}.`, 'Debts', go('finance')));
+  debts.filter(d => d.direction === 'owed' && debtLeft(d) > 0 && d.dueDate && d.dueDate < todayStr).forEach(d => push('warn', `${d.person} owes you ${J(debtLeft(d))} and is past the agreed date.`, 'Debts', go('finance')));
+  const backupAge = lastBackup ? Math.round((parseLocal(todayStr) - parseLocal(lastBackup)) / 864e5) : null;
+  if (DESKTOP?.exportData && (backupAge === null || backupAge >= 7)) push('warn', backupAge === null ? 'No backup of your data has been saved from this Mac yet.' : `Last backup was ${backupAge} days ago.`, 'Back up now', onBackup);
   launchToday.forEach(l => {
     if (l.daysLeft < 0 || !(l.today + l.late)) return;
     push(l.late ? 'danger' : 'warn', `${l.name} launch${l.daysLeft === 0 ? ' is today' : ` in ${l.daysLeft} day${l.daysLeft === 1 ? '' : 's'}`}: ${l.today} step${l.today === 1 ? '' : 's'} for today${l.late ? `, ${l.late} behind` : ''}.`, 'Launch plan', go('ventures'));
@@ -3417,7 +3489,7 @@ function FocusPill({ timers, onOpen }) {
   );
 }
 
-function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onStart, onPause }) {
+function Focus({ ventures = [], timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onStart, onPause }) {
   const { confirm, ConfirmUI } = useConfirm();
   const [filter, setFilter] = useState('active');
   const [form, setForm] = useState(null);
@@ -3499,7 +3571,7 @@ function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onSt
                 <div className="focus-head">
                   <div>
                     <div className="focus-title">{t.title}</div>
-                    <div className="focus-meta"><b className="brew-tag" style={{ '--liq': brew.glow }}>{brew.name}</b>{t.category}{t.courseId && courses.find(c => c.id === t.courseId) ? ` · ${courses.find(c => c.id === t.courseId).code}` : ''} · {fmtHM(target)} target</div>
+                    <div className="focus-meta"><b className="brew-tag" style={{ '--liq': brew.glow }}>{brew.name}</b>{t.category}{t.ventureId && ventures.find(vn => vn.id === t.ventureId) ? ` · ${ventures.find(vn => vn.id === t.ventureId).name}` : ''}{t.courseId && courses.find(c => c.id === t.courseId) ? ` · ${courses.find(c => c.id === t.courseId).code}` : ''} · {fmtHM(target)} target</div>
                   </div>
                   <button className="icon-btn" title="Edit" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
                 </div>
@@ -3535,7 +3607,7 @@ function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onSt
       )}
 
       {form !== null && (
-        <TimerModal data={form} todayStr={todayStr} courses={courses}
+        <TimerModal data={form} todayStr={todayStr} courses={courses} ventures={ventures}
           onSave={d => { form.id ? onUpdate(form.id, d) : onAdd(d); setForm(null); }}
           onGiveUp={form.id && timerStatus(form, todayStr) === 'active' ? () => giveUp(form) : null}
           onDelete={form.id && (!form.createdAt?.toDate || Date.now() - form.createdAt.toDate().getTime() < DELETE_GRACE_MS) && timerElapsed(form, Date.now()) < 60 ? () => remove(form) : null}
@@ -3546,7 +3618,7 @@ function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onSt
   );
 }
 
-function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, onClose }) {
+function TimerModal({ data, todayStr, courses = [], ventures = [], onSave, onGiveUp, onDelete, onClose }) {
   const editing = !!data.id;
   const locked = editing && timerStatus(data, todayStr) !== 'active';
   const minTarget = editing ? Number(data.targetMinutes) || 0 : 0;
@@ -3556,6 +3628,7 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
   const [mins, setMins] = useState(data.targetMinutes ? data.targetMinutes % 60 : 0);
   const [deadline, setDeadline] = useState(data.deadline || addDays(todayStr, 7));
   const [courseId, setCourseId] = useState(data.courseId || '');
+  const [ventureId, setVentureId] = useState(data.ventureId || '');
   const [liquid, setLiquid] = useState(data.liquid || liquidOf(data.id ? data : { id: String(Date.now()) }).id);
   const targetMinutes = (Number(hours) || 0) * 60 + (Number(mins) || 0);
   const days = Math.round((parseLocal(deadline) - parseLocal(todayStr)) / 864e5) + 1;
@@ -3588,6 +3661,14 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
           <select className="input" value={courseId} onChange={e => setCourseId(e.target.value)} disabled={locked}>
             <option value="">No course</option>
             {courses.map(c => <option key={c.id} value={c.id}>{c.code}{c.title ? ` · ${c.title}` : ''}</option>)}
+          </select>
+        </Field>
+      )}
+      {category !== 'Study' && ventures.length > 0 && (
+        <Field label="Venture this time is for (optional)">
+          <select className="input" value={ventureId} onChange={e => setVentureId(e.target.value)}>
+            <option value="">None</option>
+            {ventures.map(vn => <option key={vn.id} value={vn.id}>{vn.name}</option>)}
           </select>
         </Field>
       )}
@@ -3624,7 +3705,7 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
       )}
       {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
 
-      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, liquid, courseId: category === 'Study' ? courseId : '', ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
+      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, liquid, ventureId: category === 'Study' ? '' : ventureId, courseId: category === 'Study' ? courseId : '', ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
       {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
       {locked && <ModalFoot onClose={onClose}/>}
@@ -4452,7 +4533,7 @@ function SectionGhost({ src }) {
   return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
 }
 
-function Finance({debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
+function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
   // Work, personal, or both. `finances` below is always the chosen slice, so
   // every total, chart and list on the page agrees with the switch.
   const [scope, setScopeRaw] = useState(() => { try { return localStorage.getItem('jc_fin_scope') || 'all'; } catch { return 'all'; } });
@@ -4940,7 +5021,7 @@ function Finance({debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allF
                       <span className="fin-tx-dot"/>
                       <span className="fin-tx-main">
                         <span className="fin-tx-desc">{f.description}</span>
-                        <span className="fin-tx-meta"><i className={`fin-kind ${scopeOf(f)}`}>{scopeOf(f)}</i>{f.category}{client ? ` · ${client.businessName}` : ''}{f.paymentStage && f.paymentStage !== f.category ? ` · ${f.paymentStage}` : ''}</span>
+                        <span className="fin-tx-meta"><i className={`fin-kind ${scopeOf(f)}`}>{scopeOf(f)}</i>{f.category}{f.ventureId && ventures.find(vn => vn.id === f.ventureId) ? ` · ${ventures.find(vn => vn.id === f.ventureId).name}` : ''}{client ? ` · ${client.businessName}` : ''}{f.paymentStage && f.paymentStage !== f.category ? ` · ${f.paymentStage}` : ''}</span>
                       </span>
                       <span className="fin-tx-amt">{f.type === 'income' ? '+' : '−'}{J(amountOf(f)).replace('−', '')}</span>
                     </button>
@@ -5084,7 +5165,7 @@ function Finance({debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allF
           onClose={() => setPayDebt(null)}/>
       )}
       {form !== null && (
-        <FinanceModal data={form} leads={leads}
+        <FinanceModal data={form} leads={leads} ventures={ventures}
           onSave={d => { d.id ? onUpdate(d.id, d) : onAdd(d); setForm(null); }}
           onDelete={form.id ? deleteForm : null}
           onClose={() => setForm(null)}/>
@@ -5252,7 +5333,7 @@ function InvestAdvisor({cash,avgExp,avgNet,runway,mrr,target,advice,loading,onFe
   </>);
 }
 
-function FinanceModal({data,leads,onSave,onDelete,onClose}) {
+function FinanceModal({data,leads,ventures = [],onSave,onDelete,onClose}) {
   const [f, setF] = useState({ type:'expense', description:'', amount:'', category:'', date:localDateStr(), pipelineLeadId:'', ...data });
   const s = (k, v) => setF(p => ({ ...p, [k]: v }));
   const cats = f.type === 'income' ? INCOME_CATS : EXPENSE_CATS;
@@ -5266,6 +5347,7 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
     if (!valid) return;
     const out = { ...f, category, amount: amt, scope: kind, description: f.description.trim() };
     if (!out.pipelineLeadId) delete out.pipelineLeadId;
+    if (!out.ventureId) delete out.ventureId;
     // Client payments carry their stage so retainers and balances owed update
     else if (out.type === 'income' && PAYMENT_STAGES.includes(category)) out.paymentStage = category;
     onSave(out);
@@ -5306,6 +5388,14 @@ function FinanceModal({data,leads,onSave,onDelete,onClose}) {
           </Field>
         )}
       </div>
+      {ventures.length > 0 && (
+        <Field label="Venture this belongs to (optional)">
+          <select className="input" value={f.ventureId || ''} onChange={e => setF(x => ({ ...x, ventureId: e.target.value, ...(e.target.value ? { scope: 'work' } : {}) }))}>
+            <option value="">None</option>
+            {ventures.map(vn => <option key={vn.id} value={vn.id}>{vn.name}</option>)}
+          </select>
+        </Field>
+      )}
       <ModalFoot onClose={onClose} onSave={save}/>
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete transaction</button>}
     </Modal>
@@ -5612,7 +5702,7 @@ const CLIENT_HEX = Object.fromEntries(CLIENT_STATES.map(c => [c.id, c.hex]));
 const clientState = l => l.clientStatus || 'Active';
 const BIZ_TYPES = ['Restaurant','Retail','Pharmacy','School','Salon','Mechanic','Wholesale','Real Estate','Bakery','Church','Hotel','Other'];
 
-function ClientManagement({ leads, finances, todayStr, onAdd, onUpdate, onRemove }) {
+function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onAdd, onUpdate, onRemove }) {
   const { confirm, ConfirmUI } = useConfirm();
   const clients = leads.filter(l => l.status === 'Paid');
   const [sel, setSel]         = useState(null);
@@ -5765,6 +5855,9 @@ function ClientManagement({ leads, finances, todayStr, onAdd, onUpdate, onRemove
                 <span className="cl-avatar big">{(client.businessName || '?')[0]}</span>
                 <div className="cl-head-main">
                   <div className="cl-name">{client.businessName}</div>
+                  {ventures.filter(vn => vn.clientId === client.id).map(vn => (
+                    <button key={vn.id} className="link-btn cl-venture" onClick={() => { try { localStorage.setItem('jc_venture_sel', vn.id); } catch {} onNav && onNav('ventures'); }}>Run as the venture {vn.name} ›</button>
+                  ))}
                   <div className="cl-sub">
                     <span className="cl-state">{clientState(client)}</span>
                     {client.businessType && <span>{client.businessType}</span>}
@@ -5918,7 +6011,7 @@ function ClientManagement({ leads, finances, todayStr, onAdd, onUpdate, onRemove
 
       {clientForm !== null && <ClientModal data={clientForm} leads={leads} onSave={saveClient} onClose={() => setClientForm(null)}/>}
       {payForm !== null && (
-        <FinanceModal data={payForm} leads={leads} onSave={savePayment} onDelete={payForm.id ? deletePayment : null} onClose={() => setPayForm(null)}/>
+        <FinanceModal data={payForm} leads={leads} ventures={ventures} onSave={savePayment} onDelete={payForm.id ? deletePayment : null} onClose={() => setPayForm(null)}/>
       )}
       {editProduct && client && (
         <ProductModal client={client} onSave={d => { onUpdate('leads', client.id, { product: d }); setEditProduct(false); }} onClose={() => setEditProduct(false)}/>
@@ -6698,7 +6791,7 @@ function launchPlan(v, items, todayStr) {
   };
 }
 
-function Ventures({ rounds = [], onToggleRound, ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP?.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const acrossPager = usePager(6), comingPager = usePager(6);
@@ -6750,7 +6843,7 @@ function Ventures({ rounds = [], onToggleRound, ventures, finances = [], onAddFi
     </div>
   );
   const modal = form && (
-    <VentureModal data={form} todayStr={todayStr} onPick={api.pick}
+    <VentureModal data={form} todayStr={todayStr} onPick={api.pick} clients={leads.filter(l => l.status === 'Paid')}
       onSave={d => { onSaveVenture(d); setForm(null); }}
       onDelete={form.id ? () => removeVenture(form) : null}
       onClose={() => setForm(null)}/>
@@ -6762,6 +6855,9 @@ function Ventures({ rounds = [], onToggleRound, ventures, finances = [], onAddFi
       <VentureRoom key={current.id} v={current} hex={hex(current)} d={data[current.id]} h={health[current.id]} reload={() => loadOne(current)}
         services={of(services, current)} items={of(items, current)} checks={of(checks, current)} checkedToday={checkedToday(current)} todayStr={todayStr}
         onEdit={() => setForm(current)}
+        client={leads.find(l => l.id === current.clientId) || null} onNav={onNav}
+        ledger={finances.filter(f => f.ventureId === current.id || (current.clientId && f.pipelineLeadId === current.clientId))}
+        focusSec={timers.filter(t => t.ventureId === current.id).reduce((t, x) => t + timerElapsed(x, Date.now()), 0)}
         rounds={rounds.find(r => r.ventureId === current.id)?.done || {}} onToggleRound={id => onToggleRound(current.id, id)}
         bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, scope: 'work', ventureId: current.id })}
         onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
@@ -6871,7 +6967,7 @@ function Ventures({ rounds = [], onToggleRound, ventures, finances = [], onAddFi
   );
 }
 
-function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
@@ -6882,8 +6978,22 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
   const [fx, setFxRaw] = useState(() => { try { return Number(localStorage.getItem('jc_fx')) || 160; } catch { return 160; } });
   const setFx = n => { const val = Math.max(1, Number(n) || 160); setFxRaw(val); try { localStorage.setItem('jc_fx', String(val)); } catch {} };
   const [gcpBilling, setGcpBilling] = useState(null);
-  const billPager = usePager(6);
   const fbProject = d?.o?.ok ? d.o.firebaseProject : '';
+  const billPager = usePager(6);
+  // Live cost figures: fetched by the Mac app itself, never by the window
+  const [liveData, setLiveData] = useState({});
+  const [liveKeys, setLiveKeys] = useState({});
+  const [keyForm, setKeyForm] = useState(null);
+  const liveApi = DESKTOP?.live;
+  const pullLive = async only => {
+    if (!liveApi) return;
+    const keys = await liveApi.status(); setLiveKeys(keys);
+    const ids = ventureServices(d?.o).map(x => x.id);
+    const want = [['anthropic', ids.includes('anthropic') && keys.anthropic], ['render', ids.includes('render') && keys.render], ['gcp', !!fbProject]].filter(([k, on]) => on && (!only || only === k));
+    want.forEach(([k]) => setLiveData(x => ({ ...x, [k]: { ...(x[k] || {}), loading: true } })));
+    await Promise.all(want.map(async ([k]) => { const r = await liveApi.fetch(k, fbProject); setLiveData(x => ({ ...x, [k]: r })); }));
+  };
+  useEffect(() => { if (view === 'services') pullLive(); }, [view, fbProject, d?.loading]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setGcpBilling(null); if (fbProject) api.billing(fbProject).then(setGcpBilling); }, [fbProject]); // eslint-disable-line react-hooks/exhaustive-deps
   const phasePagers = [usePager(5), usePager(5)];
   const roadPager = usePager(8), movePager = usePager(8), donePager = usePager(5), logPager = usePager(5);
@@ -6949,7 +7059,7 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
     setMoveTitle(''); setMoveDue('');
   };
   const toggleMove = m => onSaveItem({ id: m.id, done: !m.done, doneAt: m.done ? '' : todayStr });
-  const toTasks = m => { onAddTodo({ title: `${v.name} · ${m.title}`, note: '', starred: false }); onSaveItem({ id: m.id, sentOn: todayStr }); };
+  const toTasks = m => { onAddTodo({ title: `${v.name} · ${m.title}`, note: '', starred: false, moveId: m.id }); onSaveItem({ id: m.id, sentOn: todayStr }); };
   const addLog = () => { if (!logText.trim()) return; onSaveItem({ kind: 'log', text: logText.trim(), date: todayStr }); setLogText(''); };
   const removeItem = async (i, label) => { if (await confirm({ message: `Delete "${label}"?`, label: 'Delete', danger: true })) { onDeleteItem(i.id); setItemForm(null); } };
   const moveRow = m => {
@@ -7150,12 +7260,39 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
             <div><dt>Running cost</dt><dd className={monthly ? 'warn' : ''}>{monthly ? `${J(monthly)} a month` : 'Nothing priced yet'}</dd></div>
             <div><dt>Services it depends on</dt><dd>{autoServices.length + customServices.length}</dd></div>
             <div><dt>People</dt><dd>{people.length ? people.slice(0, 3).map(p => p.name).join(', ') + (people.length > 3 ? ` +${people.length - 3}` : '') : 'None added'}</dd></div>
+            <div><dt>Time put in</dt><dd>{focusSec ? fmtHM(focusSec) : 'No focus timers linked yet'}</dd></div>
             <div><dt>Project folder</dt><dd>{v.dir ? v.dir.replace(/^\/Users\/[^/]+/, '~') : 'None linked'}</dd></div>
             {hasFolder && o.firebaseProject && <div><dt>Firebase project</dt><dd className="mono">{o.firebaseProject}</dd></div>}
           </dl>
           {links.length > 0 && <div className="vt-links">{links.slice(0, 6).map(l => <a key={l.id} className="btn-ghost tk-carry" href={fullUrl(l.url)} target="_blank" rel="noopener noreferrer">{l.label} ↗</a>)}</div>}
         </div>
       </>)}
+
+      {view === 'overview' && (() => {
+        const mk = todayStr.slice(0, 7);
+        const inc = ledger.filter(isIncome), out = ledger.filter(f => !isIncome(f));
+        const sum = (rows, month) => rows.filter(f => !month || (f.date || '').startsWith(mk)).reduce((t, f) => t + amountOf(f), 0);
+        const net = sum(inc) - sum(out);
+        return (
+          <div className="card vt-books">
+            <div className="row-between" style={{ marginBottom: '0.7rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>The books · money in and out of this venture</span>
+              <span className="row-gap">
+                {client && <button className="link-btn" onClick={() => onNav && onNav('clients')}>Client: {client.businessName} ›</button>}
+                <button className="link-btn" onClick={() => onNav && onNav('finance')}>Finance ›</button>
+              </span>
+            </div>
+            <div className="fin-pos-row">
+              <div><em>Earned so far</em><b className="good">{J(sum(inc))}</b><u>{J(sum(inc, true))} this month{client && Number(client.retainerAmount) > 0 ? ` · ${J(client.retainerAmount)} a month agreed` : ''}</u></div>
+              <i>−</i>
+              <div><em>Spent so far</em><b className={sum(out) ? 'bad' : ''}>{J(sum(out))}</b><u>{J(sum(out, true))} this month · expected {J(monthly)} a month</u></div>
+              <i>=</i>
+              <div className="sum"><em>What it has made you</em><b className={net < 0 ? 'bad' : ''}>{J(net)}</b><u>{focusSec >= 3600 ? `${J(net / (focusSec / 3600))} for each focused hour` : ledger.length ? `${ledger.length} entr${ledger.length === 1 ? 'y' : 'ies'} in Finance` : 'nothing logged against it yet'}</u></div>
+            </div>
+            <div className="goal-hint" style={{ marginTop: '0.6rem' }}>{client ? `Counts every payment from ${client.businessName}, plus any Finance entry you tag with this venture.` : 'Counts every Finance entry tagged with this venture, including bills logged under Services.'}</div>
+          </div>
+        );
+      })()}
 
       {view === 'plan' && (<>
         <div className="card span-7 tk-list">
@@ -7290,6 +7427,46 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
 
       {view === 'services' && (() => {
         const month = todayStr.slice(0, 7);
+        // What each card can show that is real. Amounts are US$ unless marked.
+        const gcpPart = re => { const g = liveData.gcp; return g?.ok ? { mtd: g.parts.filter(x => re(x.name)).reduce((t, x) => t + x.amount, 0), currency: g.currency, days: null, at: g.fetchedAt } : null; };
+        const isMaps = n => /maps|places|routes|geocod/i.test(n), isCaptcha = n => /recaptcha/i.test(n);
+        const fyMeta = svcMeta('fygaro'), fyPct = Number(fyMeta.feePct) || 0, fyFixed = Number(fyMeta.feeFixed) || 0;
+        const fyPaid = money?.ok ? money.payments.filter(x => ['paid', 'credited', 'verified'].includes(x.status) && dayKey(x.createdAt).startsWith(month)) : [];
+        const liveFor = id => {
+          const A = liveData.anthropic, Rn = liveData.render, G = liveData.gcp;
+          if (id === 'anthropic') return !liveKeys.anthropic ? { connect: 'anthropic' } : A?.loading ? { loading: true } : A?.ok ? { mtd: A.mtd, currency: 'USD', days: A.days, at: A.fetchedAt, lines: A.parts.map(x => `${x.name}: ${US(x.amount)}`) } : A ? { error: A.error, connect: 'anthropic' } : null;
+          if (id === 'render' || id === 'redis') {
+            if (!liveKeys.render) return { connect: 'render' };
+            if (Rn?.loading) return { loading: true };
+            if (!Rn?.ok) return Rn ? { error: Rn.error, connect: 'render' } : null;
+            const mine = Rn.items.filter(x => (id === 'redis') === (x.kind === 'key value'));
+            return { fixed: mine.reduce((t, x) => t + (x.usd || 0), 0), currency: 'USD', at: Rn.fetchedAt, lines: mine.map(x => `${x.name}: ${x.plan} plan${x.usd === null ? ' (price not known)' : `, ${US(x.usd)} a month`}${x.down ? ' · NOT RUNNING' : ''}`), bad: mine.some(x => x.down), empty: !mine.length };
+          }
+          if (['firebase', 'gcp-bill', 'maps', 'recaptcha'].includes(id)) {
+            if (G?.loading) return { loading: true };
+            if (!G) return null;
+            if (!G.ok) return id === 'gcp-bill' || id === 'firebase' ? (G.needs === 'export' ? { setup: 'gcp' } : { error: G.error }) : null;
+            if (id === 'gcp-bill') return { mtd: G.mtd, currency: G.currency, days: G.days, at: G.fetchedAt, lines: G.parts.slice(0, 5).map(x => `${x.name}: ${G.currency} ${x.amount.toFixed(2)}`) };
+            return gcpPart(id === 'maps' ? isMaps : id === 'recaptcha' ? isCaptcha : n => !isMaps(n) && !isCaptcha(n));
+          }
+          if (id === 'fygaro') {
+            if (!money?.ok) return null;
+            if (!fyPct && !fyFixed) return { setup: 'fygaro' };
+            const vol = fyPaid.reduce((t, x) => t + (Number(x.amountJmd) || 0), 0);
+            return { mtd: vol * fyPct / 100 + fyPaid.length * fyFixed, currency: 'JMD', at: money.fetchedAt, lines: [`${fyPaid.length} card payment${fyPaid.length === 1 ? '' : 's'} this month, ${J(vol)} in total`, `at ${fyPct}%${fyFixed ? ` + ${J(fyFixed)} each` : ''}`, ...(h.today ? [] : ['from test payments: this venture is not live yet'])] };
+          }
+          return null;
+        };
+        // Why a card has no live figure, and what to do instead
+        const noLive = id => ({
+          maps: 'Shows with the Google figure once billing export is on.', recaptcha: 'Shows with the Google figure once billing export is on.',
+          meta: 'Replies to customers are free, so there is no charge to read.', ecwid: "This is the client's bill, not yours.", groq: 'Not called by the code, so nothing is charged.',
+          github: 'Free at this size.', 'github-ci': 'Covered by the free minutes. GitHub shows usage on its own billing page.', push: 'Free.', 'google-signin': 'Free.',
+          vercel: 'Vercel gives no way to read invoices from outside. Log the bill if you leave the free plan.', expo: 'Expo gives no way to read invoices from outside. Log the bill if you leave the free plan.',
+          photoroom: 'Bought in packs by hand. Log each pack as a bill.', ntfy: 'Free unless you buy a supporter plan. Log that as a bill.', play: 'A one-time US$25. Log it once.',
+          'functions-logs': 'A page you read, not a charge.', 'gcp-keys': 'A page you read, not a charge.',
+        }[id] || 'No way to read this one. Log its bill when it lands.');
+        const inJ = (amount, currency) => (currency === 'JMD' ? amount : amount * fx);
         const all = [...autoServices, ...customServices.map(x => { const m = svcMonthly(x) / fx; return { group: 'Added by you', id: x.serviceId, name: x.name, does: x.does, url: x.url, bills: '', cat: 'Tools', custom: true,
           est: { min: m, max: m, unitMin: 0, unitMax: 0, basis: m ? 'From the cost you entered for it.' : 'No cost entered yet. Edit the service to add one.', sure: !!m } }; })];
         const costed = all.filter(x => x.est && !x.est.skipTotal);
@@ -7297,6 +7474,16 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
         const now_ = totalAt(usage);
         const curve = USAGE_LEVELS.map(n => { const t = totalAt(n); return { n, label: n >= 1000 ? `${n / 1000}k` : String(n), min: Math.round(t.min * fx), band: Math.round((t.max - t.min) * fx), max: Math.round(t.max * fx), usdMin: t.min, usdMax: t.max }; });
         const drivers = costed.map(x => ({ x, e: estAt(x.est, usage) })).filter(r => r.e.max > 0).sort((a, b) => b.e.max - a.e.max);
+        const liveRows = costed.map(x => ({ x, l: liveFor(x.id) })).filter(r => r.l && (r.l.mtd !== undefined || r.l.fixed !== undefined));
+        const liveTotal = liveRows.reduce((t, r) => t + inJ(r.l.mtd !== undefined ? r.l.mtd : r.l.fixed, r.l.currency), 0);
+        const sources = [
+          ...(all.some(x => x.id === 'anthropic') ? [{ id: 'anthropic', name: 'Anthropic', key: true, how: 'Real spend per day. Needs an Admin key (sk-ant-admin…), made in the Anthropic console under Settings, Admin keys. Only organisation accounts have them.' }] : []),
+          ...(all.some(x => x.id === 'render') ? [{ id: 'render', name: 'Render', key: true, how: 'The plan each service is on, so the fixed price is exact. Needs an API key from Render, Account settings, API keys.' }] : []),
+          ...(fbProject ? [{ id: 'gcp', name: 'Google Cloud', key: false, how: `Real cost per day by service. Uses this Mac's Firebase login. One-time setup in Google Cloud: Billing, Billing export, BigQuery export, turn on "Standard usage cost" into a dataset in the project ${fbProject}. Figures start appearing about a day later.` }] : []),
+          ...(all.some(x => x.id === 'fygaro') ? [{ id: 'fygaro', name: 'Fygaro', key: false, how: "Fees worked out from the venture's own card payment records. Needs your fee rate: edit the Fygaro service and enter it." }] : []),
+        ];
+        const srcState = id => id === 'fygaro' ? (fyPct || fyFixed ? 'on' : 'setup') : id === 'gcp' ? (liveData.gcp?.ok ? 'on' : liveData.gcp?.loading ? 'wait' : liveData.gcp?.needs === 'export' ? 'setup' : liveData.gcp ? 'error' : 'wait')
+          : !liveKeys[id] ? 'key' : liveData[id]?.ok ? 'on' : liveData[id]?.loading ? 'wait' : liveData[id] ? 'error' : 'wait';
         const paid = (id, from) => bills.filter(f => f.serviceId === id && (!from || (f.date || '') >= from)).reduce((t, f) => t + amountOf(f), 0);
         const paidMonth = bills.filter(f => (f.date || '').startsWith(month)).reduce((t, f) => t + amountOf(f), 0);
         const paidEver = bills.reduce((t, f) => t + amountOf(f), 0);
@@ -7346,6 +7533,31 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
               <div key={r.x.id} className="row-between cl-line"><span>{r.x.name}</span><span className="mono">{r.e.min === r.e.max ? J(r.e.max * fx) : `${J(r.e.min * fx)} to ${J(r.e.max * fx)}`}</span></div>
             ))}
           </div>
+          {liveApi && sources.length > 0 && (
+            <div className="card svc-livebar">
+              <div className="row-between" style={{ flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.6rem' }}>
+                <span className="card-label" style={{ margin: 0 }}>Live figures · read straight from the providers</span>
+                <span className="row-gap">
+                  <span className="fin-delta">{liveRows.length ? <>Month to date across {liveRows.length} live service{liveRows.length === 1 ? '' : 's'}: <b className="good">{J(liveTotal)}</b></> : 'Nothing connected yet'}</span>
+                  <button className="btn-ghost tk-carry" onClick={() => pullLive()}>↻ Refresh</button>
+                </span>
+              </div>
+              <div className="svc-sources">
+                {sources.map(src => { const st = srcState(src.id); return (
+                  <div key={src.id} className={`svc-source ${st}`}>
+                    <div className="row-between"><b>{src.name}</b><em>{st === 'on' ? 'Connected' : st === 'wait' ? 'Checking…' : st === 'key' ? 'Needs a key' : st === 'setup' ? 'Needs setting up' : 'Problem'}</em></div>
+                    <p>{st === 'error' ? (liveData[src.id]?.error || 'Could not read it.') : src.how}</p>
+                    {src.key && <div className="row-gap">
+                      <button className="btn-ghost tk-carry" onClick={() => setKeyForm(src)}>{liveKeys[src.id] ? 'Replace key' : 'Add key'}</button>
+                      {liveKeys[src.id] && <button className="link-btn" onClick={async () => { await liveApi.setKey(src.id, ''); setLiveData(x => ({ ...x, [src.id]: null })); pullLive(); }}>Remove</button>}
+                    </div>}
+                    {src.id === 'fygaro' && st === 'setup' && <button className="btn-ghost tk-carry" onClick={() => { const m = svcMeta('fygaro'), sv = all.find(x => x.id === 'fygaro'); setSvcForm({ ...m, serviceId: 'fygaro', name: sv.name, does: sv.does, url: sv.url }); }}>Enter the fee rate</button>}
+                  </div>
+                ); })}
+              </div>
+              <div className="goal-hint" style={{ marginTop: '0.6rem' }}>Keys are encrypted with this Mac's Keychain and stay on this Mac. They are never saved to the database or shown again; the console can only use them to read figures.</div>
+            </div>
+          )}
           <div className="card svc-rounds">
             <div className="row-between">
               <span className="card-label" style={{ margin: 0 }}>Today's rounds · every service, every day</span>
@@ -7396,6 +7608,27 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
                         {pe > pm && <div><dt>Paid so far</dt><dd>{J(pe)}</dd></div>}
                         {days !== null && <div><dt>Renews</dt><dd className={days <= 7 ? 'bad' : ''}>{days < 0 ? `${-days}d overdue` : days === 0 ? 'today' : `in ${days}d`}</dd></div>}
                       </dl>
+                      {(() => {
+                        const l = liveFor(x.id);
+                        if (!l) return <div className="svc-live none"><em>No live</em><span>{noLive(x.id)}</span></div>;
+                        if (l.loading) return <div className="svc-live wait"><em>Live</em><span>Reading…</span></div>;
+                        if (l.connect && !l.error) return <button className="svc-live connect" onClick={() => setKeyForm(sources.find(q => q.id === l.connect))}><em>Live</em><span>Add a key to see the real figure</span></button>;
+                        if (l.setup) return <div className="svc-live connect"><em>Live</em><span>{l.setup === 'gcp' ? 'Turn on billing export in Google Cloud (steps above)' : 'Enter your fee rate (edit this service)'}</span></div>;
+                        if (l.error) return <div className="svc-live bad"><em>Live</em><span>{l.error}</span></div>;
+                        if (l.empty) return <div className="svc-live wait"><em>Live</em><span>None found on this account</span></div>;
+                        const val = l.mtd !== undefined ? l.mtd : l.fixed, e = estAt(x.est, usage), over = x.est && !x.est.skipTotal && inJ(val, l.currency) / fx > e.max + 0.005;
+                        const pts = (l.days || []).slice(-14), top = Math.max(0.0001, ...pts.map(q => q.amount));
+                        return (
+                          <div className={`svc-live on ${over || l.bad ? 'bad' : ''}`} title={(l.lines || []).join('\n')}>
+                            <em>Live</em>
+                            <b>{J(inJ(val, l.currency))}</b>
+                            <span>{l.currency === 'JMD' ? '' : `${US(val)} · `}{l.mtd !== undefined ? 'this month so far' : 'a month, from the plan it is on'}{over ? ' · above what was expected' : ''}</span>
+                            {pts.length > 1 && <svg viewBox={`0 0 ${pts.length * 8} 22`} preserveAspectRatio="none" aria-hidden="true">{pts.map((q, i) => <rect key={q.date} x={i * 8 + 1} width="6" y={22 - Math.max(1, (q.amount / top) * 20)} height={Math.max(1, (q.amount / top) * 20)}/>)}</svg>}
+                            {(l.lines || []).slice(0, 3).map((t, i) => <i key={i}>{t}</i>)}
+                            <u>read {ago(l.at)}</u>
+                          </div>
+                        );
+                      })()}
                       {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
                       <div className="svc-foot">
                         {x.url && <a className="btn-ghost tk-carry" href={fullUrl(x.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>}
@@ -7510,6 +7743,10 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
           onDelete={svcForm.id && svcForm.custom ? async () => { if (await confirm({ message: `Remove ${svcForm.name}?`, label: 'Remove', danger: true })) { onDeleteService(svcForm.id); setSvcForm(null); } } : null}
           onClose={() => setSvcForm(null)}/>
       )}
+      {keyForm && (
+        <LiveKeyModal source={keyForm} onClose={() => setKeyForm(null)}
+          onSave={async value => { const r = await liveApi.setKey(keyForm.id, value); if (r?.ok) { const id = keyForm.id; setKeyForm(null); await pullLive(id); } return r; }}/>
+      )}
       {billForm && (
         <BillModal data={billForm} todayStr={todayStr} ventureName={v.name}
           onSave={d => { onAddBill(d); setBillForm(null); }} onClose={() => setBillForm(null)}/>
@@ -7524,7 +7761,7 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
   </>);
 }
 
-function VentureModal({ data, todayStr, onPick, onSave, onDelete, onClose }) {
+function VentureModal({ data, todayStr, onPick, clients = [], onSave, onDelete, onClose }) {
   const [f, setF] = useState({ name: '', tagline: '', stage: 'Building', startedOn: '', dir: '', color: '', ...data });
   const s = (k, val) => setF(p => ({ ...p, [k]: val }));
   const pick = async () => { const dir = await onPick(); if (dir) setF(p => ({ ...p, dir, name: p.name || dir.split('/').pop() })); };
@@ -7541,6 +7778,14 @@ function VentureModal({ data, todayStr, onPick, onSave, onDelete, onClose }) {
         <Field label="Launch date (optional)"><input className="input" type="date" value={f.launchDate || ''} onChange={e => s('launchDate', e.target.value)}/></Field>
         <Field label="Run-up starts"><input className="input" type="date" value={f.planStart || ''} max={f.launchDate || undefined} onChange={e => s('planStart', e.target.value)}/></Field>
       </div>
+      {clients.length > 0 && (
+        <Field label="Client this is built and run for (optional)">
+          <select className="input" value={f.clientId || ''} onChange={e => s('clientId', e.target.value)}>
+            <option value="">None, it is your own business</option>
+            {clients.map(c => <option key={c.id} value={c.id}>{c.businessName}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="Project folder on this Mac (optional)">
         <div className="row-gap">
           <button type="button" className="vt-path" style={{ marginLeft: 0 }} onClick={pick}>{f.dir ? f.dir.replace(/^\/Users\/[^/]+/, '~') : 'Choose a folder…'}</button>
@@ -7619,10 +7864,40 @@ function ServiceModal({ data, onSave, onDelete, onClose }) {
       </div>
       {(type === 'monthly' || type === 'yearly') && <Field label="Next bill / renewal"><input className="input" type="date" value={f.renewsOn || ''} onChange={e => s('renewsOn', e.target.value)}/></Field>}
       <Field label="Notes"><textarea className="input" style={{ minHeight: 64, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)} placeholder="Which account it's under, plan, limits. Not passwords."/></Field>
+      {f.serviceId === 'fygaro' && (
+        <div className="grid-2">
+          <Field label="Fee on each card payment (%)"><input className="input" type="number" min="0" step="0.01" value={f.feePct ?? ''} onChange={e => s('feePct', e.target.value)} placeholder="from your agreement"/></Field>
+          <Field label="Plus a fixed fee each (J$)"><input className="input" type="number" min="0" value={f.feeFixed ?? ''} onChange={e => s('feeFixed', e.target.value)} placeholder="0"/></Field>
+        </div>
+      )}
       <label className="svc-skip"><input type="checkbox" checked={!!f.noRounds} onChange={e => s('noRounds', e.target.checked)}/> Leave this one out of the daily rounds</label>
       <div className="focus-preview"><div>This is the plan. What you really pay is counted from the bills you log on the service.</div></div>
       <ModalFoot onClose={onClose} onSave={save}/>
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Remove service</button>}
+    </Modal>
+  );
+}
+
+// A read-only key for live figures. It goes straight to the Mac app, which
+// encrypts it; this window never keeps or shows it again.
+function LiveKeyModal({ source, onSave, onClose }) {
+  const [value, setValue] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!value.trim() || busy) return;
+    setBusy(true); setMsg('');
+    const r = await onSave(value.trim());
+    setBusy(false);
+    if (r && !r.ok) setMsg(r.error || 'Could not save the key.');
+  };
+  return (
+    <Modal title={`${source.name} key`} onClose={onClose}>
+      <div className="focus-preview"><div>{source.how}</div></div>
+      <Field label="Paste the key"><input className="input" type="password" autoFocus autoComplete="off" spellCheck={false} value={value} onChange={e => setValue(e.target.value)} onKeyDown={e => e.key === 'Enter' && save()}/></Field>
+      {msg && <div className="fin-delta bad">{msg}</div>}
+      <div className="goal-hint">Use a key that can only read. It is encrypted with this Mac's Keychain, kept on this Mac only, and never written to the database or the code.</div>
+      <ModalFoot onClose={onClose} onSave={save}/>
     </Modal>
   );
 }
@@ -7676,7 +7951,7 @@ const parseAmount = text => {
 };
 const tidy = s => { const t = s.replace(/\s+/g, ' ').trim(); return t ? t[0].toUpperCase() + t.slice(1) : ''; };
 
-function CommandPalette({ sections, leads, habits, timers, todos, todayStr, run, onClose }) {
+function CommandPalette({ ventures = [], courses = [], onBackup, sections, leads, habits, timers, todos, todayStr, run, onClose }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(0);
   const inputRef = useRef(null);
@@ -7723,6 +7998,9 @@ function CommandPalette({ sections, leads, habits, timers, todos, todayStr, run,
     }
 
     // ── Search ──
+    ventures.filter(v => (v.name || '').toLowerCase().includes(lower)).forEach(v => add('Ventures', v.name, v.stage || 'Venture', () => { try { localStorage.setItem('jc_venture_sel', v.id); } catch {} run.nav('ventures'); }));
+    courses.filter(c => `${c.code} ${c.title || ''}`.toLowerCase().includes(lower)).forEach(c => add('Studies', c.code, c.title || 'Course', () => run.nav('studies')));
+    if ('back up backup export'.includes(lower) && lower.length > 2 && onBackup) add('Do', 'Back up all data', 'Saves one file with everything in it', () => { onBackup(); });
     sections.filter(s => s.label.toLowerCase().includes(lower)).forEach(s => add('Go to', s.label, 'Section', () => run.nav(s.id)));
     leads.filter(l => (l.businessName || '').toLowerCase().includes(lower) || (l.contactName || '').toLowerCase().includes(lower)).slice(0, 5).forEach(l =>
       add(l.status === 'Paid' ? 'Clients' : 'Leads', l.businessName, `${l.status}${l.contactName ? ` · ${l.contactName}` : ''}`, () => run.nav(l.status === 'Paid' ? 'clients' : 'pipeline')));

@@ -259,4 +259,4 @@ function register(getWindow) {
   ipcMain.handle('venture:stop', () => { if (running) { running.kill('SIGTERM'); return true; } return false; });
 }
 
-module.exports = { register };
+module.exports = { register, cliToken };

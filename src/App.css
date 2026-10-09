@@ -3129,3 +3129,59 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .brew-pick button:hover { translate: 0 -1px; border-color: var(--gold-400); }
 .brew-pick button.on { border-color: var(--paper); color: var(--paper); --sh: 3px 3px 0 var(--ink-line); }
 .brew-pick i { display: block; width: 100%; height: 22px; border-radius: 2px; border: 1px solid #000; background: linear-gradient(180deg, var(--a), var(--b) 22%, var(--c) 62%, var(--d)); }
+
+
+/* ─── Hourglass: the brew still moves when paused, just slowly ───────── */
+.hourglass { --slow: 1; }
+.hourglass:not(.running) { --slow: 3.2; }
+.hourglass:not(.running) .hg-wave, .hourglass:not(.running) [class^="hg-"]:not(.hg-wave):not(.hg-liquid) { animation-play-state: running; }
+.hourglass .hg-wave { animation-duration: calc(var(--speed, 4s) * var(--slow)); }
+.hourglass .hg-wave.back { animation-duration: calc(var(--speed, 4s) * 1.6 * var(--slow)); }
+.hourglass .hg-bubble { animation-duration: calc(1.8s * var(--slow)) !important; }
+.hourglass .hg-pop { animation-duration: calc(2.4s * var(--slow)); }
+.hourglass .hg-drift { animation-duration: calc(7s * var(--slow)); }
+.hourglass .hg-drip { animation-duration: calc(4.5s * var(--slow)); }
+.hourglass .hg-spark { animation-duration: calc(2.4s * var(--slow)); }
+.hourglass .hg-current { animation-duration: calc(5s * var(--slow)); }
+.hourglass .hg-smoke { animation-duration: calc(3.6s * var(--slow)); }
+.hourglass .hg-petal { animation-duration: calc(5.4s * var(--slow)); }
+.hourglass .hg-band { animation-duration: calc(6s * var(--slow)); }
+.hourglass.failed .hg-wave, .hourglass.failed [class^="hg-"] { animation-play-state: paused !important; }
+
+/* ─── Crash card, backup button, links between sections ──────────────── */
+.crash { border-left: 6px solid var(--seal); display: flex; flex-direction: column; gap: 0.7rem; }
+.crash-title { font-family: var(--title); font-size: 30px; line-height: 1; color: var(--paper); }
+.crash p { margin: 0; color: var(--ink-1); }
+.crash pre { margin: 0; padding: 0.7rem; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; color: var(--coral-400); background: rgba(0,0,0,0.35); border: 1px dashed rgba(255,255,255,0.15); border-radius: 2px; }
+.nav-backup { margin-top: 0 !important; }
+.nav-toggle + .nav-backup { margin-top: 0 !important; }
+.cl-venture { display: block; margin-top: 0.3rem; font-size: 13px; text-align: left; }
+.vt-books .fin-pos-row b { font-size: 28px; }
+
+
+/* ─── Services: live figures ─────────────────────────────────────────── */
+.svc-livebar { border-left: 6px solid var(--sea-400); }
+.svc-sources { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 0.8rem; }
+.svc-source { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.7rem 0.8rem; background: rgba(var(--b1),0.6); border: 1.5px solid var(--line-2); border-left-width: 4px; border-radius: 2px; }
+.svc-source b { font-family: var(--title); font-weight: 400; font-size: 20px; line-height: 1; color: var(--paper); }
+.svc-source em { font-style: normal; font-size: 11.5px; font-weight: 700; color: var(--ink-3); }
+.svc-source p { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.svc-source.on { border-left-color: var(--sea-400); } .svc-source.on em { color: var(--sea-400); }
+.svc-source.key, .svc-source.setup { border-left-color: var(--gold-400); } .svc-source.key em, .svc-source.setup em { color: var(--gold-300); }
+.svc-source.error { border-left-color: var(--coral-400); } .svc-source.error em, .svc-source.error p { color: var(--coral-400); }
+.svc-live { display: grid; grid-template-columns: auto 1fr; column-gap: 0.6rem; row-gap: 0.15rem; align-items: baseline; padding: 0.55rem 0.7rem; text-align: left; font: inherit; color: inherit; background: rgba(58,184,142,0.07); border: 1.5px solid rgba(58,184,142,0.45); border-radius: 2px; }
+.svc-live em { grid-row: span 2; align-self: start; padding: 0.05rem 0.4rem; font-style: normal; font-size: 10.5px; font-weight: 700; color: #06110d; background: var(--sea-400); border-radius: 2px; }
+.svc-live b { font-family: var(--title); font-weight: 400; font-size: 24px; line-height: 1; color: var(--paper); }
+.svc-live span { grid-column: 2; font-size: 12px; color: var(--ink-2); }
+.svc-live i, .svc-live u { grid-column: 1 / -1; font-style: normal; text-decoration: none; font-size: 11.5px; color: var(--ink-3); }
+.svc-live svg { grid-column: 1 / -1; width: 100%; height: 22px; margin: 0.25rem 0 0.1rem; }
+.svc-live svg rect { fill: var(--sea-400); opacity: 0.75; }
+.svc-live.wait, .svc-live.connect { background: none; border-style: dashed; border-color: var(--line-2); }
+.svc-live.wait em, .svc-live.connect em { background: var(--ink-4); color: var(--ink-1); }
+button.svc-live.connect { cursor: pointer; width: 100%; } button.svc-live.connect:hover { border-color: var(--gold-400); }
+.svc-live.bad { background: rgba(255,106,69,0.08); border-color: rgba(255,106,69,0.55); }
+.svc-live.bad em { background: var(--coral-400); } .svc-live.bad svg rect { fill: var(--coral-400); }
+
+.svc-live.none { background: none; border: none; border-top: 1px dashed rgba(255,255,255,0.1); border-radius: 0; padding: 0.5rem 0 0; }
+.svc-live.none em { background: none; color: var(--ink-3); border: 1px solid var(--ink-4); }
+.svc-live.none span { color: var(--ink-3); }

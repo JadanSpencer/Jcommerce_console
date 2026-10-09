@@ -7,6 +7,7 @@ const path = require('path');
 const fsSync = require('fs');
 const { pathToFileURL } = require('url');
 const venture = require('./venture');
+const live = require('./live');
 
 const SCHEME = 'app';
 const BUILD_DIR = path.join(__dirname, '..', 'build');
@@ -93,8 +94,21 @@ ipcMain.handle('invoice:save-pdf', async (_e, { html, filename }) => {
   }
 });
 
+// Save a full copy of the console's data to a file the owner chooses
+ipcMain.handle('data:export', async (_e, { json, filename }) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    defaultPath: path.join(app.getPath('documents'), path.basename(filename)),
+    filters: [{ name: 'Backup', extensions: ['json'] }],
+  });
+  if (canceled || !filePath) return { ok: false };
+  await fs.writeFile(filePath, json, 'utf8');
+  return { ok: true, filePath };
+});
+
 // Read-only access to another project folder (Ventures section)
 venture.register(() => win);
+// Live cost figures (read-only; keys stay encrypted on this Mac)
+live.register(venture.cliToken);
 
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([
