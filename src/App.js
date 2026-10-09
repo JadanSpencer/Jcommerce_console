@@ -89,6 +89,16 @@ const PERSONAL_CATS = new Set(['Transport','Food','Education','Bills','Personal'
 const scopeOf = f => (f.scope === 'work' || f.scope === 'personal') ? f.scope
   : (f.ventureId || f.pipelineLeadId) ? 'work' : PERSONAL_CATS.has(f.category) ? 'personal' : 'work';
 const SCOPES = [['all', 'All money'], ['work', 'Work'], ['personal', 'Personal']];
+// Debts: money you owe ('owe') and money owed to you ('owed'). Each keeps its
+// own list of repayments. `cash` says whether cash changed hands when it began
+// (a loan did; an unpaid bill or a job done on credit did not).
+const debtPaid = d => (d.payments || []).reduce((t, x) => t + amountOf(x), 0);
+const debtLeft = d => Math.max(0, Math.round((amountOf(d) - debtPaid(d)) * 100) / 100);
+const debtScope = d => (d.scope === 'work' ? 'work' : 'personal');
+// What debts have done to the cash in your hand. Borrowed cash came in and your
+// repayments went out; lent cash went out and their repayments came in. None of
+// it is income or spending, so profit is never touched.
+const debtCash = debts => debts.reduce((t, d) => { const sign = d.direction === 'owe' ? 1 : -1; return t + (d.cash ? sign * amountOf(d) : 0) - sign * debtPaid(d); }, 0);
 const GOAL_CATS = ['Revenue','Clients','Skills','Health','Personal'];
 const BLOCK_COLORS = {
   Work:'#e63946', Coding:'#f0c060', Outreach:'#1adb8a',
@@ -225,43 +235,97 @@ function getLast20Weeks(count = 20) {
 }
 
 const XP_PER_MOVE = 10;
-function calcXP(habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = []) {
-  let xp = 0;
-  // RULE: Never penalise today. Penalties only apply to days strictly BEFORE today.
+// Every section both earns and costs XP. The rules added on XP_STRICT_FROM
+// never reach back before that day, and nothing is ever taken for today:
+// penalties only land once a day, week or month is over.
+const XP_STRICT_FROM = '2026-10-09';
+function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [] }) {
+  const rows = [];
+  const row = (k, tab, plus, minus, how) => rows.push({ k, tab, plus: Math.round(plus), minus: Math.round(minus), net: Math.round(plus - minus), how });
+  const net = (k, tab, n, how) => row(k, tab, Math.max(0, n), Math.max(0, -n), how);
+  const yesterday = addDays(todayStr, -1);
+  const strictDays = [];
+  for (let d = XP_STRICT_FROM; d <= yesterday && strictDays.length < 120; d = addDays(d, 1)) strictDays.push(d);
+  const fromMonth = XP_STRICT_FROM.slice(0, 7), thisMonth = todayStr.slice(0, 7);
+
+  // Habits: +10 a day done, −10 a day missed (since the habit was made, up to 90 days back)
+  let hp = 0, hm = 0;
   habits.forEach(h => {
-    // +10 XP for every day the habit was completed (any day)
-    xp += Object.values(h.completions||{}).filter(Boolean).length * 10;
-    // Get the day the habit was created (so we don't penalise before it existed)
+    hp += Object.values(h.completions || {}).filter(Boolean).length * 10;
     const createdRaw = h.createdAt?.toDate ? h.createdAt.toDate() : null;
     const createdStr = createdRaw ? localDateStr(createdRaw) : todayStr;
-    // Walk every past day from creation up to (not including) today
-    // and deduct 10 XP for each day it was missed
-    // Cap at 90 days to avoid huge lookback on very old habits
-    const msPerDay = 86400000;
-    const daysBack = Math.min(90, Math.round((parseLocal(todayStr) - parseLocal(createdStr)) / msPerDay));
+    const daysBack = Math.min(90, Math.round((parseLocal(todayStr) - parseLocal(createdStr)) / 86400000));
     for (let i = 1; i <= daysBack; i++) {
       const d = addDays(todayStr, -i);
-      if (d < createdStr) break; // habit didn't exist yet
-      if (h.archivedAt && d >= h.archivedAt) continue; // no longer tracked
-      if (!h.completions?.[d]) xp -= 10; // missed that day — deduct
+      if (d < createdStr) break;
+      if (h.archivedAt && d >= h.archivedAt) continue;
+      if (!h.completions?.[d]) hm += 10;
     }
   });
-  leads.filter(l => l.status==='Paid').forEach(() => { xp += 200; });
-  xp += calcTodoXP(todos, todayStr);
-  // Bonuses derived from stored data so they survive a restart:
-  // +100 per completed goal, +15 per Tide Log entry
-  // +100 per goal reached, −50 per goal missed or given up
-  goals.forEach(g => { xp += goalXP(g, todayStr); });
-  // +10 for each day the venture's daily check was read
-  xp += new Set(ventureChecks.map(c => c.date)).size * 10;
-  // +5 per syllabus topic that is backed by focus time on that course
-  xp += studyXP(courses, timers, todayStr);
-  // +10 per venture move finished
-  xp += ventureItems.filter(i => i.kind === 'move' && i.done).length * XP_PER_MOVE;
-  xp += journal.length * 15;
-  xp += focusXP(timers, todayStr);
-  return Math.max(0, xp);
+  row('Habits', 'habits', hp, hm, '+10 a day done, −10 a day missed');
+  net('Tasks', 'todos', calcTodoXP(todos, todayStr), '+5 a task done; −10 each one missed, −10 for a day under five');
+  net('Focus', 'focus', focusXP(timers, todayStr), '+1 per 10 minutes, a bonus for finishing, the same taken for failing');
+  net('Goals', 'goals', goals.reduce((t, g) => t + goalXP(g, todayStr), 0), '+100 reached, −50 missed or given up');
+
+  // Tide Log: +15 an entry, −5 for a day with none
+  row('Tide Log', 'dashboard', journal.length * 15, strictDays.filter(d => !journal.some(j => j.date === d)).length * 5, '+15 an entry, −5 for a day with none');
+
+  // Studies: +5 a topic backed by study time, −20 for a full week under two hours of study
+  let sm = 0;
+  if (courses.length) {
+    let m = mondayOf(XP_STRICT_FROM); if (m < XP_STRICT_FROM) m = addDays(m, 7);
+    for (; addDays(m, 6) < todayStr; m = addDays(m, 7)) {
+      const end = addDays(m, 6);
+      const sec = timers.filter(t => t.category === 'Study').reduce((t, x) => t + (x.sessions || []).reduce((u, ss) => { const d = localDateStr(new Date(ss.end)); return u + (d >= m && d <= end ? Number(ss.sec) || 0 : 0); }, 0), 0);
+      if (sec < 7200) sm += 20;
+    }
+  }
+  row('Studies', 'studies', studyXP(courses, timers, todayStr), sm, '+5 a topic backed by study time, −20 for a week under two hours of study');
+
+  // Pipeline: +200 a client won, −5 for each follow-up left past its date
+  const liveLead = l => !['Flaked', 'Lost'].includes(l.status);
+  row('Pipeline', 'pipeline', leads.filter(l => l.status === 'Paid').length * 200,
+    leads.filter(l => liveLead(l) && l.nextAction && l.nextActionDate && l.nextActionDate >= XP_STRICT_FROM && l.nextActionDate < todayStr).length * 5,
+    '+200 a client won, −5 for each next action left past its date');
+
+  // Clients: +20 a retainer collected, −20 for each month a retainer is unpaid
+  row('Clients', 'clients', finances.filter(f => f.paymentStage === 'Monthly Retainer' && (f.date || '') >= XP_STRICT_FROM).length * 20,
+    leads.filter(l => l.status === 'Paid').reduce((t, l) => t + retainerArrears(l, finances, todayStr).filter(mk => mk >= fromMonth).length, 0) * 20,
+    '+20 a retainer collected, −20 for each month one is unpaid');
+
+  // Finance: +2 a transaction logged (5 a day at most); −15 for a month that ends in the red, −10 for each budget broken
+  const perDay = {};
+  finances.forEach(f => { if ((f.date || '') >= XP_STRICT_FROM) perDay[f.date] = (perDay[f.date] || 0) + 1; });
+  let fm = 0;
+  for (let mk = fromMonth; mk < thisMonth; mk = addMonths(mk, 1)) {
+    const month = finances.filter(f => (f.date || '').startsWith(mk));
+    if (month.reduce((t, f) => t + signedAmount(f), 0) < 0) fm += 15;
+    budgets.forEach(bd => { const lim = Number(bd.limit) || 0; if (lim && month.filter(f => !isIncome(f) && f.category === bd.category).reduce((t, f) => t + amountOf(f), 0) > lim) fm += 10; });
+  }
+  const mine = debts.filter(d => d.direction === 'owe');
+  const cleared = mine.filter(d => debtLeft(d) === 0 && (d.settledAt || '') >= XP_STRICT_FROM).length;
+  fm += mine.filter(d => debtLeft(d) > 0 && d.dueDate && d.dueDate >= XP_STRICT_FROM && d.dueDate < todayStr).length * 10;
+  row('Finance', 'finance', Object.values(perDay).reduce((t, n) => t + Math.min(5, n) * 2, 0) + cleared * 10, fm, '+2 a transaction logged (5 a day), +10 a debt cleared; −15 a month in the red, −10 a broken budget, −10 a debt past its date');
+
+  // Ventures: +10 a daily check and a move finished; −10 a check missed or a move past its date, −5 a move finished late
+  const firstVenture = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
+  const checkKey = c => `${c.date}|${c.ventureId || firstVenture || ''}`;
+  const checked = new Set(ventureChecks.map(checkKey));
+  let vm = 0;
+  ventures.filter(v => v.stage !== 'Paused').forEach(v => {
+    const made = v.createdAt?.toDate ? localDateStr(v.createdAt.toDate()) : XP_STRICT_FROM;
+    strictDays.forEach(d => { if (d >= made && !checked.has(`${d}|${v.id}`)) vm += 10; });
+  });
+  const moves = ventureItems.filter(i => i.kind === 'move');
+  moves.forEach(m => {
+    if (!m.due || m.due < XP_STRICT_FROM) return;
+    if (!m.done && m.due < todayStr) vm += 10;
+    else if (m.done && m.doneAt && m.doneAt > m.due) vm += 5;
+  });
+  row('Ventures', 'ventures', checked.size * 10 + moves.filter(m => m.done).length * XP_PER_MOVE, vm, '+10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late');
+  return rows;
 }
+const calcXP = data => Math.max(0, xpLedger(data).reduce((t, r) => t + r.net, 0));
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
 // A goal is not always a number. Three shapes:
@@ -1310,6 +1374,7 @@ function App() {
   const [briefings, setBriefings] = useState([]);
   const [journal, setJournal]   = useState([]);
   const [budgets, setBudgets]   = useState([]);
+  const [debts, setDebts]       = useState([]);
   const [timers, setTimers]     = useState([]);
   const [ventureServices_, setVentureServices] = useState([]);
   const [ventureChecks, setVentureChecks] = useState([]);
@@ -1421,7 +1486,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],
+      ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],
     ];
 
     // Track which collections have fired at least once
@@ -1620,7 +1685,9 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xp = calcXP(habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems);
+  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts };
+  const ledger = xpLedger(xpData);
+  const xp = calcXP(xpData);
   const { level, progress, xpInLevel } = xpToLevel(xp);
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -1812,7 +1879,7 @@ function App() {
 
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={tab}>{currentNav.jp}</div>
-        {tab==='dashboard' && <Dashboard leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
+        {tab==='dashboard' && <Dashboard debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
         })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
@@ -1824,7 +1891,7 @@ function App() {
           onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
-        {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
+        {tab==='finance'  && <Finance debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
@@ -2056,7 +2123,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -2071,7 +2138,9 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   const last3 = [1, 2, 3].map(i => addMonths(thisMonth, -i));
   const avgInc = last3.reduce((s, m) => s + sumMonth(m, 'income'), 0) / 3;
   const avgExp = last3.reduce((s, m) => s + sumMonth(m, 'expense'), 0) / 3;
-  const cash = finances.reduce((s, f) => s + signedAmount(f), 0);
+  const cash = finances.reduce((s, f) => s + signedAmount(f), 0) + debtCash(debts);
+  const youOwe = debts.filter(d => d.direction === 'owe').reduce((t, d) => t + debtLeft(d), 0);
+  const owedDebts = debts.filter(d => d.direction === 'owed').reduce((t, d) => t + debtLeft(d), 0);
   const clients = leads.filter(l => l.status === 'Paid' && l.clientStatus !== 'Churned');
   const arrears = clients.map(l => ({ l, months: retainerArrears(l, finances, todayStr) })).filter(x => x.months.length);
   const owedRet = arrears.reduce((s, x) => s + x.months.length * (Number(x.l.retainerAmount) || 0), 0);
@@ -2202,7 +2271,8 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
         <dl className="fin-kv">
           <div><dt>Safe to spend</dt><dd className={safeLeft > 0 ? 'good' : 'bad'}>{safeLeft > 0 ? `${J(safePerDay)}/day` : 'Nothing'}</dd></div>
           <div><dt>Cash on hand</dt><dd className={cash < 0 ? 'bad' : ''}>{J(cash)}</dd></div>
-          <div><dt>Owed to you</dt><dd className={owedRet ? 'bad' : ''}>{J(owedRet)}</dd></div>
+          <div><dt>Owed to you</dt><dd className={owedRet ? 'bad' : ''}>{J(owedRet + owedDebts)}</dd></div>
+          {youOwe > 0 && <div><dt>You owe</dt><dd className="bad">{J(youOwe)}</dd></div>}
         </dl>
         {safeLeft <= 0 && <div className="goal-hint" style={{ marginTop:'0.5rem' }}>{expectedInc === 0 ? 'No income coming in. Every dollar spent is borrowed from the future.' : `Spending past ${J(allowed)} this month means missing your minimum.`}</div>}
         {safeLeft > 0 && <div className="goal-hint" style={{ marginTop:'0.5rem' }}>{J(safeLeft)} left this month before you dip under your minimum.</div>}
@@ -2296,7 +2366,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
               const pct = timerElapsed(t, Date.now()) / timerTargetSec(t);
               const d = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
               return (
-                <div key={t.id} className="dash-focus" style={{ '--liq': FOCUS_HEX[t.category] || '#ff9a4a' }}>
+                <div key={t.id} className="dash-focus" style={{ '--liq': liquidOf(t).glow }}>
                   <div className="row-between"><span>{t.runningSince ? '● ' : ''}{t.title}</span><span className={d <= 1 ? 'bad' : ''}>{d === 0 ? 'today' : d === 1 ? 'tomorrow' : `${d}d`}</span></div>
                   <div className="dash-focus-bar"><div style={{ width: `${pct * 100}%` }}/></div>
                 </div>
@@ -2305,6 +2375,25 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
         </div>
 
         <TideLog journal={journal} todayStr={todayStr} onSave={onSaveJournal}/>
+      </div>
+
+      <div className="card xp-ledger">
+        <div className="row-between" style={{ marginBottom: '0.5rem' }}>
+          <span className="card-label" style={{ margin: 0 }}>XP ledger · every section pays in and takes out</span>
+          <span className="fin-delta">{ledger.reduce((t, r) => t + r.plus, 0).toLocaleString()} earned · {ledger.reduce((t, r) => t + r.minus, 0).toLocaleString()} lost</span>
+        </div>
+        <div className="xp-ledger-grid">
+          {ledger.map(r => (
+            <button key={r.k} className="xp-ledger-row" onClick={() => onNav(r.tab)} title={r.how}>
+              <em>{r.k}</em>
+              <span className="good">+{r.plus.toLocaleString()}</span>
+              <span className={r.minus ? 'bad' : 'dim'}>−{r.minus.toLocaleString()}</span>
+              <b className={r.net < 0 ? 'bad' : ''}>{r.net < 0 ? '−' : ''}{Math.abs(r.net).toLocaleString()}</b>
+              <i>{r.how}</i>
+            </button>
+          ))}
+        </div>
+        <div className="goal-hint" style={{ marginTop: '0.6rem' }}>Nothing is taken for today. A missed day, week or month costs you once it is over. The newer rules count from {fmtDate(XP_STRICT_FROM, { month: 'long', day: 'numeric' })}.</div>
       </div>
 
       <div className="dash-row wide">
@@ -3232,31 +3321,83 @@ function focusByDay(timers) {
 }
 
 // The bottle: liquid level = progress, a moving surface while it runs
-function Bottle({ id, pct, color, running, done, failed }) {
-  const body = 'M49 8h22v14c0 5 3 8 8 12 11 9 19 19 19 35v104c0 13-9 21-22 21H44c-13 0-22-8-22-21V69c0-16 8-26 19-35 5-4 8-7 8-12z';
-  const top = 34, bottom = 194;
-  const y = bottom - (bottom - top) * Math.max(0, Math.min(1, pct));
+// ── Hourglass brews ──────────────────────────────────────────────────────────
+// Each timer runs on its own brew: a blend of colours with its own behaviour.
+// `stops` colour the liquid from the surface down; `glow` tints the card;
+// `deco` is what moves inside it.
+const LIQUIDS = [
+  { id: 'septic',   name: 'Septic',     jp: '毒', stops: ['#e6ff5a', '#7dff2a', '#1f8f12', '#0a3a0c'], glow: '#8dff3a', froth: '#eaffb0', deco: 'bubbling', speed: 1.4 },
+  { id: 'magma',    name: 'Magma',      jp: '炎', stops: ['#fff07a', '#ff9a1f', '#e2320f', '#5a0d05'], glow: '#ff7a1f', froth: '#ffe08a', deco: 'crust',    speed: 4.2 },
+  { id: 'blood',    name: 'Blood Moon', jp: '血', stops: ['#ff6a6a', '#d1122a', '#7a0718', '#22030a'], glow: '#e0263a', froth: '#ffb3b3', deco: 'drips',    speed: 5.5 },
+  { id: 'gold',     name: 'Liquid Gold',jp: '金', stops: ['#fff6c9', '#f2c84b', '#b9862a', '#5c3d0f'], glow: '#f2c84b', froth: '#fffbe0', deco: 'sparks',   speed: 3.4 },
+  { id: 'abyss',    name: 'Abyss',      jp: '海', stops: ['#a8f4ff', '#22b8e8', '#12509e', '#07173f'], glow: '#35c4f0', froth: '#e2fbff', deco: 'currents', speed: 2.8 },
+  { id: 'hex',      name: 'Hex',        jp: '呪', stops: ['#ff9bf2', '#c13bff', '#5b1aa8', '#1c0736'], glow: '#c44dff', froth: '#f6c8ff', deco: 'smoke',    speed: 3.2 },
+  { id: 'sakura',   name: 'Sakura',     jp: '桜', stops: ['#fff0f4', '#ffb3c9', '#e8698f', '#7a2a48'], glow: '#ff9dbb', froth: '#ffffff', deco: 'petals',   speed: 3.8 },
+  { id: 'mercury',  name: 'Mercury',    jp: '銀', stops: ['#ffffff', '#c9d2da', '#7c8792', '#2c333b'], glow: '#c9d2da', froth: '#ffffff', deco: 'bands',    speed: 6.5 },
+];
+const LIQUID = Object.fromEntries(LIQUIDS.map(l => [l.id, l]));
+// A timer keeps the brew you picked; otherwise its id picks one, so no two look alike by default
+const liquidOf = t => LIQUID[t?.liquid] || LIQUIDS[[...String(t?.id || t?.title || '')].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) >>> 0, 7) % LIQUIDS.length];
+
+// Hourglass that drains as the hours are put in: the top bulb is the time
+// still owed, the bottom bulb the time done.
+function Hourglass({ id, pct, liquid, running, done, failed }) {
+  const L = liquid, k = Math.max(0, Math.min(1, pct));
+  const TOP = 'M24 24 H96 C96 62 66 82 63.5 100 H56.5 C54 82 24 62 24 24 Z';
+  const BOT = 'M56.5 100 H63.5 C66 118 96 138 96 176 H24 C24 138 54 118 56.5 100 Z';
+  // surface heights: the top empties from 24 down to the neck, the bottom fills from 176 up
+  const yTop = 100 - 74 * Math.pow(1 - k, 0.75), yBot = 176 - 74 * Math.pow(k, 0.75);
+  const wave = bend => `M0 4 Q15 ${4 - bend} 30 4 T60 4 T90 4 T120 4 T150 4 T180 4 T210 4 T240 4 V240 H0Z`;
+  const g = `hg-${id}`;
+  const deco = (surface, floor) => {
+    const h = Math.max(0, floor - surface);
+    if (h < 6) return null;
+    const at = (i, n) => 30 + ((i * 53) % 60);
+    switch (L.deco) {
+      case 'bubbling': return (<>
+        {Array.from({ length: 9 }, (_, i) => <circle key={i} className="hg-bubble" cx={at(i)} cy={floor - 3} r={1.4 + (i % 3) * 0.9} style={{ animationDelay: `${(i * 0.37) % 2.6}s`, animationDuration: `${1.5 + (i % 4) * 0.35}s`, '--rise': `${-h}px` }} fill={L.froth}/>)}
+        {[36, 58, 80].map((x, i) => <circle key={`p${i}`} className="hg-pop" cx={x} cy={surface + 1} r="3.2" stroke={L.froth} style={{ animationDelay: `${i * 0.8}s` }}/>)}
+      </>);
+      case 'crust': return [0, 1, 2, 3].map(i => <ellipse key={i} className="hg-drift" cx={34 + i * 17} cy={surface + 6 + ((i * 11) % Math.max(4, h - 8))} rx={7 - (i % 2) * 2} ry="2.6" fill="#3a0a04" opacity="0.6" style={{ animationDelay: `${-i * 1.3}s` }}/>);
+      case 'drips': return [34, 52, 71, 88].map((x, i) => <rect key={i} className="hg-drip" x={x} y={surface + 2} width="2.4" height={8 + (i % 3) * 5} rx="1.2" fill={L.stops[3]} opacity="0.55" style={{ animationDelay: `${-i * 1.1}s` }}/>);
+      case 'sparks': return Array.from({ length: 7 }, (_, i) => <path key={i} className="hg-spark" d="M0 -3 L0.8 -0.8 L3 0 L0.8 0.8 L0 3 L-0.8 0.8 L-3 0 L-0.8 -0.8Z" transform={`translate(${at(i)} ${surface + 5 + ((i * 17) % Math.max(4, h - 6))})`} fill="#fffbe0" style={{ animationDelay: `${(i * 0.43) % 2.4}s` }}/>);
+      case 'currents': return [0, 1, 2].map(i => <path key={i} className="hg-current" d={`M10 ${surface + 8 + i * 11} q14 -5 28 0 t28 0 t28 0 t28 0`} stroke={L.froth} opacity={0.35 - i * 0.08} style={{ animationDelay: `${-i * 1.7}s` }}/>).filter((_, i) => surface + 8 + i * 11 < floor - 2);
+      case 'smoke': return [38, 60, 82].map((x, i) => <path key={i} className="hg-smoke" d={`M${x} ${floor - 2} c-8 -8 8 -14 0 -22 s8 -14 0 -22`} stroke={L.froth} style={{ animationDelay: `${-i * 1.2}s`, '--rise': `${-Math.min(40, h)}px` }}/>);
+      case 'petals': return Array.from({ length: 6 }, (_, i) => <ellipse key={i} className="hg-petal" cx={at(i)} cy={surface + 3 + ((i * 13) % Math.max(4, h - 6))} rx="3.4" ry="1.7" fill="#fff6f9" opacity="0.85" style={{ animationDelay: `${-i * 0.9}s` }}/>);
+      case 'bands': return [0, 1, 2].map(i => <rect key={i} className="hg-band" x="0" y={surface + 5 + i * 12} width="120" height="2.5" fill="#ffffff" opacity={0.4 - i * 0.1} style={{ animationDelay: `${-i * 2}s` }}/>).filter((_, i) => surface + 5 + i * 12 < floor - 2);
+      default: return null;
+    }
+  };
+  const body = (surface, floor) => (
+    <g className="hg-liquid" style={{ transform: `translateY(${surface - 4}px)` }}>
+      <path className="hg-wave back" d={wave(5)} fill={L.stops[1]} opacity="0.45"/>
+      <path className="hg-wave front" d={wave(-5)} fill={`url(#${g}-fill)`}/>
+    </g>
+  );
   return (
-    <svg className={`bottle ${running ? 'running' : ''} ${done ? 'done' : ''} ${failed ? 'failed' : ''}`} viewBox="0 0 120 200" style={{ '--liq': color }}>
+    <svg className={`hourglass brew-${L.id} ${running ? 'running' : ''} ${done ? 'done' : ''} ${failed ? 'failed' : ''}`} viewBox="0 0 120 200" style={{ '--liq': L.glow, '--speed': `${L.speed}s` }}>
       <defs>
-        <clipPath id={`bottle-${id}`}><path d={body}/></clipPath>
-        <linearGradient id={`liq-${id}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={color} stopOpacity="0.95"/>
-          <stop offset="1" stopColor={color} stopOpacity="0.45"/>
+        <clipPath id={`${g}-top`}><path d={TOP}/></clipPath>
+        <clipPath id={`${g}-bot`}><path d={BOT}/></clipPath>
+        <linearGradient id={`${g}-fill`} x1="0" y1="0" x2="0" y2="110" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={L.stops[0]}/><stop offset="0.18" stopColor={L.stops[1]}/><stop offset="0.6" stopColor={L.stops[2]}/><stop offset="1" stopColor={L.stops[3]}/>
         </linearGradient>
+        <radialGradient id={`${g}-glass`} cx="0.35" cy="0.3" r="0.9"><stop offset="0" stopColor="rgba(255,255,255,0.10)"/><stop offset="1" stopColor="rgba(10,4,5,0.72)"/></radialGradient>
       </defs>
-      <g clipPath={`url(#bottle-${id})`}>
-        <rect x="0" y="0" width="120" height="200" fill="rgba(12,5,6,0.75)"/>
-        <g className="liquid" style={{ transform: `translateY(${y}px)` }}>
-          <path className="wave wave-back" d="M0 5 Q15 0 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={color} opacity="0.35"/>
-          <path className="wave wave-front" d="M0 5 Q15 10 30 5 T60 5 T90 5 T120 5 T150 5 T180 5 T210 5 T240 5 V220 H0Z" fill={`url(#liq-${id})`}/>
-          {running && [18, 44, 70, 92].map((x, i) => <circle key={i} className="bubble" cx={x + 6} cy="160" r={1.4 + (i % 2)} style={{ animationDelay: `${i * 0.7}s` }}/>)}
-        </g>
-        {[0.25, 0.5, 0.75].map(m => <line key={m} x1="24" x2="34" y1={bottom - (bottom - top) * m} y2={bottom - (bottom - top) * m} className="tick"/>)}
+      {/* frame */}
+      <line className="hg-post" x1="19" y1="20" x2="19" y2="180"/><line className="hg-post" x1="101" y1="20" x2="101" y2="180"/>
+      <rect className="hg-cap" x="12" y="10" width="96" height="13" rx="2"/><rect className="hg-cap" x="12" y="177" width="96" height="13" rx="2"/>
+      <rect className="hg-cap-line" x="12" y="14" width="96" height="2"/><rect className="hg-cap-line" x="12" y="184" width="96" height="2"/>
+      {/* glass */}
+      <path d={TOP} fill={`url(#${g}-glass)`}/><path d={BOT} fill={`url(#${g}-glass)`}/>
+      <g clipPath={`url(#${g}-top)`}>{body(yTop, 100)}{deco(yTop, 100)}</g>
+      <g clipPath={`url(#${g}-bot)`}>
+        {running && k < 1 && <rect className="hg-stream" x="58.6" y="100" width="2.8" height={Math.max(0, yBot - 98)} fill={L.stops[1]}/>}
+        {body(yBot, 176)}{deco(yBot, 176)}
       </g>
-      <path d={body} className="glass"/>
-      <path d="M33 72c0-10 4-17 10-23" className="shine"/>
-      <rect x="46" y="2" width="28" height="9" rx="3" className="cap"/>
+      <path d={TOP} className="hg-glass"/><path d={BOT} className="hg-glass"/>
+      <path d="M31 34c2 16 9 27 17 36" className="hg-shine"/><path d="M34 166c1 -12 6 -22 13 -30" className="hg-shine"/>
+      <text className="hg-mark" x="60" y="19.5" textAnchor="middle" lang="ja">{L.jp}</text>
     </svg>
   );
 }
@@ -3269,7 +3410,7 @@ function FocusPill({ timers, onOpen }) {
   if (!running) return null;
   const el = timerElapsed(running, Date.now()), target = timerTargetSec(running);
   return (
-    <button className="focus-pill" onClick={onOpen} style={{ '--liq': FOCUS_HEX[running.category] || '#ff9a4a' }} title={`${running.title}: ${fmtHM(target - el)} to go`}>
+    <button className="focus-pill" onClick={onOpen} style={{ '--liq': liquidOf(running).glow }} title={`${running.title}: ${fmtHM(target - el)} to go`}>
       <span className="focus-pill-fill" style={{ width: `${(el / target) * 100}%` }}/>
       <span className="focus-pill-dot"/>{fmtDur(el)}<span className="focus-pill-title">{running.title}</span>
     </button>
@@ -3349,7 +3490,7 @@ function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onSt
         <div className="focus-grid">
           {shown.map(({ t, st }) => {
             const target = timerTargetSec(t), el = timerElapsed(t, now), left = target - el;
-            const color = FOCUS_HEX[t.category] || '#ff9a4a';
+            const brew = liquidOf(t), color = brew.glow;
             const daysLeft = Math.round((parseLocal(t.deadline) - parseLocal(todayStr)) / 864e5);
             const perDay = st === 'active' ? left / Math.max(1, daysLeft + 1) : 0;
             const runningNow = !!t.runningSince && st === 'active';
@@ -3358,12 +3499,12 @@ function Focus({ timers, courses = [], todayStr, onAdd, onUpdate, onDelete, onSt
                 <div className="focus-head">
                   <div>
                     <div className="focus-title">{t.title}</div>
-                    <div className="focus-meta">{t.category}{t.courseId && courses.find(c => c.id === t.courseId) ? ` · ${courses.find(c => c.id === t.courseId).code}` : ''} · {fmtHM(target)} target</div>
+                    <div className="focus-meta"><b className="brew-tag" style={{ '--liq': brew.glow }}>{brew.name}</b>{t.category}{t.courseId && courses.find(c => c.id === t.courseId) ? ` · ${courses.find(c => c.id === t.courseId).code}` : ''} · {fmtHM(target)} target</div>
                   </div>
                   <button className="icon-btn" title="Edit" onClick={() => setForm(t)}><Icons.edit size={12}/></button>
                 </div>
                 <div className="focus-body">
-                  <Bottle id={t.id} pct={el / target} color={color} running={runningNow} done={st === 'done'} failed={st === 'failed'}/>
+                  <Hourglass id={t.id} pct={el / target} liquid={brew} running={runningNow} done={st === 'done'} failed={st === 'failed'}/>
                   <div className="focus-stats">
                     <div className="focus-time">{fmtDur(el)}</div>
                     <div className="focus-of">of {fmtDur(target)} · {Math.floor((el / target) * 100)}%</div>
@@ -3415,6 +3556,7 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
   const [mins, setMins] = useState(data.targetMinutes ? data.targetMinutes % 60 : 0);
   const [deadline, setDeadline] = useState(data.deadline || addDays(todayStr, 7));
   const [courseId, setCourseId] = useState(data.courseId || '');
+  const [liquid, setLiquid] = useState(data.liquid || liquidOf(data.id ? data : { id: String(Date.now()) }).id);
   const targetMinutes = (Number(hours) || 0) * 60 + (Number(mins) || 0);
   const days = Math.round((parseLocal(deadline) - parseLocal(todayStr)) / 864e5) + 1;
   const done = editing ? (Number(data.elapsedSec) || 0) / 60 : 0;
@@ -3449,6 +3591,14 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
           </select>
         </Field>
       )}
+      <Field label="Brew in the hourglass">
+        <div className="brew-pick">
+          {LIQUIDS.map(l => (
+            <button key={l.id} type="button" className={liquid === l.id ? 'on' : ''} onClick={() => setLiquid(l.id)} title={l.name}
+              style={{ '--a': l.stops[0], '--b': l.stops[1], '--c': l.stops[2], '--d': l.stops[3] }}><i/><span>{l.name}</span></button>
+          ))}
+        </div>
+      </Field>
       <Field label={editing ? `Target (can only go up from ${fmtHM(minTarget * 60)})` : 'Minimum time'}>
         <div className="focus-target">
           <input className="input" type="number" min="0" value={hours} onChange={e => setHours(e.target.value)} disabled={locked}/><span>h</span>
@@ -3474,7 +3624,7 @@ function TimerModal({ data, todayStr, courses = [], onSave, onGiveUp, onDelete, 
       )}
       {problems.length > 0 && !locked && <div className="form-warn">{problems[0]}</div>}
 
-      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, courseId: category === 'Study' ? courseId : '', ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
+      {!locked && <ModalFoot onClose={onClose} onSave={() => problems.length === 0 && onSave({ title: title.trim(), category, targetMinutes, deadline, liquid, courseId: category === 'Study' ? courseId : '', ...(editing ? {} : { elapsedSec: 0, runningSince: null, status: 'active', sessions: [] }) })}/>}
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (created by mistake)</button>}
       {!onDelete && onGiveUp && <button className="btn-ghost danger-text" style={{ justifyContent:'center' }} onClick={onGiveUp}>Give up (counts as missed)</button>}
       {locked && <ModalFoot onClose={onClose}/>}
@@ -4302,7 +4452,7 @@ function SectionGhost({ src }) {
   return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
 }
 
-function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
+function Finance({debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
   // Work, personal, or both. `finances` below is always the chosen slice, so
   // every total, chart and list on the page agrees with the switch.
   const [scope, setScopeRaw] = useState(() => { try { return localStorage.getItem('jc_fin_scope') || 'all'; } catch { return 'all'; } });
@@ -4320,6 +4470,9 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
   const [search, setSearch] = useState('');
   const dayPager = usePager(7, `${month}|${txType}|${search}|${scope}`);
   const [horizon, setHorizon] = useState(6);
+  const [debtForm, setDebtForm] = useState(null);
+  const [payDebt, setPayDebt] = useState(null);
+  const owePager = usePager(6), owedPager = usePager(6), settledPager = usePager(5);
   const [investAdvice, setInvestAdvice]   = useState(null);
   const [investLoading, setInvestLoading] = useState(false);
 
@@ -4360,7 +4513,16 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
   const avgInc = last3.reduce((s, m) => s + m.inc, 0) / 3;
   const avgExp = last3.reduce((s, m) => s + m.exp, 0) / 3;
   const avgNet = avgInc - avgExp;
-  const cash = finances.reduce((s, f) => s + signedAmount(f), 0);
+  // Debts follow the same Work / Personal switch as everything else on the page
+  const debts = scope === 'all' ? allDebts : allDebts.filter(d => debtScope(d) === scope);
+  const byDue = (x, y) => (x.dueDate || '9999').localeCompare(y.dueDate || '9999');
+  const oweList = debts.filter(d => d.direction === 'owe' && debtLeft(d) > 0).sort(byDue);
+  const owedList = debts.filter(d => d.direction === 'owed' && debtLeft(d) > 0).sort(byDue);
+  const settledList = debts.filter(d => debtLeft(d) === 0).sort((x, y) => (y.settledAt || '').localeCompare(x.settledAt || ''));
+  const youOwe = oweList.reduce((t, d) => t + debtLeft(d), 0);
+  const owedDebts = owedList.reduce((t, d) => t + debtLeft(d), 0);
+  const lateOwe = oweList.filter(d => d.dueDate && d.dueDate < todayStr), lateOwed = owedList.filter(d => d.dueDate && d.dueDate < todayStr);
+  const cash = finances.reduce((s, f) => s + signedAmount(f), 0) + debtCash(debts);
   const runway = avgExp > 0 ? Math.max(0, cash) / avgExp : Infinity;
 
   // ── Clients: retainers and money owed ──────────────────────────────────────
@@ -4425,6 +4587,9 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
 
   // Present-tense problems only belong on the current month
   if (isCurrent && overdueRet.length) add('danger', `Unpaid retainers: ${overdueRet.map(r => `${r.l.businessName} (${r.months.length} month${r.months.length === 1 ? '' : 's'})`).join(', ')}. That's ${J(overdueRet.reduce((s, r) => s + r.amount, 0))}. Chase it today.`);
+  if (lateOwe.length) add('danger', `You owe ${J(lateOwe.reduce((t, d) => t + debtLeft(d), 0))} that is past its date: ${lateOwe.map(d => d.person).join(', ')}. Pay it or agree a new date.`);
+  else if (youOwe > 0 && cash < youOwe) add('warn', `You owe ${J(youOwe)} and have ${J(Math.max(0, cash))} on hand. You could not clear it today.`);
+  if (lateOwed.length) add('warn', `${lateOwed.map(d => d.person).join(', ')} ${lateOwed.length === 1 ? 'owes' : 'owe'} you ${J(lateOwed.reduce((t, d) => t + debtLeft(d), 0))} past the agreed date. Ask for it.`);
   if (isCurrent && setupOwed.length) add('warn', `Clients still owe ${J(setupOwed.reduce((s, x) => s + x.due, 0))} on project fees. Collect before you spend.`);
   if (isCurrent && sinceIncome !== null && sinceIncome > 30) add('danger', `No income in ${sinceIncome} days.`);
   if (isCurrent && avgExp > 0 && runway < 3) add('danger', `Cash covers ${runway.toFixed(1)} months of spending. You want 3 or more.`);
@@ -4502,6 +4667,29 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
   const txGroups = [];
   txs.forEach(f => { const g = txGroups[txGroups.length - 1]; if (g && g.date === f.date) g.items.push(f); else txGroups.push({ date: f.date, items: [f] }); });
 
+
+  const debtRow = d => {
+    const left = debtLeft(d), total = amountOf(d), n = d.dueDate ? Math.round((parseLocal(d.dueDate) - parseLocal(todayStr)) / 864e5) : null;
+    return (
+      <div key={d.id} className={`debt ${d.direction} ${left === 0 ? 'settled' : ''}`}>
+        <div className="row-between">
+          <span className="debt-who">{d.person}<i className={`fin-kind ${debtScope(d)}`}>{debtScope(d)}</i></span>
+          <b className="debt-left">{left === 0 ? 'Settled' : J(left)}</b>
+        </div>
+        <div className="debt-meta">{d.reason || (d.direction === 'owe' ? 'Money you owe' : 'Money owed to you')}{d.date ? ` · since ${fmtDate(d.date, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}{!d.cash ? ' · no cash changed hands' : ''}</div>
+        <div className="xp-track"><div className="xp-fill" style={{ width: `${total ? Math.min(100, (debtPaid(d) / total) * 100) : 0}%` }}/></div>
+        <div className="row-between debt-foot">
+          <span className="fin-delta">{J(debtPaid(d))} of {J(total)} paid{(d.payments || []).length ? ` · ${(d.payments || []).length} payment${(d.payments || []).length === 1 ? '' : 's'}` : ''}</span>
+          <span className="row-gap">
+            {left > 0 && n !== null && <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n < 0 ? `${-n}d late` : n === 0 ? 'due today' : `${n}d left`}</span>}
+            {left > 0 && <button className="btn-ghost tk-carry" onClick={() => setPayDebt(d)}>{d.direction === 'owe' ? 'I paid some' : 'They paid some'}</button>}
+            <button className="icon-btn" onClick={() => setDebtForm(d)}><Icons.edit size={12}/></button>
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   const deleteForm = async () => {
     if (await confirm({ message: `Delete "${form.description}" (${J(amountOf(form))})?`, label: 'Delete', danger: true })) { onDelete(form.id); setForm(null); }
   };
@@ -4537,7 +4725,7 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
           {SCOPES.map(([id, label]) => <button key={id} className={scope === id ? 'on' : ''} onClick={() => setScope(id)}>{label}</button>)}
         </div>
         <div className="seg">
-          {[['overview','Overview'],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
+          {[['overview','Overview'],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
             <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
           ))}
         </div>
@@ -4587,7 +4775,8 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
             <div><dt>Cash on hand</dt><dd className={cash < 0 ? 'bad' : ''}>{J(cash)}</dd></div>
             <div><dt>Runway</dt><dd className={runway < 3 ? 'bad' : ''}>{runway === Infinity ? 'No burn' : `${runway.toFixed(1)} mo`}</dd></div>
             <div><dt>Retainers (MRR)</dt><dd>{J(mrr)}/mo</dd></div>
-            <div><dt>Owed to you</dt><dd className={owed > 0 ? 'warn' : ''}>{J(owed)}</dd></div>
+            <div><dt>Owed to you</dt><dd className={owed + owedDebts > 0 ? 'warn' : ''}>{J(owed + owedDebts)}</dd></div>
+            <div><dt>You owe</dt><dd className={youOwe > 0 ? 'bad' : 'good'}>{youOwe > 0 ? J(youOwe) : 'Nothing'}</dd></div>
             <div><dt>3-month avg net</dt><dd className={avgNet < target ? 'bad' : 'good'}>{J(avgNet)}</dd></div>
           </dl>
         </div>
@@ -4597,6 +4786,22 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
           <div className="fin-tile"><span>Expenses</span><b className="bad">{J(cur.exp)}</b><Delta v={pctChange(cur.exp, prev.exp)} good="down"/></div>
           <div className="fin-tile"><span>Kept per J$1 earned</span><b>{cur.inc > 0 ? `${Math.round((net / cur.inc) * 100)}¢` : '—'}</b><span className="fin-delta">aim for 30¢+</span></div>
           <div className="fin-tile"><span>Transactions</span><b>{finances.filter(f => monthOf(f.date) === month).length}</b><span className="fin-delta">{sinceLog === null ? 'none yet' : sinceLog === 0 ? 'logged today' : `last ${sinceLog}d ago`}</span></div>
+        </div>
+
+        <div className="card fin-pos">
+          <div className="row-between" style={{ marginBottom: '0.7rem' }}>
+            <span className="card-label" style={{ margin: 0 }}>Where you really stand</span>
+            <button className="link-btn" onClick={() => setView('debts')}>Debts ›</button>
+          </div>
+          <div className="fin-pos-row">
+            <div><em>Cash on hand</em><b className={cash < 0 ? 'bad' : ''}>{J(cash)}</b></div>
+            <i>+</i>
+            <div><em>Owed to you</em><b className="good">{J(owed + owedDebts)}</b><u>{owedList.length + overdueRet.length + setupOwed.length} to collect</u></div>
+            <i>−</i>
+            <div><em>You owe</em><b className={youOwe ? 'bad' : ''}>{J(youOwe)}</b><u>{oweList.length} to pay</u></div>
+            <i>=</i>
+            <div className="sum"><em>If it all settled today</em><b className={cash + owed + owedDebts - youOwe < 0 ? 'bad' : ''}>{J(cash + owed + owedDebts - youOwe)}</b></div>
+          </div>
         </div>
 
         <div className="card fin-split">
@@ -4747,6 +4952,61 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
         </div>
       </>)}
 
+      {view === 'debts' && (() => {
+        const clientRows = [...overdueRet.map(r => ({ id: `r${r.l.id}`, who: r.l.businessName, what: r.months.length > 1 ? `${r.months.length} retainers unpaid` : 'Retainer unpaid', amt: r.amount })),
+          ...setupOwed.map(x => ({ id: `s${x.l.id}`, who: x.l.businessName, what: 'Balance on the project fee', amt: x.due }))];
+        const split = dir => ['work', 'personal'].map(k => allDebts.filter(d => d.direction === dir && debtScope(d) === k).reduce((t, d) => t + debtLeft(d), 0));
+        const [oweW, oweP] = split('owe'), [owedW, owedP] = split('owed');
+        const owePg = owePager(oweList.length), owedPg = owedPager(owedList.length), setPg = settledPager(settledList.length);
+        return (<>
+          <div className="grid-2">
+            <div className="fin-tile"><span>You owe</span><b className={youOwe ? 'bad' : 'good'}>{J(youOwe)}</b><span className="fin-delta">{oweList.length} open{lateOwe.length ? ` · ${lateOwe.length} past its date` : ''}</span></div>
+            <div className="fin-tile"><span>Owed to you</span><b className="good">{J(owedDebts + owed)}</b><span className="fin-delta">{owedList.length} {owedList.length === 1 ? 'person' : 'people'}{owed ? ` · ${J(owed)} from clients` : ''}</span></div>
+            <div className="fin-tile"><span>Net</span><b className={owedDebts + owed - youOwe < 0 ? 'bad' : ''}>{J(owedDebts + owed - youOwe)}</b><span className="fin-delta">{owedDebts + owed - youOwe < 0 ? 'you owe more than you are owed' : 'owed to you, less what you owe'}</span></div>
+            <div className="fin-tile"><span>Cash on hand</span><b className={cash < youOwe ? 'warn' : ''}>{J(cash)}</b><span className="fin-delta">{youOwe ? (cash >= youOwe ? 'enough to clear what you owe' : `${J(youOwe - Math.max(0, cash))} short of clearing it`) : 'nothing to clear'}</span></div>
+          </div>
+          <div className="card fin-debt-split">
+            <div className="card-label">Work and personal · everything still open</div>
+            <div className="fin-debt-grid">
+              <span/><em>Work</em><em>Personal</em><em>Together</em>
+              <span>You owe</span><b className={oweW ? 'bad' : ''}>{J(oweW)}</b><b className={oweP ? 'bad' : ''}>{J(oweP)}</b><b className={oweW + oweP ? 'bad' : ''}>{J(oweW + oweP)}</b>
+              <span>Owed to you</span><b>{J(owedW + (personalOnly ? 0 : owed))}</b><b>{J(owedP)}</b><b>{J(owedW + owedP + (personalOnly ? 0 : owed))}</b>
+            </div>
+          </div>
+          <div className="card span-6">
+            <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>You owe · {oweList.length}</span>
+              <button className="btn-ghost tk-carry" onClick={() => setDebtForm({ direction: 'owe' })}><Icons.plus size={12}/> I owe someone</button>
+            </div>
+            {oweList.length === 0 ? <div className="agenda-empty small">You owe nobody. Keep it that way.</div> : pageOf(oweList, owePg).map(debtRow)}
+            <Pager pg={owePg} noun="debts"/>
+          </div>
+          <div className="card span-6">
+            <div className="row-between" style={{ marginBottom: '0.6rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>Owed to you · {owedList.length + clientRows.length}</span>
+              <button className="btn-ghost tk-carry" onClick={() => setDebtForm({ direction: 'owed' })}><Icons.plus size={12}/> Someone owes me</button>
+            </div>
+            {owedList.length + clientRows.length === 0 && <div className="agenda-empty small">Nobody owes you anything.</div>}
+            {pageOf(owedList, owedPg).map(debtRow)}
+            <Pager pg={owedPg} noun="debts"/>
+            {clientRows.map(c => (
+              <div key={c.id} className="debt owed client">
+                <div className="row-between"><span className="debt-who">{c.who}<i className="fin-kind work">client</i></span><b className="debt-left">{J(c.amt)}</b></div>
+                <div className="debt-meta">{c.what} · tracked in Clients, shown here so nothing is missed</div>
+              </div>
+            ))}
+          </div>
+          {settledList.length > 0 && (
+            <div className="card">
+              <div className="card-label">Settled · {settledList.length}</div>
+              {pageOf(settledList, setPg).map(debtRow)}
+              <Pager pg={setPg} noun="settled"/>
+            </div>
+          )}
+          <div className="goal-hint">A debt is not income and paying it back is not spending, so none of this changes your profit. It does change your cash on hand when cash moved. Clearing a debt you owe is +10 XP; letting one run past its date is −10.</div>
+        </>);
+      })()}
+
       {view === 'budgets' && (
         <BudgetsView month={month} cats={cur.cats} last3={last3} budgets={budgets} avgInc={avgInc} target={target}
           level={level} onSetBudget={onSetBudget} isCurrent={isCurrent} today={today} dim={dim}/>
@@ -4807,6 +5067,22 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
           }}/>
       )}
 
+      {debtForm && (
+        <DebtModal data={debtForm} todayStr={todayStr} defaultScope={scope === 'work' ? 'work' : 'personal'}
+          onSave={d => { onSaveDebt(d); setDebtForm(null); }}
+          onDelete={debtForm.id ? async () => { if (await confirm({ message: `Delete the record of ${J(amountOf(debtForm))} with ${debtForm.person}? Use this only if it was entered by mistake.`, label: 'Delete', danger: true })) { onDeleteDebt(debtForm.id); setDebtForm(null); } } : null}
+          onClose={() => setDebtForm(null)}/>
+      )}
+      {payDebt && (
+        <DebtPayModal debt={payDebt} todayStr={todayStr}
+          onSave={pay => {
+            const payments = [...(payDebt.payments || []), { id: Date.now().toString(36), ...pay }];
+            const left = Math.max(0, amountOf(payDebt) - payments.reduce((t, x) => t + amountOf(x), 0));
+            onSaveDebt({ id: payDebt.id, payments, settledAt: left === 0 ? pay.date : '' });
+            setPayDebt(null);
+          }}
+          onClose={() => setPayDebt(null)}/>
+      )}
       {form !== null && (
         <FinanceModal data={form} leads={leads}
           onSave={d => { d.id ? onUpdate(d.id, d) : onAdd(d); setForm(null); }}
@@ -4815,6 +5091,64 @@ function Finance({finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDel
       )}
       {ConfirmUI}
     </div>
+  );
+}
+
+function DebtModal({ data, todayStr, defaultScope, onSave, onDelete, onClose }) {
+  const [f, setF] = useState({ direction: 'owe', person: '', amount: '', scope: defaultScope, reason: '', date: todayStr, dueDate: '', cash: true, ...data });
+  const s = (k, val) => setF(x => ({ ...x, [k]: val }));
+  const owe = f.direction === 'owe';
+  const paid = debtPaid(f), amt = Math.round(Math.abs(Number(f.amount)) * 100) / 100;
+  const valid = f.person.trim() && amt > 0 && amt >= paid;
+  const save = () => { if (!valid) return; const { createdAt, ...rest } = f; onSave({ ...rest, person: f.person.trim(), reason: (f.reason || '').trim(), amount: amt, payments: f.payments || [], settledAt: amt - paid <= 0 ? (f.settledAt || todayStr) : '' }); };
+  return (
+    <Modal title={data.id ? `Debt · ${data.person}` : owe ? 'Money You Owe' : 'Money Owed To You'} onClose={onClose}>
+      <div className="seg seg-full">
+        <button type="button" className={owe ? 'on' : ''} onClick={() => s('direction', 'owe')} disabled={!!data.id}>I owe them</button>
+        <button type="button" className={!owe ? 'on' : ''} onClick={() => s('direction', 'owed')} disabled={!!data.id}>They owe me</button>
+      </div>
+      <div className={`fin-amount ${owe ? 'expense' : 'income'}`}><span>J$</span><input type="number" min="0" autoFocus value={f.amount} onChange={e => s('amount', e.target.value)} placeholder="0"/></div>
+      {paid > 0 && <div className="fin-delta">{J(paid)} already paid back, so the amount can't go below that.</div>}
+      <div className="grid-2">
+        <Field label={owe ? 'Who do you owe?' : 'Who owes you?'}><input className="input" value={f.person} onChange={e => s('person', e.target.value)} placeholder="Name"/></Field>
+        <Field label="What for?"><input className="input" value={f.reason} onChange={e => s('reason', e.target.value)} placeholder={owe ? 'e.g. borrowed for rent' : 'e.g. lent for lunch, website balance'}/></Field>
+      </div>
+      <Field label="Whose money is this?">
+        <div className="seg seg-full">
+          <button type="button" className={f.scope === 'work' ? 'on' : ''} onClick={() => s('scope', 'work')}>Work</button>
+          <button type="button" className={f.scope !== 'work' ? 'on' : ''} onClick={() => s('scope', 'personal')}>Personal</button>
+        </div>
+      </Field>
+      <div className="grid-2">
+        <Field label="Started on"><input className="input" type="date" max={todayStr} value={f.date || ''} onChange={e => s('date', e.target.value)}/></Field>
+        <Field label={owe ? 'Pay back by (optional)' : 'They pay by (optional)'}><input className="input" type="date" value={f.dueDate || ''} onChange={e => s('dueDate', e.target.value)}/></Field>
+      </div>
+      <label className="svc-skip"><input type="checkbox" checked={!!f.cash} onChange={e => s('cash', e.target.checked)}/> {owe ? 'I got this as cash (it went into my money on hand)' : 'I handed this over as cash (it left my money on hand)'}</label>
+      <div className="focus-preview"><div>{owe ? 'Untick the box if it is a bill you have not paid, not a loan you received.' : 'Untick the box if it is work done or goods given that have not been paid for.'}</div></div>
+      <ModalFoot onClose={onClose} onSave={save}/>
+      {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Delete (entered by mistake)</button>}
+    </Modal>
+  );
+}
+
+function DebtPayModal({ debt, todayStr, onSave, onClose }) {
+  const left = debtLeft(debt), owe = debt.direction === 'owe';
+  const [amount, setAmount] = useState(String(left));
+  const [date, setDate] = useState(todayStr);
+  const [note, setNote] = useState('');
+  const n = Math.round(Math.abs(Number(amount)) * 100) / 100;
+  const valid = n > 0 && n <= left;
+  return (
+    <Modal title={owe ? `Paying ${debt.person}` : `${debt.person} paid you`} onClose={onClose}>
+      <div className={`fin-amount ${owe ? 'expense' : 'income'}`}><span>J$</span><input type="number" min="0" max={left} autoFocus value={amount} onChange={e => setAmount(e.target.value)}/></div>
+      <div className="fin-delta">{J(left)} still open{valid && n < left ? ` · ${J(left - n)} will be left` : valid ? ' · this settles it' : n > left ? ' · that is more than is owed' : ''}</div>
+      <div className="grid-2">
+        <Field label="Date"><input className="input" type="date" max={todayStr} value={date} onChange={e => setDate(e.target.value)}/></Field>
+        <Field label="Note (optional)"><input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. bank transfer"/></Field>
+      </div>
+      <div className="focus-preview"><div>{owe ? 'This comes off your cash on hand. It is not counted as spending.' : 'This goes onto your cash on hand. It is not counted as income.'}</div></div>
+      <ModalFoot onClose={onClose} onSave={() => valid && onSave({ amount: n, date, note: note.trim() })}/>
+    </Modal>
   );
 }
 
@@ -6782,7 +7116,7 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
               ? <span className="good vt-done"><b className="jp-stamp" lang="ja" aria-hidden="true">済</b>Checked today</span>
               : h.roundsLeft.length ? <button className="btn-ghost" onClick={() => setView('services')}>Check {h.roundsLeft.length} more service{h.roundsLeft.length === 1 ? '' : 's'} first ›</button>
               : <button className="btn-primary" onClick={markChecked} disabled={loading}>I've read today's check</button>}
-            <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP once a day for looking at your ventures.</span>
+            <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP for reading it; −10 XP for every day you don't.</span>
           </div>
         </div>
 

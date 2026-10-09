@@ -3046,3 +3046,86 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .svc-fx { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 12.5px; color: var(--ink-2); }
 .svc-fx .input { width: 84px; padding: 0.3rem 0.5rem; }
 .fin-legend .l-band { display: inline-block; width: 12px; height: 9px; margin: 0 5px 0 12px; vertical-align: middle; background: rgba(212,166,74,0.35); }
+
+
+/* ─── Home: the XP ledger ────────────────────────────────────────────── */
+.xp-ledger-grid { display: flex; flex-direction: column; }
+.xp-ledger-row { display: grid; grid-template-columns: 110px 70px 70px 70px minmax(0, 1fr); gap: 0.8rem; align-items: baseline; padding: 0.45rem 0.3rem; cursor: pointer; text-align: left; color: inherit; font: inherit; background: none; border: none; border-bottom: 1px dashed rgba(255,255,255,0.1); border-radius: 2px; }
+.xp-ledger-row:hover { background: rgba(255,255,255,0.04); }
+.xp-ledger-row:last-child { border-bottom: none; }
+.xp-ledger-row em { font-family: var(--title); font-style: normal; font-size: 19px; line-height: 1; color: var(--paper); }
+.xp-ledger-row span, .xp-ledger-row b { font-family: var(--display); font-weight: 700; font-size: 15px; text-align: right; }
+.xp-ledger-row b { color: var(--gold-200); }
+.xp-ledger-row i { font-style: normal; font-size: 12px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xp-ledger .good { color: var(--sea-400); } .xp-ledger .bad { color: var(--coral-400); } .xp-ledger .dim { color: var(--ink-4); }
+@media (max-width: 900px) { .xp-ledger-row { grid-template-columns: 1fr 56px 56px 56px; } .xp-ledger-row i { display: none; } }
+
+
+/* ─── Finance: debts and the real position ───────────────────────────── */
+.fin-pos-row { display: flex; align-items: stretch; gap: 0.9rem; flex-wrap: wrap; }
+.fin-pos-row > div { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 0.15rem; padding-left: 0.8rem; border-left: 3px solid var(--teal-400); }
+.fin-pos-row > div.sum { border-left-color: var(--paper); }
+.fin-pos-row em { font-family: var(--display); font-style: italic; font-size: 14px; color: var(--gold-300); }
+.fin-pos-row b { font-family: var(--title); font-weight: 400; font-size: 30px; line-height: 1.05; color: var(--paper); }
+.fin-pos-row u { text-decoration: none; font-size: 12px; color: var(--ink-3); }
+.fin-pos-row > i { align-self: center; font-style: normal; font-family: var(--title); font-size: 28px; color: var(--ink-3); }
+.fin-debt-grid { display: grid; grid-template-columns: minmax(110px, 1.1fr) repeat(3, minmax(0, 1fr)); gap: 0.5rem 1rem; align-items: baseline; }
+.fin-debt-grid em { font-family: var(--title); font-style: normal; font-size: 19px; color: var(--paper); text-align: right; }
+.fin-debt-grid span { font-family: var(--display); font-style: italic; font-size: 14px; color: var(--gold-300); }
+.fin-debt-grid b { font-family: var(--display); font-weight: 700; font-size: 19px; text-align: right; color: var(--ink-0); }
+.debt { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.8rem 0 0.8rem 0.8rem; border-left: 4px solid var(--coral-400); border-bottom: 1px dashed rgba(255,255,255,0.1); margin-bottom: 0.5rem; animation: lineIn 0.32s var(--ease-out) backwards; }
+.debt.owed { border-left-color: var(--sea-400); }
+.debt.settled { border-left-color: var(--ink-4); opacity: 0.7; }
+.debt-who { font-family: var(--title); font-size: 21px; line-height: 1; color: var(--paper); display: inline-flex; align-items: center; gap: 0.5rem; }
+.debt-who .fin-kind { font-family: var(--fs); }
+.debt-left { font-family: var(--display); font-weight: 700; font-size: 21px; color: var(--coral-400); }
+.debt.owed .debt-left { color: var(--sea-400); }
+.debt.settled .debt-left { color: var(--ink-3); font-size: 15px; }
+.debt-meta { font-size: 12.5px; color: var(--ink-2); }
+.debt-foot { flex-wrap: wrap; gap: 0.5rem; }
+.debt.client { border-left-style: dashed; }
+@media (max-width: 760px) { .fin-pos-row > i { display: none; } }
+
+
+/* ─── Focus: hourglasses, each with its own brew ─────────────────────── */
+.hourglass { width: 100%; height: auto; overflow: visible; }
+.hourglass .hg-post { stroke: #3a2418; stroke-width: 4; stroke-linecap: round; }
+.hourglass .hg-cap { fill: #2a180f; stroke: #000; stroke-width: 1.5; }
+.hourglass .hg-cap-line { fill: var(--liq); opacity: 0.85; }
+.hourglass .hg-glass { fill: none; stroke: rgba(255,236,210,0.55); stroke-width: 2; }
+.hourglass .hg-shine { fill: none; stroke: rgba(255,255,255,0.3); stroke-width: 2.6; stroke-linecap: round; }
+.hourglass .hg-mark { font-family: var(--jp); font-size: 9px; fill: #1c0c0a; font-weight: 700; }
+.hourglass .hg-liquid { transition: transform 1.2s cubic-bezier(0.22,1,0.36,1); }
+.hourglass .hg-wave { animation: bottleWave var(--speed, 4s) linear infinite; }
+.hourglass .hg-wave.back { animation-duration: calc(var(--speed, 4s) * 1.6); animation-direction: reverse; }
+.hourglass:not(.running) .hg-wave, .hourglass:not(.running) [class^="hg-"]:not(.hg-wave):not(.hg-liquid) { animation-play-state: paused; }
+.hourglass.running { filter: drop-shadow(0 0 10px color-mix(in srgb, var(--liq) 55%, transparent)); }
+.hourglass.done .hg-glass { stroke: color-mix(in srgb, var(--liq) 75%, white); stroke-width: 2.6; }
+.hourglass.failed { filter: grayscale(0.9) brightness(0.8); }
+.hourglass .hg-stream { animation: hgStream 0.5s linear infinite; }
+@keyframes hgStream { 0%, 100% { opacity: 0.95; transform: scaleX(1); transform-origin: 60px 0; } 50% { opacity: 0.7; transform: scaleX(0.6); } }
+.hourglass .hg-bubble { opacity: 0; animation: hgBubble 1.8s ease-in infinite; }
+@keyframes hgBubble { 0% { transform: translateY(0) scale(0.5); opacity: 0; } 15% { opacity: 0.95; } 85% { opacity: 0.9; } 100% { transform: translateY(var(--rise, -40px)) scale(1.25); opacity: 0; } }
+.hourglass .hg-pop { fill: none; stroke-width: 1.2; transform-box: fill-box; transform-origin: center; animation: hgPop 2.4s ease-out infinite; }
+@keyframes hgPop { 0%, 60% { transform: scale(0.2); opacity: 0; } 70% { opacity: 1; } 100% { transform: scale(1.6); opacity: 0; } }
+.hourglass .hg-drift { animation: hgDrift 7s ease-in-out infinite; }
+@keyframes hgDrift { 0%, 100% { transform: translateX(-9px); } 50% { transform: translateX(9px); } }
+.hourglass .hg-drip { transform-box: fill-box; transform-origin: top; animation: hgDrip 4.5s ease-in infinite; }
+@keyframes hgDrip { 0% { transform: scaleY(0.2); opacity: 0; } 30% { opacity: 0.6; } 100% { transform: scaleY(2.2) translateY(6px); opacity: 0; } }
+.hourglass .hg-spark { transform-box: fill-box; transform-origin: center; animation: hgSpark 2.4s ease-in-out infinite; }
+@keyframes hgSpark { 0%, 100% { opacity: 0; scale: 0.3; } 50% { opacity: 1; scale: 1.2; } }
+.hourglass .hg-current { fill: none; stroke-width: 1.4; stroke-linecap: round; animation: hgDrift 5s ease-in-out infinite; }
+.hourglass .hg-smoke { fill: none; stroke-width: 1.6; stroke-linecap: round; opacity: 0; animation: hgSmoke 3.6s ease-out infinite; }
+@keyframes hgSmoke { 0% { transform: translateY(0); opacity: 0; } 25% { opacity: 0.6; } 100% { transform: translateY(var(--rise, -30px)); opacity: 0; } }
+.hourglass .hg-petal { transform-box: fill-box; transform-origin: center; animation: hgPetal 5.4s ease-in-out infinite; }
+@keyframes hgPetal { 0%, 100% { transform: translate(-7px, 0) rotate(-25deg); } 50% { transform: translate(7px, 4px) rotate(40deg); } }
+.hourglass .hg-band { animation: hgBand 6s ease-in-out infinite; }
+@keyframes hgBand { 0%, 100% { transform: translateY(0); opacity: 0.15; } 50% { transform: translateY(5px); opacity: 0.45; } }
+/* the septic brew froths even at rest, a little */
+.brew-septic .hg-liquid .front { filter: saturate(1.25); }
+.brew-tag { display: inline-block; margin-right: 0.45rem; padding: 0 0.4rem; font-family: var(--display); font-style: italic; font-weight: 700; font-size: 11.5px; color: var(--liq); border: 1.5px solid var(--liq); border-radius: 2px; }
+.brew-pick { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.45rem; }
+.brew-pick button { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; padding: 0.45rem 0.3rem; cursor: pointer; font: inherit; font-size: 11.5px; color: var(--ink-2); background: rgba(var(--b1),0.7); border: 1.5px solid var(--line-2); border-radius: 3px; transition: translate 0.1s, border-color 0.15s; }
+.brew-pick button:hover { translate: 0 -1px; border-color: var(--gold-400); }
+.brew-pick button.on { border-color: var(--paper); color: var(--paper); --sh: 3px 3px 0 var(--ink-line); }
+.brew-pick i { display: block; width: 100%; height: 22px; border-radius: 2px; border: 1px solid #000; background: linear-gradient(180deg, var(--a), var(--b) 22%, var(--c) 62%, var(--d)); }
