@@ -2933,3 +2933,81 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 
 @media (max-width: 899px) { .live-clock { display: none; } }
 @media (max-width: 759px) { .petals { left: 0; } .ticker-row button { font-size: 12.5px; padding: 0.38rem 0.8rem; } }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   SCROLL, SUN AND SOUND — a few things only this console has
+═══════════════════════════════════════════════════════════════════ */
+/* Home: a sun that crosses the page with the clock; a crescent moon at night */
+.home-hero { position: relative; }
+.home-hero > :not(.sky):not(.kakejiku) { position: relative; z-index: 1; }
+.sky { position: absolute; inset: -1.2rem 0 -0.6rem 0; z-index: 0; pointer-events: none; overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent); mask-image: linear-gradient(to bottom, #000 70%, transparent); }
+.sky i { position: absolute; width: 170px; height: 170px; margin: -85px 0 0 -85px; border-radius: 50%; transition: left 60s linear, top 60s linear; animation: stampIn 0.7s var(--snap) 0.2s backwards; }
+.sky .sun { background: var(--seal); opacity: 0.82; }
+.sky .moon { background: transparent; --sh: inset -26px 10px 0 0 rgba(243,230,207,0.8); opacity: 0.9; rotate: -18deg; }
+.home-greet { text-shadow: 0 2px 0 rgba(0,0,0,0.55) !important; }
+
+/* Home: a hanging scroll with the day's proverb */
+.kakejiku { display: none; }
+@media (min-width: 1280px) {
+  .home-hero { min-height: 400px; }
+  .home-hero .home-verdict, .home-hero .home-stats, .home-hero .home-level { margin-right: 170px; }
+  .kakejiku { display: flex; flex-direction: column; align-items: center; position: absolute; right: 10px; top: 104px; width: 118px; margin: 0; z-index: 2; transform-origin: 50% -14px; rotate: 1.2deg; }
+  .kakejiku::before { content: ''; position: absolute; top: -15px; left: 50%; width: 46px; height: 17px; margin-left: -23px; border: 1.5px solid var(--gold-500); border-bottom: none; border-radius: 50% 50% 0 0 / 100% 100% 0 0; }
+  .live-on .kakejiku { animation: scrollSway 7s ease-in-out infinite; }
+}
+@keyframes scrollSway { 0%, 100% { rotate: 1.2deg; } 50% { rotate: -1.2deg; } }
+.kk-rod { width: 134px; height: 9px; background: linear-gradient(#5a3a26, #2a180f); border-radius: 4px; flex: none; }
+.kk-rod.low { height: 11px; }
+.kk-paper { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px 0 12px; background: var(--paper); border-left: 9px solid var(--seal); border-right: 9px solid var(--seal); background-image: linear-gradient(rgba(0,0,0,0.05), transparent 18%, transparent 85%, rgba(0,0,0,0.08)); }
+.kk-paper span { writing-mode: vertical-rl; text-orientation: upright; max-height: 178px; font-size: 24px; line-height: 1.25; color: #1c0c0a; letter-spacing: 0.06em !important; }
+.kk-paper b { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; font-family: var(--display); font-style: italic; font-weight: 900; font-size: 13px; color: var(--paper); background: var(--seal); border-radius: 2px; rotate: -6deg; }
+.kakejiku figcaption { margin-top: 0.55rem; width: 168px; text-align: center; font-family: var(--hand); font-size: 17px; line-height: 1.15; color: var(--gold-200); }
+
+/* Ranks */
+.nav-rank, .home-rank { display: inline-flex; align-items: baseline; gap: 0.4rem; font-family: var(--display); font-style: italic; font-weight: 600; font-size: 13px; color: var(--gold-300); white-space: nowrap; }
+.nav-rank b, .home-rank b { font-family: var(--jp); font-style: normal; font-weight: 400; font-size: 15px; color: var(--seal); }
+.nav-rank { margin: 2px 0 6px; }
+.nav-min .nav-rank { display: none; }
+
+/* XP lands as a manga sound effect on a burst of paper */
+.xp-pops { top: calc(var(--nh) + 2.4rem); right: 3.2rem; }
+.xp-pop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; width: 148px; height: 118px; right: 0; top: 0;
+  background: var(--paper); color: #1c0c0a;
+  clip-path: polygon(50% 0, 58% 18%, 74% 5%, 73% 24%, 93% 17%, 84% 34%, 100% 40%, 85% 50%, 99% 64%, 82% 66%, 88% 86%, 70% 77%, 66% 97%, 54% 81%, 44% 100%, 39% 80%, 22% 92%, 25% 73%, 5% 78%, 16% 60%, 0 50%, 15% 42%, 3% 25%, 22% 27%, 20% 7%, 37% 19%);
+  rotate: var(--tilt, -6deg); animation: sfxPop 1.9s var(--snap) forwards;
+}
+.xp-pop i { font-family: var(--jp); font-style: normal; font-size: 21px; line-height: 1; color: var(--seal); }
+.xp-pop b { font-family: var(--title); font-weight: 400; font-size: 23px; line-height: 1.05; }
+.xp-pop.down { background: #1c0c0a; color: var(--paper); }
+.xp-pop.down i { color: var(--coral-400); }
+@keyframes sfxPop { 0% { scale: 0.2; opacity: 0; } 12% { scale: 1.2; opacity: 1; } 20% { scale: 0.96; } 26%, 78% { scale: 1; opacity: 1; translate: 0 0; } 100% { scale: 0.9; opacity: 0; translate: 0 -26px; } }
+
+/* Changing section: one cut across the page */
+.slash { position: fixed; inset: 0; left: var(--sw, 0px); z-index: 300; pointer-events: none; overflow: hidden; }
+.slash::before, .slash::after { content: ''; position: absolute; left: -15%; top: 46%; width: 130%; rotate: -17deg; animation: slashCut 0.42s cubic-bezier(0.7, 0, 0.2, 1) forwards; }
+.slash::before { height: 3px; background: linear-gradient(90deg, transparent, var(--paper) 25%, #fff 50%, var(--paper) 75%, transparent); }
+.slash::after { height: 26px; margin-top: -12px; background: linear-gradient(90deg, transparent, rgba(var(--p3),0.35) 30%, rgba(var(--p3),0.5) 50%, rgba(var(--p3),0.35) 70%, transparent); animation-duration: 0.5s; }
+@keyframes slashCut { 0% { clip-path: inset(0 100% 0 0); opacity: 1; } 55% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 100%); opacity: 0; } }
+
+/* Wave pattern (seigaiha) closing every page */
+.main::after {
+  content: ''; display: block; height: 44px; margin-top: 2.2rem; opacity: 0.5;
+  background:
+    radial-gradient(circle at 50% 100%, transparent 27%, rgba(var(--p3),0.55) 28% 33%, transparent 34% 44%, rgba(var(--p3),0.55) 45% 50%, transparent 51% 61%, rgba(var(--p3),0.55) 62% 67%, transparent 68%) 0 0 / 44px 22px,
+    radial-gradient(circle at 50% 100%, transparent 27%, rgba(var(--p3),0.55) 28% 33%, transparent 34% 44%, rgba(var(--p3),0.55) 45% 50%, transparent 51% 61%, rgba(var(--p3),0.55) 62% 67%, transparent 68%) 22px 11px / 44px 22px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent); mask-image: linear-gradient(90deg, transparent, #000 15%, #000 85%, transparent);
+}
+.live-on .main::after { animation: waveRoll 9s linear infinite; }
+@keyframes waveRoll { to { background-position: 44px 0, 66px 11px; } }
+/* scroll hangs from the top-right of the hero; the text keeps clear of it */
+@media (min-width: 1280px) {
+  .home-hero { min-height: 420px; }
+  .home-hero .home-jp, .home-hero .home-greet, .home-hero .home-date { margin-right: 180px; }
+  .kakejiku { top: 34px; right: 30px; }
+}
+.kakejiku figcaption { width: 154px; }
+.xp-pop.up, .xp-pop.up b { color: #1c0c0a; }
+.xp-pop.down b { color: var(--paper); }
+.home-check.done .home-check-title { display: block; background: none; text-decoration: line-through; animation: none; }

@@ -1049,6 +1049,63 @@ function applyTheme(id) {
   return theme;
 }
 
+// ─── RANKS, PROVERBS, SKY ─────────────────────────────────────────────────────
+// A rank for every stretch of levels, a hanging scroll with a proverb for the
+// day, and a sun that crosses the Home page with the clock (a moon at night).
+const RANKS = [
+  { from: 1,  jp: '見習い', en: 'Apprentice' },
+  { from: 2,  jp: '下忍',   en: 'Genin' },
+  { from: 4,  jp: '中忍',   en: 'Chūnin' },
+  { from: 7,  jp: '上忍',   en: 'Jōnin' },
+  { from: 10, jp: '暗部',   en: 'Anbu' },
+  { from: 15, jp: '影',     en: 'Kage' },
+];
+const rankOf = level => {
+  const i = RANKS.reduce((at, r, k) => (level >= r.from ? k : at), 0);
+  return { ...RANKS[i], next: RANKS[i + 1] || null };
+};
+const PROVERBS = [
+  ['七転び八起き', 'Fall seven times, stand up eight.'],
+  ['継続は力なり', 'Keeping at it is power.'],
+  ['千里の道も一歩から', 'A journey of a thousand miles starts with one step.'],
+  ['塵も積もれば山となる', 'Even dust, piled up, becomes a mountain.'],
+  ['石の上にも三年', 'Three years on a cold stone will warm it.'],
+  ['急がば回れ', 'When in a hurry, take the long way round.'],
+  ['雨垂れ石を穿つ', 'Dripping water wears through stone.'],
+  ['初心忘るべからず', "Never forget the beginner's mind."],
+  ['為せば成る', 'If you do it, it gets done.'],
+  ['猿も木から落ちる', 'Even monkeys fall from trees.'],
+  ['案ずるより産むが易し', 'Doing it is easier than worrying about it.'],
+  ['明日は明日の風が吹く', "Tomorrow's wind will blow tomorrow."],
+  ['一期一会', 'One chance, one meeting.'],
+  ['失敗は成功のもと', 'Failure is the root of success.'],
+];
+function HangingScroll({ todayStr }) {
+  const [jp, en] = PROVERBS[Math.floor(parseLocal(todayStr).getTime() / 864e5) % PROVERBS.length];
+  return (
+    <figure className="kakejiku" title={en}>
+      <div className="kk-rod"/>
+      <div className="kk-paper"><span lang="ja">{jp}</span><b>J</b></div>
+      <div className="kk-rod low"/>
+      <figcaption>{en}</figcaption>
+    </figure>
+  );
+}
+function HomeSky() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 60000); return () => clearInterval(iv); }, []);
+  const h = now.getHours() + now.getMinutes() / 60;
+  const day = h >= 6 && h < 18;
+  const t = day ? (h - 6) / 12 : ((h + 6) % 24) / 12;         // 0 at rise, 1 at set
+  return (
+    <div className="sky" aria-hidden="true">
+      <i className={day ? 'sun' : 'moon'} style={{ left: `${6 + t * 88}%`, top: `${78 - Math.sin(Math.PI * t) * 62}%` }}/>
+    </div>
+  );
+}
+// Manga sound effects for XP: ドドン a heavy hit, ドン a hit, キラッ a glint, ガーン dismay
+const sfxFor = d => (d < 0 ? 'ガーン' : d >= 15 ? 'ドドン！' : d >= 10 ? 'ドン！' : 'キラッ');
+
 // ─── LIVE LAYER ───────────────────────────────────────────────────────────────
 // Things that keep moving while the console is open: a clock that shows how
 // much of the day is left, a ticker of what matters right now, petals in the
@@ -1714,6 +1771,7 @@ function App() {
         </div>
       </header>
       {live && <Petals/>}
+      {live && <i className="slash" key={tab} aria-hidden="true"/>}
       <Ticker onNav={setTab} items={(() => {
         const out = [], days = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
         ventures.filter(v => v.launchDate && v.stage !== 'Paused').forEach(v => {
@@ -1811,6 +1869,7 @@ function App() {
         )}
         <div className="nav-foot" title={`Level ${level} · ${xpInLevel} / 500 XP`}>
           <div className="nav-foot-lv">{navMin ? `L${level}` : `Level ${level}`}</div>
+          <div className="nav-rank"><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</div>
           <div className="xp-track"><div className="xp-fill" style={{width:`${progress*100}%`}}/></div>
           <div className="nav-foot-xp">{xpInLevel} / 500 XP</div>
         </div>
@@ -1854,7 +1913,7 @@ function App() {
         {toasts.map(t => <div key={t.id} className={`toast ${t.tone}`}>{t.text}</div>)}
       </div>
       <div className="xp-pops" aria-hidden="true">
-        {xpPops.map(p => <span key={p.id} className={`xp-pop ${p.d > 0 ? 'up' : 'down'}`}>{p.d > 0 ? '+' : ''}{p.d} XP</span>)}
+        {xpPops.map((p, i) => <span key={p.id} className={`xp-pop ${p.d > 0 ? 'up' : 'down'}`} style={{ '--tilt': `${[-7, 5, -3, 8][i % 4]}deg` }}><i lang="ja">{sfxFor(p.d)}</i><b>{p.d > 0 ? '+' : ''}{p.d} XP</b></span>)}
       </div>
 
       {/* JAXON Floating Chat */}
@@ -2104,6 +2163,8 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
   return (
     <div className="section home">
       <div className="card home-hero span-8">
+        <HomeSky/>
+        <HangingScroll todayStr={todayStr}/>
         <div className="home-jp" lang="ja" aria-hidden="true">{hour < 12 ? 'おはよう' : hour < 18 ? 'こんにちは' : 'こんばんは'}</div>
         <div className="home-greet">{greet}, Jadan.</div>
         <div className="home-date">{fmtDate(todayStr, { weekday:'long', month:'long', day:'numeric' })} <span lang="ja" aria-hidden="true">· {'日月火水木金土'[parseLocal(todayStr).getDay()]}曜日</span></div>
@@ -2116,6 +2177,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
         </div>
         <div className="home-level">
           <span className="home-lv">Level {level}</span>
+          <span className="home-rank" title={rankOf(level).next ? `${rankOf(level).next.en} at Level ${rankOf(level).next.from}` : 'Top rank'}><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</span>
           <div className="xp-track home-xp"><div className="xp-fill" style={{ width: `${progress * 100}%` }}/></div>
           <span className="home-xpn">{xpInLevel} / 500 XP</span>
         </div>
