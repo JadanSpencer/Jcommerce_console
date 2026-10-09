@@ -3026,3 +3026,23 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .svc-round .jp-stamp { width: 24px; height: 24px; font-size: 14px; }
 .svc-skip { display: flex; align-items: center; gap: 0.5rem; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .venture .warn { color: var(--gold-300); }
+
+
+/* ─── Services: expected cost ($ on each card, total range, usage chart) ─ */
+.vt-svc { position: relative; overflow: visible; }
+.svc-cost { position: static; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; cursor: help; color: var(--gold-200); border: 1.5px solid var(--gold-500); border-radius: 50%; outline: none; }
+.svc-cost b { font-family: var(--display); font-weight: 700; font-size: 14px; line-height: 1; }
+.svc-cost:hover, .svc-cost:focus { background: var(--gold-500); color: #1c0c0a; }
+.svc-cost-tip { display: none; position: absolute; z-index: 20; left: 10px; right: 10px; top: 52px; padding: 0.8rem 0.9rem; font-size: 12.5px; line-height: 1.5; font-weight: 400; color: var(--ink-1); text-align: left; cursor: default; background: rgb(var(--b1)); border: 1.5px solid var(--gold-500); border-radius: 3px; --sh: 5px 5px 0 var(--ink-line); }
+.svc-cost:hover .svc-cost-tip, .svc-cost:focus .svc-cost-tip { display: block; animation: inkIn 0.16s var(--snap) backwards; }
+.svc-cost-tip strong { display: block; font-family: var(--title); font-weight: 400; font-size: 19px; line-height: 1.1; color: var(--paper); }
+.svc-cost-tip em { display: block; font-style: normal; color: var(--gold-300); margin: 0.2rem 0 0.45rem; }
+.svc-cost-tip i { display: block; font-style: normal; font-size: 11.5px; color: var(--ink-3); margin-top: 0.45rem; }
+.svc-minmax { display: grid; gap: 0.8rem; }
+.svc-minmax div { display: flex; flex-direction: column; padding-left: 0.8rem; border-left: 3px solid var(--teal-400); }
+.svc-minmax span { font-family: var(--display); font-style: italic; font-size: 14px; color: var(--gold-300); }
+.svc-minmax b { font-family: var(--title); font-weight: 400; font-size: 34px; line-height: 1.05; color: var(--paper); }
+.svc-minmax em { font-style: normal; font-size: 12px; color: var(--ink-3); }
+.svc-fx { display: inline-flex; align-items: center; gap: 0.5rem; font-size: 12.5px; color: var(--ink-2); }
+.svc-fx .input { width: 84px; padding: 0.3rem 0.5rem; }
+.fin-legend .l-band { display: inline-block; width: 12px; height: 9px; margin: 0 5px 0 12px; vertical-align: middle; background: rgba(212,166,74,0.35); }

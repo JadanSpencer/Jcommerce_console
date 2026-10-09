@@ -6169,8 +6169,60 @@ function ventureServices(o) {
     add('Dashboards', 'functions-logs', 'Server logs', 'Errors from payments, pushes and order handling', 'No cost of its own.', `https://console.cloud.google.com/logs/query?project=${p}`);
     add('Dashboards', 'gcp-keys', 'Google Cloud API keys', 'Where the Maps keys are restricted and rotated', 'No cost of its own.', `https://console.cloud.google.com/apis/credentials?project=${p}`);
   }
+  list.forEach(x => { x.est = estimateFor(x.id, u); });
   return list;
 }
+// ── What each service is likely to cost ──────────────────────────────────────
+// US$ a month: a fixed part (min to max) plus a part per order. These are
+// estimates from published list prices and from what the code is set up to
+// use, not from your bills. `sure` marks where the price itself was confirmed
+// on the provider's page (Oct 2026); the rest is from memory or an assumption
+// that is spelled out in `basis`.
+const USAGE_LEVELS = [0, 50, 100, 250, 500, 1000, 2500, 5000];
+function estimateFor(id, u = {}) {
+  const E = (min, max, unitMin, unitMax, basis, sure = false) => ({ min, max, unitMin, unitMax, basis, sure });
+  switch (id) {
+    case 'firebase': {
+      const w = u.warm || 0;
+      return E(w * 6.8, 2 + w * 9.75, 0.0005, 0.004,
+        `${w ? `${w} function${w === 1 ? '' : 's'} kept warm (1 vCPU, 512 MB) cost about US$7 to US$10 each a month while idle. ` : ''}Database reads, writes and function time add a fraction of a cent per order once past Google's free quotas.`);
+    }
+    case 'gcp-bill': {   // the one bill the Google services arrive on: shown, never added twice
+      const parts = ['firebase', ...(u.maps ? ['maps'] : []), ...(u.appCheck ? ['recaptcha'] : [])].map(k => estimateFor(k, u));
+      return { ...E(parts.reduce((t, x) => t + x.min, 0), parts.reduce((t, x) => t + x.max, 0), parts.reduce((t, x) => t + x.unitMin, 0), parts.reduce((t, x) => t + x.unitMax, 0),
+        'This is Firebase, Maps and reCAPTCHA added together, because Google sends them as one bill. It is not counted again in the totals.'), skipTotal: true };
+    }
+    case 'functions-logs': case 'gcp-keys': return { ...E(0, 0, 0, 0, 'A page you look at. It costs nothing.'), skipTotal: true };
+    case 'maps': return E(0, 5, 0, 0, 'The map inside the Android and iPhone apps is free, and delivery distances are worked out without calling Google. Only a web map with a key would cost anything.');
+    case 'recaptcha': return E(0, 8, 0, 0, 'Free for the first 10,000 checks a month; US$8 a month up to 100,000.');
+    case 'google-signin': return E(0, 0, 0, 0, 'Free.');
+    case 'vercel': return E(0, 20, 0, 0, 'US$0 on Hobby; US$20 a month per member on Pro, which a business site is meant to use.');
+    case 'fygaro': return E(0, 0, 0, 0.47, 'Nothing when a student pays with coins bought in cash. Up to about 5% of the order when paid by card: US$0.47 on a J$1,500 order. The real rate is in your Fygaro agreement.');
+    case 'ntfy': return E(0, 5, 0, 0, 'Free with a shared daily limit; US$5 a month for a supporter account that lifts it.');
+    case 'photoroom': return E(0, 20, 0, 0, 'First 10 photos free, then US$0.02 a photo, sold in packs: US$20 for 1,000.', true);
+    case 'push': return E(0, 0, 0, 0, 'Free.');
+    case 'github': return E(0, 4, 0, 0, 'Free for this use; US$4 a month only if you move to GitHub Pro.');
+    case 'github-ci': return E(0, 3, 0, 0, '2,000 free minutes a month on a private repository; a few dollars only if the checks run very often.');
+    case 'expo': return E(0, 19, 0, 0, 'Free plan: 15 Android and 15 iPhone builds a month. Starter is US$19 a month plus usage.', true);
+    case 'play': return E(0, 0, 0, 0, 'US$25 once to register. Nothing monthly.');
+    case 'render': return E(7, 25, 0, 0, 'US$7 a month for the smallest always-on instance, US$25 for the next size. A free instance costs nothing but sleeps, which would miss messages.');
+    case 'redis': return E(0, 10, 0, 0, 'Free at 25 MB with no saved data across restarts; US$10 a month for the 256 MB instance that keeps carts safe.');
+    case 'meta': return E(0, 5, 0, 0, "Replies inside a customer's 24-hour window are free, and that is all the bot sends. Only messages the business starts are charged.");
+    case 'anthropic': return E(0, 0, 0.03, 0.4, 'At the rates in your code (Haiku 4.5 US$1 in / US$5 out, Sonnet 5 US$2 in / US$10 out per million tokens), a short order is a few cents and a long pasted list up to about US$0.40. The bot logs the real cost per order once the 28 Sep work is live.');
+    case 'ecwid': return E(0, 0, 0, 0, "The store's owner pays for Ecwid. Nothing lands on you.");
+    case 'groq': return E(0, 0, 0, 0, 'Not called by the code, so nothing.');
+    default: return null;
+  }
+}
+const estAt = (e, n) => (e ? { min: e.min + e.unitMin * n, max: e.max + e.unitMax * n } : { min: 0, max: 0 });
+const US = n => `US$${n >= 100 ? Math.round(n).toLocaleString() : n >= 10 ? n.toFixed(0) : n > 0 && n < 0.01 ? String(Number(n.toFixed(4))) : n.toFixed(n % 1 ? 2 : 0)}`;
+const estText = (e, fx) => {
+  if (!e) return '';
+  const fixed = e.min === e.max ? (e.max ? `${US(e.max)} a month` : '') : `${US(e.min)} to ${US(e.max)} a month`;
+  const unit = e.unitMax ? `${e.unitMin ? `${US(e.unitMin)} to ` : 'up to '}${US(e.unitMax)} an order` : '';
+  return [fixed, unit].filter(Boolean).join(' + ') || 'US$0';
+};
+
 // The services you look at every day: everything except plain dashboards and
 // anything you chose to leave out
 const roundServices = (o, services) => [...ventureServices(o), ...services.filter(x => x.custom).map(x => ({ group: 'Added by you', id: x.serviceId, name: x.name }))]
@@ -6492,6 +6544,9 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
   const [view, setView] = useState(v.launchDate ? 'launch' : 'overview');
   const [openDay, setOpenDay] = useState(null);
   const [billForm, setBillForm] = useState(null);
+  const [usage, setUsage] = useState(100);
+  const [fx, setFxRaw] = useState(() => { try { return Number(localStorage.getItem('jc_fx')) || 160; } catch { return 160; } });
+  const setFx = n => { const val = Math.max(1, Number(n) || 160); setFxRaw(val); try { localStorage.setItem('jc_fx', String(val)); } catch {} };
   const [gcpBilling, setGcpBilling] = useState(null);
   const billPager = usePager(6);
   const fbProject = d?.o?.ok ? d.o.firebaseProject : '';
@@ -6901,7 +6956,13 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
 
       {view === 'services' && (() => {
         const month = todayStr.slice(0, 7);
-        const all = [...autoServices, ...customServices.map(x => ({ group: 'Added by you', id: x.serviceId, name: x.name, does: x.does, url: x.url, bills: '', cat: 'Tools', custom: true }))];
+        const all = [...autoServices, ...customServices.map(x => { const m = svcMonthly(x) / fx; return { group: 'Added by you', id: x.serviceId, name: x.name, does: x.does, url: x.url, bills: '', cat: 'Tools', custom: true,
+          est: { min: m, max: m, unitMin: 0, unitMax: 0, basis: m ? 'From the cost you entered for it.' : 'No cost entered yet. Edit the service to add one.', sure: !!m } }; })];
+        const costed = all.filter(x => x.est && !x.est.skipTotal);
+        const totalAt = n => costed.reduce((t, x) => { const e = estAt(x.est, n); return { min: t.min + e.min, max: t.max + e.max }; }, { min: 0, max: 0 });
+        const now_ = totalAt(usage);
+        const curve = USAGE_LEVELS.map(n => { const t = totalAt(n); return { n, label: n >= 1000 ? `${n / 1000}k` : String(n), min: Math.round(t.min * fx), band: Math.round((t.max - t.min) * fx), max: Math.round(t.max * fx), usdMin: t.min, usdMax: t.max }; });
+        const drivers = costed.map(x => ({ x, e: estAt(x.est, usage) })).filter(r => r.e.max > 0).sort((a, b) => b.e.max - a.e.max);
         const paid = (id, from) => bills.filter(f => f.serviceId === id && (!from || (f.date || '') >= from)).reduce((t, f) => t + amountOf(f), 0);
         const paidMonth = bills.filter(f => (f.date || '').startsWith(month)).reduce((t, f) => t + amountOf(f), 0);
         const paidEver = bills.reduce((t, f) => t + amountOf(f), 0);
@@ -6914,6 +6975,42 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
             <div className="fin-tile"><span>Planned</span><b className={monthly ? 'warn' : ''}>{J(monthly)}</b><span className="fin-delta">a month, from what you entered</span></div>
             <div className="fin-tile"><span>Actually paid this month</span><b className={paidMonth > monthly && monthly ? 'bad' : ''}>{J(paidMonth)}</b><span className="fin-delta">from bills you logged</span></div>
             <div className="fin-tile"><span>Paid so far</span><b>{J(paidEver)}</b><span className="fin-delta">{bills.length} bill{bills.length === 1 ? '' : 's'} in Finance</span></div>
+          </div>
+          <div className="card svc-est span-8">
+            <div className="row-between" style={{ marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.6rem' }}>
+              <span className="card-label" style={{ margin: 0 }}>Expected monthly bill · by orders a month</span>
+              <span className="fin-legend"><i className="l-band"/>Lowest to highest<i className="l-net"/>Lowest<i className="l-exp"/>Highest</span>
+            </div>
+            <ResponsiveContainer width="100%" height={CHART_H(150)}>
+              <ComposedChart data={curve} margin={{ left: 0, right: 10, top: 8, bottom: 0 }} onClick={e => e?.activePayload?.[0] && setUsage(e.activePayload[0].payload.n)}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(212,166,74,0.08)"/>
+                <XAxis dataKey="label" tick={axis}/>
+                <YAxis tick={axis} width={46} tickFormatter={Jk}/>
+                <Tooltip contentStyle={tt} labelFormatter={l => `${l} orders a month`}
+                  formatter={(val, name, item) => name === 'Lowest' ? [`${J(item.payload.min)} (${US(item.payload.usdMin)})`, 'Lowest'] : name === 'Highest' ? [`${J(item.payload.max)} (${US(item.payload.usdMax)})`, 'Highest'] : [null, null]}/>
+                <Area type="monotone" dataKey="min" stackId="r" stroke="none" fill="transparent" name="base" legendType="none" isAnimationActive={false}/>
+                <Area type="monotone" dataKey="band" stackId="r" stroke="none" fill="rgba(212,166,74,0.22)" name="band" legendType="none"/>
+                <Line type="monotone" dataKey="min" name="Lowest" stroke="#f2ddab" strokeWidth={2} dot={{ r: 2.5 }}/>
+                <Line type="monotone" dataKey="max" name="Highest" stroke="#ff6a45" strokeWidth={2} dot={{ r: 2.5 }}/>
+                <ReferenceLine x={curve.find(c => c.n === usage)?.label} stroke="#d3a855" strokeDasharray="4 4"/>
+              </ComposedChart>
+            </ResponsiveContainer>
+            <div className="row-between" style={{ marginTop: '0.6rem', flexWrap: 'wrap', gap: '0.6rem' }}>
+              <div className="seg">{USAGE_LEVELS.map(n => <button key={n} className={usage === n ? 'on' : ''} onClick={() => setUsage(n)}>{n >= 1000 ? `${n / 1000}k` : n}</button>)}</div>
+              <label className="svc-fx">J$ for US$1 <input className="input" type="number" min="1" value={fx} onChange={e => setFx(e.target.value)}/></label>
+            </div>
+            <div className="goal-hint" style={{ marginTop: '0.6rem' }}>Estimates from published prices and how the code is set up, not from your bills. Fixed costs are there even at zero orders; the rest grows with orders. Hover the $ on a service to see where its figure comes from.</div>
+          </div>
+          <div className="card svc-est-sum span-4">
+            <div className="card-label">At {usage.toLocaleString()} order{usage === 1 ? '' : 's'} a month</div>
+            <div className="svc-minmax">
+              <div><span>Lowest you should expect</span><b>{J(now_.min * fx)}</b><em>{US(now_.min)} a month</em></div>
+              <div><span>Highest you should expect</span><b className="bad">{J(now_.max * fx)}</b><em>{US(now_.max)} a month</em></div>
+            </div>
+            <div className="card-label" style={{ margin: '0.9rem 0 0.4rem' }}>What drives the high end</div>
+            {drivers.length === 0 ? <div className="agenda-empty small">Nothing here is expected to cost you.</div> : drivers.slice(0, 6).map(r => (
+              <div key={r.x.id} className="row-between cl-line"><span>{r.x.name}</span><span className="mono">{r.e.min === r.e.max ? J(r.e.max * fx) : `${J(r.e.min * fx)} to ${J(r.e.max * fx)}`}</span></div>
+            ))}
           </div>
           <div className="card svc-rounds">
             <div className="row-between">
@@ -6943,7 +7040,20 @@ function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills =
                     <div key={x.id} className="card vt-svc">
                       <div className="focus-head">
                         <div><div className="focus-title">{x.name}</div><div className="focus-meta">{x.does}</div></div>
-                        <button className="icon-btn" title="Cost, renewal, notes" onClick={() => setSvcForm({ ...meta, serviceId: x.id, name: x.name, does: x.does, url: x.url, custom: !!x.custom })}><Icons.edit size={12}/></button>
+                        <span className="row-gap">
+                          {x.est && (
+                            <span className="svc-cost" tabIndex={0} aria-label={`Expected cost: ${estText(x.est, fx)}`}>
+                              <b>$</b>
+                              <span className="svc-cost-tip">
+                                <strong>{estText(x.est, fx)}</strong>
+                                <em>About {J(estAt(x.est, usage).min * fx)} to {J(estAt(x.est, usage).max * fx)} a month at {usage.toLocaleString()} orders</em>
+                                {x.est.basis}
+                                <i>{x.est.sure ? 'Price confirmed on the provider page, Oct 2026.' : 'From list prices and stated assumptions; check your own plan.'}</i>
+                              </span>
+                            </span>
+                          )}
+                          <button className="icon-btn" title="Cost, renewal, notes" onClick={() => setSvcForm({ ...meta, serviceId: x.id, name: x.name, does: x.does, url: x.url, custom: !!x.custom })}><Icons.edit size={12}/></button>
+                        </span>
                       </div>
                       {x.bills && <div className="svc-bills">{x.bills}</div>}
                       <dl className="fin-kv">
