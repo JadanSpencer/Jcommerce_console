@@ -1049,6 +1049,64 @@ function applyTheme(id) {
   return theme;
 }
 
+// ─── LIVE LAYER ───────────────────────────────────────────────────────────────
+// Things that keep moving while the console is open: a clock that shows how
+// much of the day is left, a ticker of what matters right now, petals in the
+// section's colour, and a countdown that ticks by the second. One switch in
+// the header turns all of it off.
+const two = n => String(n).padStart(2, '0');
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv); }, []);
+  const h = now.getHours();
+  const gone = ((h * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400) * 100;
+  const part = h < 5 ? '夜' : h < 11 ? '朝' : h < 17 ? '昼' : h < 20 ? '夕' : '夜';   // night, morning, day, evening, night
+  const left = 24 * 60 - (h * 60 + now.getMinutes());
+  return (
+    <div className="live-clock" title={`${Math.floor(left / 60)}h ${left % 60}m of today left`}>
+      <b lang="ja" aria-hidden="true">{part}</b>
+      <span>{two(h)}:{two(now.getMinutes())}<i>:{two(now.getSeconds())}</i></span>
+      <u><em style={{ width: `${gone}%` }}/></u>
+    </div>
+  );
+}
+
+// Days, hours, minutes and seconds until the start of a date
+function LiveCountdown({ to }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const iv = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(iv); }, []);
+  const ms = parseLocal(to).getTime() - now;
+  if (ms <= 0) return null;
+  const sec = Math.floor(ms / 1000), d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+  return <div className="lp-live"><b>{d}</b>d <b>{two(h)}</b>h <b>{two(m)}</b>m <b key={sec % 60} className="tick">{two(sec % 60)}</b>s</div>;
+}
+
+// A strip of what matters right now. Click an item to go there; hover to pause.
+function Ticker({ items, onNav }) {
+  if (!items.length) return null;
+  // Repeat a short list so the tape is always longer than the window
+  const tape = items.length < 12 ? Array.from({ length: Math.ceil(12 / items.length) }, () => items).flat() : items;
+  const row = hidden => (
+    <div className="ticker-row" aria-hidden={hidden || undefined}>
+      {tape.map((it, i) => <button key={i} className={it.lv || ''} tabIndex={hidden ? -1 : 0} onClick={() => onNav(it.tab)}><i>◆</i>{it.t}</button>)}
+    </div>
+  );
+  return <div className="ticker" style={{ '--dur': `${Math.max(40, tape.length * 7)}s` }}><div className="ticker-track">{row(false)}{row(true)}</div></div>;
+}
+
+function Petals() {
+  const petals = useMemo(() => Array.from({ length: 14 }, () => ({
+    left: Math.random() * 100, dur: 16 + Math.random() * 16, delay: -Math.random() * 32,
+    size: 7 + Math.random() * 8, sway: 40 + Math.random() * 90, spin: 200 + Math.random() * 400,
+  })), []);
+  return (
+    <div className="petals" aria-hidden="true">
+      {petals.map((x, i) => <i key={i} style={{ left: `${x.left}%`, width: x.size, height: x.size * 1.25, '--dur': `${x.dur}s`, '--delay': `${x.delay}s`, '--sway': `${x.sway}px`, '--spin': `${x.spin}deg` }}/>)}
+    </div>
+  );
+}
+
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 // ─── AUTH GATE ────────────────────────────────────────────────────────────────
 // Firestore rules only admit the owner's account, so nothing loads until
@@ -1143,6 +1201,45 @@ function App() {
   useEffect(() => { const f = () => setWinW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []);
   const navForced = winW >= 760 && winW < 1100;
   const navMin = winW >= 760 && (navPref || navForced);
+  // Live layer on or off (off by default if the Mac asks for less motion)
+  const [live, setLive] = useState(() => { try { const v = localStorage.getItem('jc_live'); return v ? v === '1' : !window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return true; } });
+  const toggleLive = () => setLive(v => { try { localStorage.setItem('jc_live', v ? '0' : '1'); } catch {} return !v; });
+  useEffect(() => { document.documentElement.classList.toggle('live-on', live); }, [live]);
+  // The engraving and the tall mark lean a little away from the pointer; a click leaves an ink ring
+  useEffect(() => {
+    if (!live) return;
+    let raf = 0;
+    const move = e => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { const r = document.documentElement.style; r.setProperty('--mx', ((e.clientX / window.innerWidth) * 2 - 1).toFixed(3)); r.setProperty('--my', ((e.clientY / window.innerHeight) * 2 - 1).toFixed(3)); }); };
+    const down = e => { const el = document.createElement('i'); el.className = 'ink-ring'; el.style.left = `${e.clientX}px`; el.style.top = `${e.clientY}px`; el.addEventListener('animationend', () => el.remove()); document.body.appendChild(el); };
+    window.addEventListener('mousemove', move); window.addEventListener('pointerdown', down);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('mousemove', move); window.removeEventListener('pointerdown', down); };
+  }, [live]);
+  // Headline numbers count up when a section opens. Only plain text nodes are
+  // touched, and it stops at once if React writes a newer value.
+  useEffect(() => {
+    if (!live) return;
+    let raf = 0;
+    const start = setTimeout(() => {
+      const jobs = [...document.querySelectorAll('.fin-tile b, .home-stats b, .fin-net, .fin-split-col b, .fin-target-num')].map(el => {
+        const node = el.childNodes.length === 1 && el.firstChild.nodeType === 3 ? el.firstChild : null;
+        const m = node && node.nodeValue.match(/^(\D*?)(\d[\d,]*)(\D*)$/);
+        const n = m ? Number(m[2].replace(/,/g, '')) : 0;
+        return n >= 3 ? { node, pre: m[1], n, post: m[3], last: node.nodeValue, final: node.nodeValue } : null;
+      }).filter(Boolean);
+      const t0 = performance.now();
+      const step = t => {
+        const k = Math.min(1, (t - t0) / 800), e = 1 - Math.pow(1 - k, 3);
+        jobs.forEach(j => {
+          if (j.dead || j.node.nodeValue !== j.last) { j.dead = true; return; }
+          j.last = k === 1 ? j.final : `${j.pre}${Math.round(j.n * e).toLocaleString()}${j.post}`;
+          j.node.nodeValue = j.last;
+        });
+        if (k < 1) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    }, 260);
+    return () => { clearTimeout(start); cancelAnimationFrame(raf); };
+  }, [tab, live]); // eslint-disable-line react-hooks/exhaustive-deps
   const toggleNav = () => setNavPref(v => { try { localStorage.setItem('jc_nav_min', v ? '0' : '1'); } catch {} return !v; });
   useEffect(() => { document.documentElement.classList.toggle('nav-min', navMin); }, [navMin]);
   const [leads, setLeads]       = useState([]);
@@ -1596,6 +1693,8 @@ function App() {
               }}>{Math.min(9,alerts.length)}</span>
             )}
           </button>
+          <LiveClock/>
+          <button className={`icon-btn live-btn ${live ? 'on' : ''}`} title={live ? 'Live motion is on. Click to switch it off.' : 'Live motion is off. Click to switch it on.'} onClick={toggleLive} style={{ width: 28, height: 28 }}><i/></button>
           <button className="cmdk-btn" onClick={() => setPaletteOpen(true)} title="Command bar (⌘K)">
             <Icons.search size={14}/><span>Log or find anything</span><kbd>⌘K</kbd>
           </button>
@@ -1614,6 +1713,32 @@ function App() {
           </div>
         </div>
       </header>
+      {live && <Petals/>}
+      <Ticker onNav={setTab} items={(() => {
+        const out = [], days = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+        ventures.filter(v => v.launchDate && v.stage !== 'Paused').forEach(v => {
+          const n = days(v.launchDate);
+          if (n >= 0) out.push({ t: n === 0 ? `${v.name} opens today` : `${v.name} opens in ${pl(n, 'day')}`, tab: 'ventures', lv: n <= 3 ? 'hot' : '' });
+          const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
+          const today = steps.filter(x => x.due === todayStr).length, late = steps.filter(x => x.due < todayStr).length;
+          if (late) out.push({ t: `${pl(late, 'launch step')} behind`, tab: 'ventures', lv: 'hot' });
+          if (today) out.push({ t: `${pl(today, 'launch step')} for today`, tab: 'ventures' });
+        });
+        if (todayTodos.length) out.push({ t: `${todayDone.length} of ${todayTodos.length} tasks done`, tab: 'todos', lv: todayDone.length >= Math.min(5, todayTodos.length) ? 'good' : '' });
+        else out.push({ t: 'No tasks planned today', tab: 'todos', lv: 'hot' });
+        todos.filter(t => t.addedDate > todayStr && !t.doneOn?.[t.addedDate]).sort((a, b) => a.addedDate.localeCompare(b.addedDate)).slice(0, 3)
+          .forEach(t => { const n = days(t.addedDate); out.push({ t: `${t.title} · ${n === 1 ? 'tomorrow' : `in ${n} days`}`, tab: 'todos', lv: n <= 2 ? 'hot' : '' }); });
+        const live_ = habits.filter(h => !h.archivedAt);
+        if (live_.length) out.push({ t: `${live_.filter(h => h.completions?.[todayStr]).length} of ${live_.length} habits today`, tab: 'habits' });
+        const running = timers.find(t => t.runningSince);
+        if (running) out.push({ t: `Focusing on ${running.title}`, tab: 'focus', lv: 'good' });
+        const mk = todayStr.slice(0, 7), net = finances.filter(f => (f.date || '').startsWith(mk)).reduce((t, f) => t + signedAmount(f), 0);
+        out.push({ t: `This month ${J(net)} net`, tab: 'finance', lv: net < 0 ? 'hot' : '' });
+        courses.filter(c => c.examDate && days(c.examDate) >= 0).sort((a, b) => a.examDate.localeCompare(b.examDate)).slice(0, 2)
+          .forEach(c => out.push({ t: `${c.code} exam in ${pl(days(c.examDate), 'day')}`, tab: 'studies', lv: days(c.examDate) <= 14 ? 'hot' : '' }));
+        out.push({ t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
+        return out;
+      })()}/>
 
       {showLevelUp && <LevelUpSplash level={level} onDismiss={() => setShowLevelUp(false)}/>}
 
@@ -6412,6 +6537,7 @@ function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, it
             <div className="lp-num" key={plan.daysLeft}>{plan.daysLeft > 0 ? plan.daysLeft : plan.daysLeft === 0 ? 'GO' : 'LIVE'}</div>
             <div>
               <div className="lp-cap">{plan.daysLeft > 1 ? 'days to soft launch' : plan.daysLeft === 1 ? 'day to soft launch' : plan.daysLeft === 0 ? 'Soft launch is today' : `Soft launched ${-plan.daysLeft} day${plan.daysLeft === -1 ? '' : 's'} ago`}</div>
+              <LiveCountdown to={v.launchDate}/>
               <div className="lp-jp" lang="ja" aria-hidden="true">{plan.daysLeft > 0 ? `開店まであと${plan.daysLeft}日` : '開店'}</div>
               <div className="fin-delta">{fmtDate(v.launchDate, { weekday: 'long', month: 'long', day: 'numeric' })}</div>
             </div>

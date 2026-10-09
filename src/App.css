@@ -2858,3 +2858,78 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .fin-legend .l-work { background: #ff9a4a; } .fin-legend .l-pers, .fin-legend .l-pinc { background: #3ab88e; } .fin-legend .l-pexp { background: #a8483a; }
 .fin .sched-bar { flex-wrap: wrap; row-gap: 0.6rem; }
 @media (max-width: 640px) { .fin-split-grid { grid-template-columns: 1fr; } }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   LIVE — what keeps moving while the console is open
+   A clock with the day draining away, a ticker, falling petals, a
+   countdown by the second, ink that reacts to the pointer. The dot in
+   the header switches all of it off.
+═══════════════════════════════════════════════════════════════════ */
+/* Clock: kanji for the part of the day, the time, and how much day is gone */
+.live-clock { display: grid; grid-template-columns: auto auto; column-gap: 0.45rem; align-items: center; padding: 0 0.2rem; }
+.live-clock b { grid-row: span 2; font-size: 20px; font-weight: 400; color: var(--seal); line-height: 1; }
+.live-clock span { font-family: var(--title); font-size: 19px; line-height: 1; color: var(--paper); white-space: nowrap; }
+.live-clock span i { font-style: normal; font-size: 13px; color: var(--gold-300); }
+.live-clock u { display: block; width: 100%; height: 3px; margin-top: 3px; background: rgba(255,255,255,0.1); text-decoration: none; overflow: hidden; }
+.live-clock em { display: block; height: 100%; background: var(--seal); transition: width 1s linear; }
+.live-btn i { display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--ink-4); }
+.live-btn.on i { background: var(--seal); animation: liveDot 1.6s ease-in-out infinite; }
+@keyframes liveDot { 0%, 100% { scale: 1; opacity: 1; } 50% { scale: 0.55; opacity: 0.55; } }
+
+/* Ticker */
+.ticker { position: relative; z-index: 2; overflow: hidden; background: #060303; border-bottom: 2px solid var(--ink-line); -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+.ticker-track { display: flex; width: max-content; }
+.live-on .ticker-track { animation: tickerMove var(--dur, 60s) linear infinite; }
+.ticker:hover .ticker-track { animation-play-state: paused; }
+@keyframes tickerMove { to { transform: translateX(-50%); } }
+.ticker-row { display: flex; flex: none; }
+.ticker-row button { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.42rem 1.1rem; cursor: pointer; white-space: nowrap; font-family: var(--display); font-style: italic; font-weight: 600; font-size: 13.5px; color: var(--ink-1); background: none; border: none; }
+.ticker-row button:hover { color: var(--gold-200); }
+.ticker-row button i { font-style: normal; font-size: 8px; color: var(--teal-300); }
+.ticker-row button.hot { color: var(--coral-400); } .ticker-row button.hot i { color: var(--seal); }
+.ticker-row button.good { color: var(--sea-400); }
+:root:not(.live-on) .ticker { overflow-x: auto; scrollbar-width: none; }
+
+/* Petals in the section's colour, falling behind the panels */
+.petals { position: fixed; inset: 0; left: var(--sw, 0px); z-index: 0; pointer-events: none; overflow: hidden; }
+.petals i { position: absolute; top: -24px; display: block; background: rgba(var(--p3), 0.55); border-radius: 80% 0 80% 0; opacity: 0.75; animation: petalFall var(--dur) linear var(--delay) infinite; will-change: transform; }
+.petals i:nth-child(3n) { background: rgba(243,230,207,0.4); }
+.petals i:nth-child(5n) { background: rgba(212,166,74,0.45); border-radius: 0 80% 0 80%; }
+@keyframes petalFall {
+  0%   { transform: translate3d(0, -4vh, 0) rotate(0deg); }
+  25%  { transform: translate3d(var(--sway), 26vh, 0) rotate(calc(var(--spin) * 0.25)); }
+  50%  { transform: translate3d(calc(var(--sway) * -0.4), 54vh, 0) rotate(calc(var(--spin) * 0.5)); }
+  75%  { transform: translate3d(calc(var(--sway) * 0.8), 82vh, 0) rotate(calc(var(--spin) * 0.75)); }
+  100% { transform: translate3d(calc(var(--sway) * 0.2), 112vh, 0) rotate(var(--spin)); }
+}
+
+/* The engraving and the tall mark lean away from the pointer */
+.live-on .ghost-art { translate: calc(var(--mx, 0) * -14px) calc(var(--my, 0) * -10px); transition: translate 0.5s ease-out; }
+.live-on .jp-mark { translate: calc(var(--mx, 0) * 10px) calc(var(--my, 0) * 7px); transition: translate 0.6s ease-out; }
+.live-on .section::after { animation: toneDrift 70s linear infinite; }
+@keyframes toneDrift { to { background-position: 200px 100px; } }
+
+/* A click leaves an ink ring */
+.ink-ring { position: fixed; z-index: 9990; pointer-events: none; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid var(--seal); border-radius: 50%; animation: inkRing 0.55s var(--ease-out) forwards; }
+@keyframes inkRing { to { scale: 6; opacity: 0; border-width: 0.5px; } }
+
+/* Launch countdown by the second; today's ticket rocks; ink runs along the bars */
+.lp-live { font-family: var(--title); font-size: 21px; line-height: 1; color: var(--ink-2); margin-top: 0.4rem; white-space: nowrap; }
+.lp-live b { font-weight: 400; color: var(--paper); margin-left: 0.25rem; }
+.lp-live .tick { display: inline-block; color: var(--seal); animation: tickDown 0.35s var(--snap) backwards; }
+@keyframes tickDown { from { translate: 0 -8px; opacity: 0; } }
+.live-on .lp-day.today { animation: ticketRock 3.2s ease-in-out infinite; }
+@keyframes ticketRock { 0%, 100% { rotate: -2deg; } 50% { rotate: 2deg; translate: 0 -2px; } }
+.live-on .xp-fill, .live-on .fin-bar-fill, .live-on .goal-fill {
+  background-image: repeating-linear-gradient(115deg, transparent 0 9px, rgba(255,255,255,0.2) 9px 18px), linear-gradient(90deg, var(--teal-500), var(--teal-300));
+  background-size: 40px 100%, 100% 100%;
+  animation: soak 0.9s var(--ease-out) 0.2s backwards, inkRun 1.4s linear infinite;
+}
+@keyframes inkRun { to { background-position: 40px 0, 0 0; } }
+.live-on .page-seal { animation: stampIn 0.42s var(--snap) backwards, sealBreathe 5s ease-in-out 1s infinite; }
+@keyframes sealBreathe { 0%, 100% { rotate: -3deg; } 50% { rotate: -6deg; } }
+.live-on .fab { animation: sealBreathe 4s ease-in-out infinite; }
+
+@media (max-width: 899px) { .live-clock { display: none; } }
+@media (max-width: 759px) { .petals { left: 0; } .ticker-row button { font-size: 12.5px; padding: 0.38rem 0.8rem; } }
