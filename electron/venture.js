@@ -59,8 +59,9 @@ async function overview(dir) {
     const behind = Number((m?.[3] || '').match(/behind (\d+)/)?.[1] || 0);
     const log = await exec('/usr/bin/git', ['log', '-8', '--pretty=format:%h\t%ct\t%s'], dir);
     const remote = (await exec('/usr/bin/git', ['remote', 'get-url', 'origin'], dir)).trim();
+    const offRemote = Number((await exec('/usr/bin/git', ['rev-list', '--count', 'HEAD', '--not', '--remotes'], dir)).trim()) || 0;
     git = {
-      branch: m?.[1] || '', upstream: m?.[2] || '', ahead, behind,
+      branch: m?.[1] || '', upstream: m?.[2] || '', ahead: Math.max(ahead, remote ? offRemote : 0), behind,
       dirty: lines.slice(1).map(l => ({ state: l.slice(0, 2).trim(), file: l.slice(3) })),
       commits: log.split('\n').filter(Boolean).map(l => { const [hash, ts, ...s] = l.split('\t'); return { hash, at: Number(ts) * 1000, subject: s.join('\t') }; }),
       remote: remote.replace(/\.git$/, ''),
@@ -81,7 +82,7 @@ async function overview(dir) {
       files.push({ file: relPath, kind: isEnv ? 'env' : 'credential', tracked: tracked.has(relPath) });
       if (!isEnv) continue;
       const text = await fs.readFile(path.join(dir, relPath), 'utf8').catch(() => '');
-      text.split('\n').forEach(line => {
+      text.split(/\r?\n/).forEach(line => {   // Windows line endings too
         const mm = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
         if (!mm) return;
         const value = mm[2].trim().replace(/^['"]|['"]$/g, '');
@@ -101,6 +102,15 @@ async function overview(dir) {
       if (/\.(ts|js)$/.test(f) && !/campusDistances/.test(f)) fnSrc += await fs.readFile(path.join(dir, 'functions', 'src', f), 'utf8').catch(() => '');
     }
   } catch {}
+  // Top-level source and setup notes too, for projects that are a plain server
+  let rootSrc = '', notes = '';
+  try {
+    for (const f of await fs.readdir(dir)) {
+      const full = path.join(dir, f);
+      if (/\.(js|mjs|ts|py)$/.test(f) && !/test|mock|soak/i.test(f)) { const st = await fs.stat(full).catch(() => null); if (st && st.size < 400000) rootSrc += await fs.readFile(full, 'utf8').catch(() => ''); }
+      if (/^(README|DEPLOY|\.env\.example)/i.test(f) || f === 'render.yaml') notes += await fs.readFile(full, 'utf8').catch(() => '');
+    }
+  } catch {}
   const deps = { ...(pkg?.dependencies || {}), ...(pkg?.devDependencies || {}) };
   const fb = await readJson(path.join(dir, 'firebase.json'));
   const appJson = await readJson(path.join(dir, 'app.json'));
@@ -116,6 +126,12 @@ async function overview(dir) {
     hosting: !!fb?.hosting, storage: !!fb?.storage,
     scheduler: /onSchedule\(/.test(fnSrc), tasks: /onTaskDispatched/.test(fnSrc),
     warm: (fnSrc.match(/minInstances:\s*[1-9]/g) || []).length,
+    anthropic: /ANTHROPIC/.test(keyNames) || /api\.anthropic\.com/.test(rootSrc + fnSrc),
+    meta: /WHATSAPP|META_APP/.test(keyNames) || /graph\.facebook\.com/.test(rootSrc + fnSrc),
+    ecwid: /ECWID/.test(keyNames) || /ecwid\.com/.test(rootSrc),
+    redis: !!deps.redis || !!deps.ioredis || /REDIS_URL/.test(keyNames),
+    render: /onrender\.com|render\.com/i.test(notes) || await exists(path.join(dir, 'render.yaml')),
+    groq: /GROQ/.test(keyNames), groqCalled: /api\.groq\.com|groq-sdk/.test(rootSrc + fnSrc) || !!deps['groq-sdk'],
   };
 
   const scripts = Object.keys(pkg?.scripts || {}), fnScripts = Object.keys(fnPkg?.scripts || {});

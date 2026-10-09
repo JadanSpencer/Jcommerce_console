@@ -1315,6 +1315,7 @@ function App() {
   const [ventureChecks, setVentureChecks] = useState([]);
   const [ventures, setVentures] = useState([]);
   const [ventureItems, setVentureItems] = useState([]);
+  const [serviceRounds, setServiceRounds] = useState([]);
   const [courses, setCourses]   = useState([]);
   const [settings, setSettings] = useState([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1420,7 +1421,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['courses',setCourses],['settings',setSettings],
+      ['journal',setJournal],['budgets',setBudgets],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],
     ];
 
     // Track which collections have fired at least once
@@ -1771,7 +1772,6 @@ function App() {
         </div>
       </header>
       {live && <Petals/>}
-      {live && <i className="slash" key={tab} aria-hidden="true"/>}
       <Ticker onNav={setTab} items={(() => {
         const out = [], days = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
         ventures.filter(v => v.launchDate && v.stage !== 'Paused').forEach(v => {
@@ -1827,7 +1827,13 @@ function App() {
         {tab==='finance'  && <Finance finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
-        {tab==='ventures' && <Ventures ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
+        {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
+          onToggleRound={(ventureId, serviceId) => {
+            const doc = serviceRounds.find(r => r.date === todayStr && r.ventureId === ventureId);
+            if (doc) update('service_rounds', doc.id, { done: { ...(doc.done || {}), [serviceId]: !doc.done?.[serviceId] } });
+            else add('service_rounds', { ventureId, date: todayStr, done: { [serviceId]: true } });
+          }}
+          ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
           onSaveVenture={d => { const { id, ...data } = d; id ? update('ventures', id, data) : add('ventures', data); }}
           onDeleteVenture={v => {
             const firstId = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
@@ -6132,26 +6138,32 @@ function ventureServices(o) {
   if (!o?.ok) return [];
   const p = o.firebaseProject, u = o.uses || {};
   const list = [];
-  const add = (group, id, name, does, bills, url, cat = 'Tools') => list.push({ group, id, name, does, bills, url, cat });
+  const add = (group, id, name, does, bills, url, cat = 'Tools', logs = '') => list.push({ group, id, name, does, bills, url, cat, logs });
   if (p) {
     add('Runs the app', 'firebase', 'Firebase (Google Cloud)', `Database, sign-in, server functions${u.hosting ? ', web hosting' : ''}${u.storage ? ', photo storage' : ''}${u.scheduler ? ', scheduled jobs' : ''}${u.tasks ? ', task queue' : ''}`,
       `Pay as you go above the free quotas, on one Google Cloud bill.${u.warm ? ` ${u.warm} function${u.warm === 1 ? ' is' : 's are'} kept warm, which is a fixed charge every month even with no orders.` : ''}`,
-      `https://console.firebase.google.com/project/${p}/usage`, 'Hosting');
+      `https://console.firebase.google.com/project/${p}/usage`, 'Hosting', `https://console.cloud.google.com/logs/query?project=${p}`);
     add('Runs the app', 'gcp-bill', 'Google Cloud bill', 'The one place that shows what Google has really charged this month', 'This is the actual figure for Firebase, Maps and reCAPTCHA together. Read it here, then log it.', `https://console.cloud.google.com/billing/linkedaccount?project=${p}`, 'Hosting');
     if (u.maps) add('Runs the app', 'maps', 'Google Maps Platform', 'Maps in the Android and iPhone apps', 'Charged per map load above a monthly free allowance, on the Google Cloud bill. An unrestricted key can be run up by anyone.', `https://console.cloud.google.com/google/maps-apis/metrics?project=${p}`, 'Hosting');
     if (u.appCheck) add('Runs the app', 'recaptcha', 'reCAPTCHA Enterprise (App Check)', 'Proves requests come from the real web app', 'Free up to a monthly number of checks, then charged per check, on the Google Cloud bill.', `https://console.cloud.google.com/security/recaptcha?project=${p}`, 'Hosting');
     if (u.googleSignIn) add('Runs the app', 'google-signin', 'Google Sign-In', 'Signing in with a Google account', 'Free.', `https://console.cloud.google.com/apis/credentials?project=${p}`);
   }
-  if (o.has.vercel) add('Runs the app', 'vercel', 'Vercel', 'Second web host and payment return pages', "Free on the Hobby plan, but check the terms: Vercel's free plan is meant for non-commercial sites. Pro is a monthly fee per member.", 'https://vercel.com/dashboard', 'Hosting');
-  if (o.secrets.some(x => /FYGARO/.test(x.key)) || o.docs.includes('PAYMENTS_SETUP.md')) add('Payments', 'fygaro', 'Fygaro', 'Card payments, payouts and refunds', 'A fee on every card payment, at the rate in your Fygaro agreement. No payments, no cost.', 'https://app.fygaro.com/');
+  if (o.has.vercel) add('Runs the app', 'vercel', 'Vercel', 'Second web host and payment return pages', "Free on the Hobby plan, but check the terms: Vercel's free plan is meant for non-commercial sites. Pro is a monthly fee per member.", 'https://vercel.com/dashboard', 'Hosting', 'https://vercel.com/dashboard');
+  if (o.secrets.some(x => /FYGARO/.test(x.key)) || o.docs.includes('PAYMENTS_SETUP.md')) add('Payments', 'fygaro', 'Fygaro', 'Card payments, payouts and refunds', 'A fee on every card payment, at the rate in your Fygaro agreement. No payments, no cost.', 'https://app.fygaro.com/', 'Tools', 'https://app.fygaro.com/');
+  if (u.render) add('Runs the app', 'render', 'Render', 'Runs the server, all day, every day', 'A monthly fee for an always-on instance. A free instance sleeps when idle, which would miss messages.', 'https://dashboard.render.com/', 'Hosting', 'https://dashboard.render.com/');
+  if (u.redis) add('Runs the app', 'redis', u.render ? 'Redis (Render Key Value)' : 'Redis', 'Carts, sessions and protection against handling a message twice', 'A monthly fee by size. Free instances are small and can lose data on restart.', u.render ? 'https://dashboard.render.com/' : '', 'Hosting');
+  if (u.meta) add('Runs the app', 'meta', 'Meta WhatsApp Cloud API', 'Receives and sends every WhatsApp message', "Replies inside a customer's 24-hour window are free. Messages the business starts (templates) are charged by Meta to the WhatsApp Business account.", 'https://developers.facebook.com/apps/', 'Tools', 'https://business.facebook.com/wa/manage/home/');
+  if (u.anthropic) add('Runs the app', 'anthropic', 'Anthropic (Claude API)', 'The AI that reads lists and answers customers', 'Prepaid credit, used up per message. When the credit or the spend limit runs out, the AI stops answering.', 'https://console.anthropic.com/settings/billing', 'AI API', 'https://console.anthropic.com/settings/logs');
+  if (u.ecwid) add('Runs the app', 'ecwid', 'Ecwid store', 'The product list, prices and checkout the bot reads and sends people to', "Paid by the store's owner as their own subscription. API access depends on their plan.", 'https://my.ecwid.com/');
+  if (u.groq) add('Runs the app', 'groq', 'Groq', u.groqCalled ? 'A second AI provider' : 'An AI provider with a key still set; the code no longer calls it', 'Free allowance, then per use.', 'https://console.groq.com/', 'AI API');
   if (u.ntfy) add('Alerts and media', 'ntfy', 'ntfy', 'Order alerts on each store phone', 'Free, with a shared daily message limit (your code notes say about 250 a day, and busy times can be refused). A paid account removes that.', 'https://ntfy.sh/account');
   if (u.photoroom) add('Alerts and media', 'photoroom', 'Photoroom API', 'Cuts the background out of store and menu photos', 'A small free image allowance, then charged per image.', 'https://app.photoroom.com/api-dashboard');
   if (u.push) add('Alerts and media', 'push', 'Push notifications', 'Expo push for the apps, Firebase Cloud Messaging for the web app', 'Free.', 'https://expo.dev/');
   if (o.git?.remote) {
     add('Build and ship', 'github', 'GitHub', 'Code, history and Dependabot updates', 'Free for this use.', o.git.remote);
-    if (o.has.ci) add('Build and ship', 'github-ci', 'GitHub Actions', 'Automatic checks on every push', 'Free minutes each month for private repositories, then charged per minute.', `${o.git.remote}/actions`);
+    if (o.has.ci) add('Build and ship', 'github-ci', 'GitHub Actions', 'Automatic checks on every push', 'Free minutes each month for private repositories, then charged per minute.', `${o.git.remote}/actions`, 'Tools', `${o.git.remote}/actions`);
   }
-  if (o.has.expo) add('Build and ship', 'expo', 'Expo (EAS Build)', 'Builds the Android and iPhone apps', 'Free plan has a limited number of builds a month and a slower queue. Paid plans are a monthly fee.', 'https://expo.dev/');
+  if (o.has.expo) add('Build and ship', 'expo', 'Expo (EAS Build)', 'Builds the Android and iPhone apps', 'Free plan has a limited number of builds a month and a slower queue. Paid plans are a monthly fee.', 'https://expo.dev/', 'Tools', 'https://expo.dev/');
   if (u.play) add('Build and ship', 'play', 'Google Play Console', 'Publishing the Android app', 'One-time US$25 registration. No monthly fee.', 'https://play.google.com/console');
   if (p) {
     add('Dashboards', 'functions-logs', 'Server logs', 'Errors from payments, pushes and order handling', 'No cost of its own.', `https://console.cloud.google.com/logs/query?project=${p}`);
@@ -6159,6 +6171,10 @@ function ventureServices(o) {
   }
   return list;
 }
+// The services you look at every day: everything except plain dashboards and
+// anything you chose to leave out
+const roundServices = (o, services) => [...ventureServices(o), ...services.filter(x => x.custom).map(x => ({ group: 'Added by you', id: x.serviceId, name: x.name }))]
+  .filter(x => x.group !== 'Dashboards' && !services.find(m => m.serviceId === x.id)?.noRounds);
 // What a service is planned to cost per month, from what you entered
 const COST_TYPES = [['monthly', 'Every month'], ['yearly', 'Every year'], ['once', 'One-time'], ['usage', 'Depends on use'], ['free', 'Free']];
 const svcMonthly = m => { const a = Number(m.monthlyCost) || 0, t = m.costType || 'monthly'; return t === 'monthly' || t === 'usage' ? a : t === 'yearly' ? a / 12 : 0; };
@@ -6197,7 +6213,7 @@ function ventureStats(m, fromMs) {
 
 // The state of one venture, worked out from what is really there: the folder,
 // the live data, its services and its plan. Nothing here is typed in by hand.
-function ventureHealth(v, d, { services, items, todayStr }) {
+function ventureHealth(v, d, { services, items, todayStr, rounds = {} }) {
   const o = d?.o, money = d?.money, now = Date.now();
   const findings = [];
   const add = (lv, t) => findings.push({ lv, t });
@@ -6249,6 +6265,9 @@ function ventureHealth(v, d, { services, items, todayStr }) {
     if (n < 0) add('danger', `${s.name} was due to renew ${-n} day${s1(-n)} ago. Is it still running?`);
     else if (n <= 7) add('warn', `${s.name} renews ${n === 0 ? 'today' : `in ${n} day${s1(n)}`}${Number(s.monthlyCost) > 0 ? ` (${J(s.monthlyCost)})` : ''}.`);
   });
+  const roundList = d && !d.loading ? roundServices(o, services) : [];
+  const roundsLeft = roundList.filter(x => !rounds[x.id]);
+  if (roundsLeft.length && v.stage !== 'Paused') add('warn', `${roundsLeft.length} of ${roundList.length} services not checked today: ${roundsLeft.slice(0, 4).map(x => x.name).join(', ')}${roundsLeft.length > 4 ? '…' : ''}.`);
   if (!moves.length && v.stage !== 'Paused') add('warn', 'No next move written down. A venture with no next step is standing still.');
 
   if (!findings.length) add('ok', today ? 'Money, keys, code and plan all look clean.' : 'Nothing needs you right now.');
@@ -6256,7 +6275,7 @@ function ventureHealth(v, d, { services, items, todayStr }) {
   findings.sort((a, b) => order[a.lv] - order[b.lv]);
   const issues = findings.filter(f => f.lv !== 'ok');
   return {
-    findings, issues, worst: issues[0]?.lv || 'ok', today, hasOrders, moves,
+    findings, issues, worst: issues[0]?.lv || 'ok', today, hasOrders, moves, roundList, roundsLeft,
     monthly: Math.round(services.reduce((s, x) => s + svcMonthly(x), 0)),
   };
 }
@@ -6293,7 +6312,7 @@ function launchPlan(v, items, todayStr) {
   };
 }
 
-function Ventures({ ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function Ventures({ rounds = [], onToggleRound, ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP?.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const acrossPager = usePager(6), comingPager = usePager(6);
@@ -6322,7 +6341,7 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
     <div className="section venture"><div className="card agenda-empty">Ventures only works in the Mac app, because it reads project folders on this computer.</div></div>
   );
 
-  const health = Object.fromEntries(list.map(v => [v.id, ventureHealth(v, data[v.id], { services: of(services, v), items: of(items, v), todayStr })]));
+  const health = Object.fromEntries(list.map(v => [v.id, ventureHealth(v, data[v.id], { services: of(services, v), items: of(items, v), todayStr, rounds: rounds.find(r => r.ventureId === v.id)?.done || {} })]));
   const checkedToday = v => checks.some(c => c.date === todayStr && (c.ventureId || firstId) === v.id);
   const current = list.find(v => v.id === sel);
   const hex = v => v.color || VENTURE_HEX[Math.max(0, list.indexOf(v)) % VENTURE_HEX.length];
@@ -6334,7 +6353,7 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
 
   const switcher = (
     <div className="vt-tabs">
-      <button className={!current ? 'on' : ''} onClick={() => setSel('all')}>All ventures</button>
+      <button className={`hq-tab ${!current ? 'on' : ''}`} onClick={() => setSel('all')} title="The parent company and everything under it"><b lang="ja" aria-hidden="true">本社</b>JCommerce & Tech</button>
       {list.map(v => (
         <button key={v.id} className={current?.id === v.id ? 'on' : ''} onClick={() => setSel(v.id)}>
           <i className={`vt-dot ${health[v.id].worst}`} style={{ '--c': hex(v) }}/>{v.name}
@@ -6357,6 +6376,7 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
       <VentureRoom key={current.id} v={current} hex={hex(current)} d={data[current.id]} h={health[current.id]} reload={() => loadOne(current)}
         services={of(services, current)} items={of(items, current)} checks={of(checks, current)} checkedToday={checkedToday(current)} todayStr={todayStr}
         onEdit={() => setForm(current)}
+        rounds={rounds.find(r => r.ventureId === current.id)?.done || {}} onToggleRound={id => onToggleRound(current.id, id)}
         bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, scope: 'work', ventureId: current.id })}
         onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
         onSaveCheck={d => onSaveCheck({ ...d, ventureId: current.id, venture: current.name })}
@@ -6387,6 +6407,15 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
           <div style={{ marginTop: '0.9rem' }}><button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={13}/> Add your first venture</button></div>
         </div>
       ) : (<>
+        <div className="card hq">
+          <b className="page-seal" lang="ja" aria-hidden="true">本社</b>
+          <div className="hq-main">
+            <div className="hq-role">Parent company · registered sole trader</div>
+            <div className="hq-name">JCommerce & Tech</div>
+            <div className="hq-line">The house every venture below belongs to. {list.length} under it, {list.filter(v => v.stage === 'Live').length} trading.</div>
+          </div>
+          <div className="hq-tree" aria-hidden="true">{list.map(v => <span key={v.id} style={{ '--c': hex(v) }}>{v.name}</span>)}</div>
+        </div>
         <div className="grid-2">
           <div className="fin-tile"><span>Ventures</span><b>{list.length}</b><span className="fin-delta">{list.filter(v => v.stage === 'Live').length} live · {list.filter(v => v.stage === 'Building').length} building</span></div>
           <div className="fin-tile"><span>Needs attention</span><b className={across.some(f => f.lv === 'danger') ? 'bad' : totalIssues ? 'warn' : 'good'}>{totalIssues}</b><span className="fin-delta">across everything</span></div>
@@ -6456,7 +6485,7 @@ function Ventures({ ventures, finances = [], onAddFinance, services, checks, ite
   );
 }
 
-function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function VentureRoom({ v, hex, d, h, reload, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
@@ -6696,6 +6725,7 @@ function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, it
           <div className="vt-check-foot">
             {checkedToday
               ? <span className="good vt-done"><b className="jp-stamp" lang="ja" aria-hidden="true">済</b>Checked today</span>
+              : h.roundsLeft.length ? <button className="btn-ghost" onClick={() => setView('services')}>Check {h.roundsLeft.length} more service{h.roundsLeft.length === 1 ? '' : 's'} first ›</button>
               : <button className="btn-primary" onClick={markChecked} disabled={loading}>I've read today's check</button>}
             <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP once a day for looking at your ventures.</span>
           </div>
@@ -6885,6 +6915,14 @@ function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, it
             <div className="fin-tile"><span>Actually paid this month</span><b className={paidMonth > monthly && monthly ? 'bad' : ''}>{J(paidMonth)}</b><span className="fin-delta">from bills you logged</span></div>
             <div className="fin-tile"><span>Paid so far</span><b>{J(paidEver)}</b><span className="fin-delta">{bills.length} bill{bills.length === 1 ? '' : 's'} in Finance</span></div>
           </div>
+          <div className="card svc-rounds">
+            <div className="row-between">
+              <span className="card-label" style={{ margin: 0 }}>Today's rounds · every service, every day</span>
+              <span className={h.roundsLeft.length ? 'warn' : 'good'}>{h.roundList.length - h.roundsLeft.length} of {h.roundList.length} checked</span>
+            </div>
+            <div className="xp-track"><div className="xp-fill" style={{ width: `${h.roundList.length ? ((h.roundList.length - h.roundsLeft.length) / h.roundList.length) * 100 : 0}%` }}/></div>
+            <div className="goal-hint">For each one: open it, read its logs or activity, then stamp it. The venture's daily check only unlocks when every service is stamped. Edit a service to leave it out of the rounds.</div>
+          </div>
           <div className="row-between">
             <span className="fin-delta">
               {fbProject && (gcpBilling === null ? 'Checking Google Cloud billing…' : !gcpBilling.ok ? `Could not check Google Cloud billing (${gcpBilling.error}).`
@@ -6916,9 +6954,15 @@ function VentureRoom({ v, hex, d, h, reload, bills = [], onAddBill, services, it
                       </dl>
                       {meta.note && <div className="tk-note" style={{ whiteSpace: 'pre-wrap' }}>{meta.note}</div>}
                       <div className="svc-foot">
-                        <button className="btn-ghost tk-carry" onClick={() => setBillForm({ serviceId: x.id, name: x.name, category: x.cat || 'Tools' })}>Log a bill</button>
                         {x.url && <a className="btn-ghost tk-carry" href={fullUrl(x.url)} target="_blank" rel="noopener noreferrer">Open ↗</a>}
+                        {x.logs && <a className="btn-ghost tk-carry" href={fullUrl(x.logs)} target="_blank" rel="noopener noreferrer">Logs ↗</a>}
+                        <button className="btn-ghost tk-carry" onClick={() => setBillForm({ serviceId: x.id, name: x.name, category: x.cat || 'Tools' })}>Log a bill</button>
                       </div>
+                      {h.roundList.some(r => r.id === x.id) && (
+                        <button className={`svc-round ${rounds[x.id] ? 'done' : ''}`} onClick={() => onToggleRound(x.id)}>
+                          {rounds[x.id] ? <><b className="jp-stamp" lang="ja" aria-hidden="true">済</b>Checked today</> : 'Stamp as checked today'}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -7131,6 +7175,7 @@ function ServiceModal({ data, onSave, onDelete, onClose }) {
       </div>
       {(type === 'monthly' || type === 'yearly') && <Field label="Next bill / renewal"><input className="input" type="date" value={f.renewsOn || ''} onChange={e => s('renewsOn', e.target.value)}/></Field>}
       <Field label="Notes"><textarea className="input" style={{ minHeight: 64, resize: 'vertical' }} value={f.note || ''} onChange={e => s('note', e.target.value)} placeholder="Which account it's under, plan, limits. Not passwords."/></Field>
+      <label className="svc-skip"><input type="checkbox" checked={!!f.noRounds} onChange={e => s('noRounds', e.target.checked)}/> Leave this one out of the daily rounds</label>
       <div className="focus-preview"><div>This is the plan. What you really pay is counted from the bills you log on the service.</div></div>
       <ModalFoot onClose={onClose} onSave={save}/>
       {onDelete && <button className="btn-ghost danger-text" style={{ justifyContent: 'center' }} onClick={onDelete}><Icons.trash size={13}/> Remove service</button>}

@@ -2984,13 +2984,6 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .xp-pop.down i { color: var(--coral-400); }
 @keyframes sfxPop { 0% { scale: 0.2; opacity: 0; } 12% { scale: 1.2; opacity: 1; } 20% { scale: 0.96; } 26%, 78% { scale: 1; opacity: 1; translate: 0 0; } 100% { scale: 0.9; opacity: 0; translate: 0 -26px; } }
 
-/* Changing section: one cut across the page */
-.slash { position: fixed; inset: 0; left: var(--sw, 0px); z-index: 300; pointer-events: none; overflow: hidden; }
-.slash::before, .slash::after { content: ''; position: absolute; left: -15%; top: 46%; width: 130%; rotate: -17deg; animation: slashCut 0.42s cubic-bezier(0.7, 0, 0.2, 1) forwards; }
-.slash::before { height: 3px; background: linear-gradient(90deg, transparent, var(--paper) 25%, #fff 50%, var(--paper) 75%, transparent); }
-.slash::after { height: 26px; margin-top: -12px; background: linear-gradient(90deg, transparent, rgba(var(--p3),0.35) 30%, rgba(var(--p3),0.5) 50%, rgba(var(--p3),0.35) 70%, transparent); animation-duration: 0.5s; }
-@keyframes slashCut { 0% { clip-path: inset(0 100% 0 0); opacity: 1; } 55% { clip-path: inset(0 0 0 0); opacity: 1; } 100% { clip-path: inset(0 0 0 100%); opacity: 0; } }
-
 /* Wave pattern (seigaiha) closing every page */
 .main::after {
   content: ''; display: block; height: 44px; margin-top: 2.2rem; opacity: 0.5;
@@ -3011,3 +3004,25 @@ body *, body *::before, body *::after { text-shadow: none !important; letter-spa
 .xp-pop.up, .xp-pop.up b { color: #1c0c0a; }
 .xp-pop.down b { color: var(--paper); }
 .home-check.done .home-check-title { display: block; background: none; text-decoration: line-through; animation: none; }
+
+
+/* ─── The parent company, and the daily rounds ───────────────────────── */
+.hq { display: flex; align-items: center; gap: 1.3rem; border-left: 6px solid var(--gold-400); flex-wrap: wrap; }
+.hq .page-seal { width: 46px; height: 64px; font-size: 23px; }
+.hq-main { flex: 1; min-width: 240px; }
+.hq-role { font-family: var(--display); font-style: italic; font-weight: 600; font-size: 14px; color: var(--gold-300); }
+.hq-name { font-family: var(--title); font-size: 46px; line-height: 1; color: var(--paper); margin: 0.2rem 0 0.35rem; }
+.hq-line { font-family: var(--hand); font-size: 20px; line-height: 1.15; color: var(--gold-200); }
+.hq-tree { display: flex; flex-direction: column; gap: 0.4rem; padding-left: 1.1rem; border-left: 2px solid var(--gold-500); }
+.hq-tree span { position: relative; font-family: var(--title); font-size: 19px; line-height: 1; color: var(--ink-1); padding-left: 0.2rem; }
+.hq-tree span::before { content: ''; position: absolute; left: -1.1rem; top: 50%; width: 0.85rem; border-top: 2px solid var(--gold-500); }
+.hq-tree span::after { content: ''; display: inline-block; width: 8px; height: 8px; margin-left: 0.5rem; border-radius: 50%; background: var(--c); }
+.hq-tab b { font-weight: 400; font-size: 12px; color: var(--seal); }
+.vt-tabs .hq-tab { border-color: var(--gold-500); }
+.svc-rounds { display: flex; flex-direction: column; gap: 0.6rem; border-left: 6px solid var(--seal); }
+.svc-round { display: flex; align-items: center; justify-content: center; gap: 0.6rem; width: 100%; padding: 0.5rem; cursor: pointer; font: inherit; font-weight: 600; font-size: 13px; color: var(--ink-1); background: rgba(var(--b1),0.7); border: 1.5px dashed var(--line-2); border-radius: 2px; transition: border-color 0.15s, color 0.15s, translate 0.1s; }
+.svc-round:hover { border-color: var(--gold-400); color: var(--gold-200); translate: 0 -1px; }
+.svc-round.done { border-style: solid; border-color: var(--seal); color: var(--paper); }
+.svc-round .jp-stamp { width: 24px; height: 24px; font-size: 14px; }
+.svc-skip { display: flex; align-items: center; gap: 0.5rem; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.venture .warn { color: var(--gold-300); }
