@@ -3185,3 +3185,14 @@ button.svc-live.connect { cursor: pointer; width: 100%; } button.svc-live.connec
 .svc-live.none { background: none; border: none; border-top: 1px dashed rgba(255,255,255,0.1); border-radius: 0; padding: 0.5rem 0 0; }
 .svc-live.none em { background: none; color: var(--ink-3); border: 1px solid var(--ink-4); }
 .svc-live.none span { color: var(--ink-3); }
+
+/* ─── JAXON: one lead search a day, shown as one batch ───────────────── */
+.jx-search-note { font-size: 13.5px; line-height: 1.5; color: var(--ink-1); border-left: 6px solid var(--gold-400); }
+.jx-search-note b { color: var(--paper); } .jx-search-note .good { color: var(--sea-400); } .jx-search-note .bad { color: var(--coral-400); }
+.jx-search { border-left: 6px solid var(--seal); }
+.jx-lead { padding: 0.8rem 0; border-top: 1px dashed rgba(255,255,255,0.1); }
+.jx-lead-main { min-width: 0; }
+.jx-lead-name { font-family: var(--title); font-size: 22px; line-height: 1.05; color: var(--paper); }
+.jx-lead p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
+.jx-lead details { margin-top: 0.4rem; } .jx-lead summary { cursor: pointer; font-size: 12.5px; color: var(--gold-300); }
+.jx-lead details p { padding-left: 0.7rem; border-left: 3px solid var(--teal-400); color: var(--ink-1); }

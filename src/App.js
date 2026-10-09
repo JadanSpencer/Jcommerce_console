@@ -1396,6 +1396,7 @@ function App() {
   const [goals, setGoals]       = useState([]);
   const [todos, setTodos]       = useState([]);
   const [queue, setQueue]       = useState([]);
+  const [leadSearches, setLeadSearches] = useState([]);
   const [logs, setLogs]         = useState([]);
   const [briefings, setBriefings] = useState([]);
   const [journal, setJournal]   = useState([]);
@@ -1511,7 +1512,7 @@ function App() {
     const cols = [
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
-      ['jaxon_queue',setQueue],['jaxon_logs',setLogs],['briefings',setBriefings],
+      ['jaxon_queue',setQueue],['lead_searches',setLeadSearches],['jaxon_logs',setLogs],['briefings',setBriefings],
       ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],
     ];
 
@@ -1949,7 +1950,7 @@ function App() {
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
-        {tab==='jaxon'    && <JaxonDashboard queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
+        {tab==='jaxon'    && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
           onToggleRound={(ventureId, serviceId) => {
             const doc = serviceRounds.find(r => r.date === todayStr && r.ventureId === ventureId);
@@ -6189,7 +6190,13 @@ function ProductModal({ client, onSave, onClose }) {
 }
 
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
-function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
+function JaxonDashboard({leadSearches = [],queue,logs,briefings,todayStr,onApprove,onReject}) {
+  const leadPager = usePager(6);
+  // Leads arrive as one search a day. Everything a search found is shown together.
+  const pendingLeads = queue.filter(q => q.status === 'pending' && q.action === 'ADD_LEAD');
+  const searchKey = q => q.searchId || q.date || 'earlier';
+  const searches = [...new Set(pendingLeads.map(searchKey))].sort().reverse().map(k => ({ k, items: pendingLeads.filter(q => searchKey(q) === k).sort((a, b) => (Number(b.data?.weaknessScore) || 0) - (Number(a.data?.weaknessScore) || 0)) }));
+  const todaySearch = leadSearches.find(x => x.date === todayStr);
   const [tab,setTab]=useState('queue');
   const pending=queue.filter(q=>q.status==='pending').sort((a,b)=>({high:0,medium:1,low:2}[a.priority]||1)-({high:0,medium:1,low:2}[b.priority]||1));
   const approved=queue.filter(q=>q.status==='approved');
@@ -6212,8 +6219,43 @@ function JaxonDashboard({queue,logs,briefings,todayStr,onApprove,onReject}) {
       <div style={{display:'flex',gap:'2px',background:'rgba(var(--b2),0.6)',border:'1px solid rgba(var(--p3),0.08)',borderRadius:8,padding:3}}>
         {[{id:'queue',label:'Queue',count:pending.length},{id:'approved',label:'Approved',count:approved.length},{id:'log',label:'Log',count:null},{id:'research',label:'Research',count:null}].map(t=>(<button key={t.id} onClick={()=>setTab(t.id)} style={{flex:1,padding:'0.4rem 0.5rem',border:'none',background:tab===t.id?'rgba(var(--p4),0.15)':'none',borderRadius:5,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'11.5px',fontWeight:400,color:tab===t.id?'var(--bolt-lt)':'var(--mist-3)',transition:'all 0.2s',display:'flex',alignItems:'center',justifyContent:'center',gap:'0.375rem'}}>{t.label}{t.count!==null&&<span style={{fontFamily:'var(--fm)',fontSize:'9px',background:t.count>0&&tab===t.id?'rgba(var(--p3),0.2)':'rgba(255,255,255,0.06)',color:t.count>0&&tab===t.id?'var(--bolt)':'var(--mist-3)',borderRadius:99,padding:'0.1rem 0.45rem',border:t.count>0&&tab===t.id?'1px solid rgba(var(--p3),0.3)':'1px solid transparent'}}>{t.count}</span>}</button>))}
       </div>
-      {tab==='queue'&&(pending.length===0?(<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(var(--b2),0.5)',border:'1px solid rgba(var(--p3),0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(var(--p3),0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>JAXON is scanning for opportunities</div></div>):(
-        <div className="list">{pending.map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(var(--b1),0.85)',border:'1px solid rgba(var(--p3),0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(var(--p6),0.1)',borderLeft:'2px solid rgba(var(--p4),0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(var(--p6),0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,90,54,0.2)',background:'rgba(255,90,54,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff5a36'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
+      {tab==='queue'&&(<>
+        <div className="card jx-search-note">
+          <b>One lead search a day.</b> JAXON looks once, after 8 AM, and files everything it finds under that search.
+          <span className={todaySearch?.status === 'failed' ? 'bad' : todaySearch?.status === 'done' ? 'good' : ''}> Today: {todaySearch ? (todaySearch.status === 'done' ? `done, ${todaySearch.found ?? 0} found` : todaySearch.status === 'failed' ? `failed${(todaySearch.attempts || 1) < 2 ? ', it will try once more' : ' twice, so it stops until tomorrow'}` : 'running now') : 'not run yet'}.</span>
+        </div>
+        {searches.map(sr => { const pg = leadPager(sr.items.length); return (
+          <div key={sr.k} className="card jx-search">
+            <div className="row-between" style={{ flexWrap: 'wrap', gap: '0.6rem', marginBottom: '0.6rem' }}>
+              <span className="lp-phase-head"><b className="page-seal" lang="ja" aria-hidden="true">探索</b><span><em>Lead search</em>{/^\d{4}-\d{2}-\d{2}$/.test(sr.k) ? fmtDate(sr.k, { weekday: 'long', month: 'short', day: 'numeric' }) : 'Earlier'} · {sr.items.length} found</span></span>
+              <span className="row-gap">
+                <button className="btn-primary" onClick={() => sr.items.forEach(i => onApprove(i.id))}>Approve all {sr.items.length}</button>
+                <button className="btn-ghost" onClick={() => sr.items.forEach(i => onReject(i.id))}>Reject all</button>
+              </span>
+            </div>
+            {pageOf(sr.items, pg).map(item => (
+              <div key={item.id} className="jx-lead">
+                <div className="row-between" style={{ gap: '0.8rem' }}>
+                  <div className="jx-lead-main">
+                    <div className="jx-lead-name">{item.data?.businessName || 'Unnamed business'}</div>
+                    <div className="tk-note">{[item.data?.businessType, item.data?.location, item.data?.weaknessScore ? `weakness ${item.data.weaknessScore}/100` : '', Number(item.data?.value) ? `worth about ${J(Number(item.data.value))}` : ''].filter(Boolean).join(' · ')}</div>
+                  </div>
+                  <span className="row-gap">
+                    <span className={`tk-due ${item.priority === 'high' ? 'soon' : ''}`}>{item.priority}</span>
+                    <button className="btn-ghost tk-carry" onClick={() => onApprove(item.id)}>Approve</button>
+                    <button className="btn-ghost tk-carry" onClick={() => onReject(item.id)}>Reject</button>
+                  </span>
+                </div>
+                <p>{item.reasoning}</p>
+                {item.data?.outreachDraft && <details><summary>Draft message</summary><p>{item.data.outreachDraft}</p></details>}
+              </div>
+            ))}
+            <Pager pg={pg} noun="leads"/>
+          </div>
+        ); })}
+        </>)}
+      {tab==='queue'&&(pending.length===pendingLeads.length?(pendingLeads.length===0&&<div style={{textAlign:'center',padding:'3rem 1.5rem',background:'rgba(var(--b2),0.5)',border:'1px solid rgba(var(--p3),0.06)',borderRadius:14}}><div style={{fontSize:'32px',marginBottom:'0.75rem',filter:'drop-shadow(0 0 12px rgba(var(--p3),0.4))'}}>⚡</div><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.375rem'}}>Clear horizon</div><div style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.06em'}}>Nothing waiting for you</div></div>):(
+        <div className="list">{pending.filter(q=>q.action!=='ADD_LEAD').map(item=>{const ps=PS[item.priority]||PS.low;return(<div key={item.id} className="fade-in" style={{background:'rgba(var(--b1),0.85)',border:'1px solid rgba(var(--p3),0.08)',borderLeft:`3px solid ${ps.color}`,borderRadius:12,padding:'1rem',backdropFilter:'blur(8px)'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'0.625rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'9.5px',fontWeight:500,color:'var(--bolt-lt)',letterSpacing:'0.08em'}}>{AL[item.action]||item.action}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:ps.color,background:ps.bg,border:`1px solid ${ps.border}`,borderRadius:99,padding:'0.15rem 0.5rem',textTransform:'uppercase',letterSpacing:'0.08em'}}>{item.priority}</div></div>{item.data?.businessName&&<div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:600,letterSpacing:'0.01em',marginBottom:'0.375rem',color:'var(--mist-0)'}}>{item.data.businessName}</div>}<div style={{fontSize:'12.5px',fontWeight:300,color:'var(--mist-2)',lineHeight:1.65,marginBottom:'0.75rem'}}><span style={{fontFamily:'var(--fm)',fontSize:'8.5px',color:'var(--bolt)',opacity:0.7,letterSpacing:'0.1em',marginRight:'0.5rem'}}>JAXON</span>{item.reasoning}</div>{item.data?.outreachDraft&&<div style={{background:'rgba(var(--p6),0.1)',borderLeft:'2px solid rgba(var(--p4),0.4)',borderRadius:'0 6px 6px 0',padding:'0.625rem 0.75rem',marginBottom:'0.75rem'}}><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:400,color:'var(--bolt-4)',letterSpacing:'0.2em',textTransform:'uppercase',marginBottom:6,opacity:0.8}}>Draft Message</div><div style={{fontSize:'12px',fontWeight:300,color:'var(--mist-1)',lineHeight:1.6}}>{item.data.outreachDraft}</div></div>}<div style={{display:'flex',gap:'0.5rem'}}><button style={{flex:1,padding:'0.55rem',border:'1.5px solid var(--bolt-3)',background:'rgba(var(--p6),0.15)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:600,color:'var(--bolt-lt)'}} onClick={()=>onApprove(item.id)}>✓ Approve</button><button style={{flex:1,padding:'0.55rem',border:'1px solid rgba(255,90,54,0.2)',background:'rgba(255,90,54,0.05)',borderRadius:6,cursor:'pointer',fontFamily:'var(--fs)',fontSize:'12.5px',fontWeight:400,color:'#ff5a36'}} onClick={()=>onReject(item.id)}>✕ Reject</button></div></div>);})}</div>
       ))}
       {tab==='approved'&&(<div className="list">{approved.length===0?<div style={{textAlign:'center',padding:'2.5rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:400,color:'var(--mist-3)',fontStyle:'italic'}}>Nothing approved yet</div></div>:approved.map(item=>(<div key={item.id} className="fade-in" style={{background:'rgba(var(--p6),0.07)',border:'1px solid rgba(var(--p4),0.15)',borderRadius:10,padding:'0.875rem 1rem',display:'flex',alignItems:'center',gap:'0.75rem'}}><div style={{width:8,height:8,borderRadius:'50%',background:'#1adb8a',boxShadow:'0 0 8px rgba(26,219,138,0.6)',flexShrink:0}}/><div><div style={{fontFamily:'var(--fm)',fontSize:'8.5px',fontWeight:300,color:'#1adb8a',letterSpacing:'0.12em',textTransform:'uppercase',marginBottom:2}}>Approved — executes next run</div><div style={{fontSize:'13.5px',fontWeight:400,color:'var(--mist-1)'}}>{AL[item.action]} — {item.data?.businessName||item.action}</div></div></div>))}</div>)}
       {tab==='log'&&(!latestLog?<div style={{textAlign:'center',padding:'3rem 1rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'18px',fontWeight:400,fontStyle:'italic',color:'var(--mist-3)'}}>First log at midnight</div></div>:(<div className="fade-in" style={{background:'rgba(var(--b2),0.7)',border:'1px solid rgba(var(--p4),0.15)',borderTop:'2px solid var(--bolt-3)',borderRadius:12,padding:'1.125rem'}}><div style={{fontFamily:'var(--fe)',fontSize:'16px',fontWeight:600,color:'var(--bolt-lt)',marginBottom:'0.875rem'}}>Daily Log — {latestLog.date}</div>{latestLog.stats&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'0.5rem',marginBottom:'1rem'}}>{[{l:'Queued',v:latestLog.stats.actionsQueued,c:'var(--bolt)',g:'rgba(var(--p3),0.5)'},{l:'Approved',v:latestLog.stats.approved,c:'#1adb8a',g:'rgba(26,219,138,0.5)'},{l:'Rejected',v:latestLog.stats.rejected,c:'#ff5a36',g:'rgba(255,90,54,0.5)'}].map(s=>(<div key={s.l} style={{background:'rgba(0,0,0,0.3)',borderRadius:8,padding:'0.625rem',textAlign:'center',border:'1px solid rgba(var(--p3),0.06)'}}><div style={{fontFamily:'var(--fe)',fontSize:'24px',fontWeight:700,color:s.c,lineHeight:1,textShadow:`0 0 14px ${s.g}`}}>{s.v}</div><div style={{fontFamily:'var(--fm)',fontSize:'8px',fontWeight:300,color:'var(--mist-3)',letterSpacing:'0.15em',textTransform:'uppercase',marginTop:3}}>{s.l}</div></div>))}</div>}<div style={{fontSize:'13px',fontWeight:300,lineHeight:1.8,color:'var(--mist-1)',whiteSpace:'pre-line'}}>{latestLog.content}</div></div>))}
