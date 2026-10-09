@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, auth } from './firebase';
+import { LANGS, setLanguage, localeOf } from './i18n';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut,
@@ -1350,6 +1351,9 @@ function App() {
   const navMin = winW >= 760 && (navPref || navForced);
   // Live layer on or off (off by default if the Mac asks for less motion)
   const [live, setLive] = useState(() => { try { const v = localStorage.getItem('jc_live'); return v ? v === '1' : !window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return true; } });
+  const [lang, setLang] = useState(() => { try { return localStorage.getItem('jc_lang') || 'en'; } catch { return 'en'; } });
+  LOCALE = localeOf(lang);
+  useEffect(() => { setLanguage(lang); try { localStorage.setItem('jc_lang', lang); } catch {} }, [lang]);
   const toggleLive = () => setLive(v => { try { localStorage.setItem('jc_live', v ? '0' : '1'); } catch {} return !v; });
   useEffect(() => { document.documentElement.classList.toggle('live-on', live); }, [live]);
   // The engraving and the tall mark lean a little away from the pointer; a click leaves an ink ring
@@ -1873,6 +1877,12 @@ function App() {
           </button>
           <LiveClock/>
           <button className={`icon-btn live-btn ${live ? 'on' : ''}`} title={live ? 'Live motion is on. Click to switch it off.' : 'Live motion is off. Click to switch it on.'} onClick={toggleLive} style={{ width: 28, height: 28 }}><i/></button>
+          <label className="lang-pick" title="Interface language">
+            <b lang="ja" aria-hidden="true">語</b>
+            <select value={lang} onChange={e => setLang(e.target.value)} aria-label="Interface language" data-no-i18n>
+              {LANGS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </label>
           <button className="cmdk-btn" onClick={() => setPaletteOpen(true)} title="Command bar (⌘K)">
             <Icons.search size={14}/><span>Log or find anything</span><kbd>⌘K</kbd>
           </button>
@@ -4133,7 +4143,10 @@ const fmtTime = t => {
 };
 const fmtHour = h => `${((h + 11) % 12) + 1} ${h >= 12 && h < 24 ? 'PM' : 'AM'}`;
 const dayNameOf = date => DAYS[(parseLocal(date).getDay() + 6) % 7];
-const fmtDate = (date, opts) => parseLocal(date).toLocaleDateString('en-US', opts);
+// Dates follow the interface language (set from the header switch)
+let LOCALE = 'en-US';
+try { LOCALE = localeOf(localStorage.getItem('jc_lang') || 'en'); } catch {}
+const fmtDate = (date, opts) => parseLocal(date).toLocaleDateString(LOCALE, opts);
 
 // Does a (possibly recurring) block occur on this calendar date?
 function blockOccursOn(b, date) {
@@ -4496,7 +4509,7 @@ function SchedModal({data, onSave, onDelete, onClose}) {
 // (retainers) and averages include months where nothing came in.
 const monthOf    = ds => (ds || '').slice(0, 7);
 const addMonths  = (mk, n) => { const [y, m] = mk.split('-').map(Number); const d = new Date(y, m - 1 + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
-const monthName  = (mk, opts = { month:'long', year:'numeric' }) => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-US', opts); };
+const monthName  = (mk, opts = { month:'long', year:'numeric' }) => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(LOCALE, opts); };
 const daysInMonth = mk => { const [y, m] = mk.split('-').map(Number); return new Date(y, m, 0).getDate(); };
 const J = n => `${n < 0 ? '−' : ''}J$${Math.abs(Math.round(n)).toLocaleString()}`;
 const Jk = n => Math.abs(n) >= 1000 ? `${n < 0 ? '−' : ''}${Math.round(Math.abs(n) / 1000)}k` : `${Math.round(n)}`;
@@ -5995,7 +6008,7 @@ function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onA
                 {notes.length === 0 ? <div className="agenda-empty small">No notes yet.</div> : notes.map(n => (
                   <div key={n.id} className="cl-note">
                     <div className="cl-note-meta">
-                      <span>{new Date(n.at).toLocaleString('en-US', { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })}{n.edited ? ' · edited' : ''}</span>
+                      <span>{new Date(n.at).toLocaleString(LOCALE, { month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit' })}{n.edited ? ' · edited' : ''}</span>
                       <span className="row-gap">
                         <button className="icon-btn" title="Edit" onClick={() => { setEditingNote(n.id); setNoteDraft(n.text); }}><Icons.edit size={11}/></button>
                         <button className="icon-btn danger-btn" title="Delete" onClick={() => deleteNote(n)}><Icons.trash size={11}/></button>

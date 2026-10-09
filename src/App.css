@@ -3196,3 +3196,22 @@ button.svc-live.connect { cursor: pointer; width: 100%; } button.svc-live.connec
 .jx-lead p { margin: 0.4rem 0 0; font-size: 13px; line-height: 1.5; color: var(--ink-2); }
 .jx-lead details { margin-top: 0.4rem; } .jx-lead summary { cursor: pointer; font-size: 12.5px; color: var(--gold-300); }
 .jx-lead details p { padding-left: 0.7rem; border-left: 3px solid var(--teal-400); color: var(--ink-1); }
+
+
+/* ═══ LANGUAGE ═══════════════════════════════════════════════════════════════
+   The header switch, and type that can carry Japanese and Chinese headings. */
+.lang-pick { display: inline-flex; align-items: center; gap: 0.3rem; height: 28px; padding: 0 0.35rem 0 0.45rem; border: 1.5px solid var(--ink-line); background: rgba(255,255,255,0.06); cursor: pointer; }
+.lang-pick b { font-family: var(--jp); font-weight: 400; font-size: 15px; line-height: 1; color: var(--seal); }
+.lang-pick select { appearance: none; -webkit-appearance: none; border: 0; background: transparent; color: var(--paper); font-family: var(--title); font-size: 14px; line-height: 1; padding: 0 0.15rem; cursor: pointer; outline: none; max-width: 92px; }
+.lang-pick select option { color: #111; background: #fff; font-family: system-ui, sans-serif; }
+.lang-pick:hover { background: rgba(255,255,255,0.12); }
+.lang-pick:focus-within { outline: 2px solid var(--seal); outline-offset: 1px; }
+html[lang="ja"] { --title: 'Gang of Three', 'Zen Antique', 'Hiragino Mincho ProN', 'Yu Mincho', serif; --display: 'Fraunces', 'Zen Antique', 'Hiragino Mincho ProN', serif; --hand: 'Caveat', 'Zen Antique', 'Hiragino Mincho ProN', serif; }
+html[lang="zh"] { --title: 'Gang of Three', 'Songti SC', 'STSong', 'Zen Antique', serif; --display: 'Fraunces', 'Songti SC', 'STSong', serif; --hand: 'Caveat', 'Kaiti SC', 'STKaiti', 'Songti SC', serif; }
+html[lang="ja"] body, html[lang="zh"] body { line-break: strict; }
+@media (max-width: 759px) { .lang-pick select { max-width: 64px; font-size: 13px; } }
+/* Narrow cards: a row's buttons drop under the text instead of squeezing it
+   (longer button words in other languages made this bite). */
+.card:is(.span-3, .span-4, .span-5) .tk-row { flex-wrap: wrap; }
+.card:is(.span-3, .span-4, .span-5) .tk-main { flex: 1 1 62%; }
+.card:is(.span-3, .span-4, .span-5) .tk-carry { margin-left: calc(26px + 0.6rem); }
