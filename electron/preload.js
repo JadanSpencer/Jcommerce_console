@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
   platform: process.platform,
   exportData: (json, filename) => ipcRenderer.invoke('data:export', { json, filename }),
+  // A Mac notification (with its sound) for something that needs the owner now
+  notify: (title, body) => ipcRenderer.invoke('app:notify', { title, body }),
   saveInvoicePdf: (html, filename) => ipcRenderer.invoke('invoice:save-pdf', { html, filename }),
   // Live cost figures. Keys go in, but never come back out to the window.
   live: {
@@ -17,6 +19,7 @@ contextBridge.exposeInMainWorld('desktop', {
     overview: dir => ipcRenderer.invoke('venture:overview', dir),
     money: (project, days) => ipcRenderer.invoke('venture:money', { project, days }),
     billing: project => ipcRenderer.invoke('venture:billing', project),
+    ops: (project, dir) => ipcRenderer.invoke('venture:ops', { project, dir }),
     pick: () => ipcRenderer.invoke('venture:pick'),
     open: dir => ipcRenderer.invoke('venture:open', dir),
     doc: (dir, file) => ipcRenderer.invoke('venture:doc', { dir, file }),

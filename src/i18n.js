@@ -701,6 +701,34 @@ Hotel|Hotel|ホテル|酒店|Hotel|Hôtel
 Setup Value (J$)|Einrichtungswert (J$)|初期費用 (J$)|搭建费用 (J$)|Valor de instalación (J$)|Valeur d'installation (J$)
 Retainer/mo (J$)|Pauschale/Monat (J$)|月額 (J$)|月费 (J$)|Iguala/mes (J$)|Forfait/mois (J$)
 Follow up call|Nachfassanruf|フォローの電話|跟进电话|Llamada de seguimiento|Appel de relance
+Profitable. Now protect it.|Profitabel. Jetzt schütze es.|黒字。次は守ること。|已盈利。现在守住它。|Rentable. Ahora protégelo.|Rentable. Maintenant, protégez-le.
+On track. Don't get comfortable.|Auf Kurs. Werd nicht bequem.|順調。油断は禁物。|进展顺利。别松懈。|En buen camino. No te confíes.|Sur la bonne voie. Ne vous relâchez pas.
+Too many leaks. This is how businesses die.|Zu viele Lecks. So sterben Unternehmen.|漏れが多すぎる。事業はこうして潰れる。|漏洞太多。生意就是这样垮掉的。|Demasiadas fugas. Así mueren los negocios.|Trop de fuites. C'est ainsi que meurent les entreprises.
+You're bleeding money.|Du verlierst Geld.|お金が流れ出ています。|你正在失血般地亏钱。|Estás perdiendo dinero.|Vous perdez de l'argent.
+Target met|Ziel erreicht|目標達成|目标已达成|Objetivo cumplido|Objectif atteint
+· need|· nötig|· 必要額|· 需要|· hacen falta|· il faut
+Give it a name.|Gib ihm einen Namen.|名前を付けよう。|给它起个名字。|Ponle un nombre.|Donnez-lui un nom.
+Minimum is 10 minutes.|Minimum sind 10 Minuten.|最低10分です。|最少10分钟。|El mínimo son 10 minutos.|Le minimum est de 10 minutes.
+The deadline must be today or later.|Die Frist muss heute oder später sein.|期限は今日以降にしてください。|截止日期必须是今天或之后。|La fecha límite debe ser hoy o posterior.|L'échéance doit être aujourd'hui ou plus tard.
+That needs more than 12 hours a day. Be realistic.|Das braucht mehr als 12 Stunden am Tag. Bleib realistisch.|1日12時間以上必要です。現実的に。|这需要每天超过12小时。现实一点。|Eso exige más de 12 horas al día. Sé realista.|Cela demande plus de 12 heures par jour. Soyez réaliste.
+Add at least two steps, or make it a milestone.|Füge mindestens zwei Schritte hinzu oder mach es zum Meilenstein.|ステップを2つ以上追加するか、マイルストーンにしよう。|至少添加两个步骤，或改为里程碑。|Añade al menos dos pasos o conviértelo en un hito.|Ajoutez au moins deux étapes, ou faites-en un jalon.
+Set a target above zero.|Setze ein Ziel über null.|0より大きい目標を設定しよう。|设定一个大于零的目标。|Fija un objetivo mayor que cero.|Fixez une cible supérieure à zéro.
+Business name is required.|Firmenname ist erforderlich.|事業名は必須です。|企业名称为必填。|El nombre del negocio es obligatorio.|Le nom de l'entreprise est obligatoire.
+That email looks wrong.|Diese E-Mail sieht falsch aus.|メールアドレスが正しくないようです。|这个邮箱看起来不对。|Ese correo parece incorrecto.|Cet e-mail semble incorrect.
+Delete (created by mistake)|Löschen (versehentlich erstellt)|削除（誤って作成）|删除（误建）|Eliminar (creado por error)|Supprimer (créé par erreur)
+Delete (entered by mistake)|Löschen (versehentlich eingetragen)|削除（誤って入力）|删除（误录）|Eliminar (introducido por error)|Supprimer (saisi par erreur)
+Give up (counts as missed)|Aufgeben (zählt als verpasst)|諦める（未達扱い）|放弃（计为错过）|Abandonar (cuenta como perdido)|Abandonner (compte comme manqué)
+Archive (stop tracking)|Archivieren (nicht mehr verfolgen)|アーカイブ（追跡をやめる）|归档（停止追踪）|Archivar (dejar de seguir)|Archiver (arrêter le suivi)
+Ahead of target — keep going|Über dem Ziel — weiter so|目標超え — この調子で|超出目标 — 继续保持|Por delante del objetivo: sigue así|En avance sur l'objectif — continuez
+On track|Auf Kurs|順調|进展顺利|En buen camino|Sur la bonne voie
+Pull up your socks|Reiß dich zusammen|気を引き締めよう|加把劲|Ponte las pilas|Ressaisissez-vous
+Critical — act now|Kritisch — jetzt handeln|危機的 — 今すぐ行動|危急 — 立即行动|Crítico: actúa ya|Critique — agissez maintenant
+Anthropic out of credits|Anthropic-Guthaben aufgebraucht|Anthropicのクレジット切れ|Anthropic额度用尽|Anthropic sin créditos|Crédits Anthropic épuisés
+Anthropic API error|Anthropic-API-Fehler|Anthropic APIエラー|Anthropic接口错误|Error de la API de Anthropic|Erreur de l'API Anthropic
+JAXON is offline|JAXON ist offline|JAXONはオフライン|JAXON已离线|JAXON está desconectado|JAXON est hors ligne
+12 months|12 Monate|12か月|12个月|12 meses|12 mois
+click a month to open it|klicke einen Monat an, um ihn zu öffnen|月をクリックして開く|点击月份打开|haz clic en un mes para abrirlo|cliquez sur un mois pour l'ouvrir
+month to date|bisher im Monat|月初から今日まで|本月至今|mes hasta la fecha|mois en cours
 `;
 
 const DICT = Object.fromEntries(ORDER.map(l => [l, new Map()]));
@@ -722,12 +750,147 @@ const PATTERNS = [
   [/^today$/, (m, l) => ({ de: 'heute', ja: '今日', zh: '今天', es: 'hoy', fr: "aujourd'hui" }[l])],
 ];
 
+// Sentences the app builds from your numbers. {1}, {2}… are the moving parts
+// (amounts, names, counts); "(s)" is an optional plural; [a|b] is either wording.
+// One row per sentence: English ⇒ German ⇒ Japanese ⇒ Mandarin ⇒ Spanish ⇒ French
+const SENTENCES = `
+Nothing is taken for today. A missed day, week or month costs you once it is over. The newer rules count from ⇒ Für heute wird nichts abgezogen. Ein verpasster Tag, eine Woche oder ein Monat kostet erst, wenn er vorbei ist. Die neueren Regeln zählen ab ⇒ 今日の分はまだ減点されません。逃した日・週・月は、終わった時点で減点されます。新しいルールの起算日： ⇒ 今天的还不会扣分。错过的日、周或月在结束后才扣分。新规则起算日： ⇒ Hoy no se resta nada. Un día, semana o mes perdido cuesta cuando termina. Las reglas nuevas cuentan desde ⇒ Rien n'est retiré pour aujourd'hui. Un jour, une semaine ou un mois manqué coûte une fois terminé. Les nouvelles règles comptent à partir du
+{1} is the one slipping: {2} of the {3} you should have by today, while {4} is over. ⇒ {1} rutscht ab: {2} von den {3}, die du bis heute haben solltest, während {4} darüber liegt. ⇒ 遅れているのは{1}：今日までに必要な{3}のうち{2}。一方{4}は超過。 ⇒ 落后的是{1}：到今天应有{3}，实际{2}；而{4}已超出。 ⇒ {1} es lo que se queda atrás: {2} de las {3} que deberías llevar hoy, mientras {4} va de sobra. ⇒ C'est {1} qui décroche : {2} sur les {3} attendues à ce jour, alors que {4} est en excès.
+{1} is the one slipping: {2} of the {3} you should have by today. ⇒ {1} rutscht ab: {2} von den {3}, die du bis heute haben solltest. ⇒ 遅れているのは{1}：今日までに必要な{3}のうち{2}。 ⇒ 落后的是{1}：到今天应有{3}，实际{2}。 ⇒ {1} es lo que se queda atrás: {2} de las {3} que deberías llevar hoy. ⇒ C'est {1} qui décroche : {2} sur les {3} attendues à ce jour.
+Nothing logged in {1}. ⇒ Nichts erfasst im {1}. ⇒ {1}は記録なし。 ⇒ {1}没有记录。 ⇒ Nada registrado en {1}. ⇒ Rien de saisi en {1}.
+{1} thing(s) need you ⇒ {1} Sache(n) brauchen dich ⇒ 要対応 {1}件 ⇒ {1}件事需要你处理 ⇒ {1} asunto(s) te necesitan ⇒ {1} point(s) à traiter
+Profit is heading for {1} this month, {2} short of your Level {3} minimum. That's {4} a day. ⇒ Der Gewinn steuert diesen Monat auf {1} zu, {2} unter deinem Level-{3}-Minimum. Das sind {4} pro Tag. ⇒ 今月の利益は{1}の見込みで、レベル{3}の最低ラインに{2}足りません。1日あたり{4}です。 ⇒ 本月利润预计为{1}，比等级{3}的最低要求少{2}。相当于每天{4}。 ⇒ El beneficio va camino de {1} este mes, {2} por debajo de tu mínimo de Nivel {3}. Son {4} al día. ⇒ Le bénéfice se dirige vers {1} ce mois-ci, soit {2} sous votre minimum de Niveau {3}. Cela fait {4} par jour.
+Chase {1}: {2} unpaid retainer(s) ({3}). ⇒ {1} mahnen: {2} unbezahlte Pauschale(n) ({3}). ⇒ {1}に催促：未払いの月額{2}件（{3}）。 ⇒ 催收{1}：{2}笔月费未付（{3}）。 ⇒ Reclama a {1}: {2} iguala(s) sin pagar ({3}). ⇒ Relancez {1} : {2} forfait(s) impayé(s) ({3}).
+{1} more follow-ups are due. ⇒ {1} weitere Nachfassaktionen sind fällig. ⇒ ほかに{1}件のフォローアップが期限です。 ⇒ 还有{1}个跟进到期。 ⇒ Hay {1} seguimientos más pendientes. ⇒ {1} autres relances sont à faire.
+Follow up with {1}. ⇒ Bei {1} nachfassen. ⇒ {1}にフォローアップ。 ⇒ 跟进{1}。 ⇒ Haz seguimiento a {1}. ⇒ Relancez {1}.
+{1} habit(s) left today, including your {2}-day "{3}" streak. ⇒ Heute noch {1} Gewohnheit(en) offen, darunter deine {2}-Tage-Serie „{3}“. ⇒ 今日の習慣が残り{1}件。{2}日連続の「{3}」も含まれます。 ⇒ 今天还剩{1}个习惯，包括你连续{2}天的“{3}”。 ⇒ Quedan {1} hábito(s) hoy, incluida tu racha de {2} días de «{3}». ⇒ Il reste {1} habitude(s) aujourd'hui, dont votre série de {2} jours « {3} ».
+{1} habit(s) left today. ⇒ Heute noch {1} Gewohnheit(en) offen. ⇒ 今日の習慣が残り{1}件。 ⇒ 今天还剩{1}个习惯。 ⇒ Quedan {1} hábito(s) hoy. ⇒ Il reste {1} habitude(s) aujourd'hui.
+Plan {1} more task(s). Five is the minimum. ⇒ Plane noch {1} Aufgabe(n). Fünf sind das Minimum. ⇒ あと{1}件タスクを計画しよう。最低5件です。 ⇒ 再计划{1}项任务。最少五项。 ⇒ Planifica {1} tarea(s) más. Cinco es el mínimo. ⇒ Prévoyez encore {1} tâche(s). Cinq est le minimum.
+Finish {1} more task(s) today to avoid −10 XP tomorrow. ⇒ Erledige heute noch {1} Aufgabe(n), sonst morgen −10 XP. ⇒ 今日あと{1}件終わらせて、明日の−10 XPを避けよう。 ⇒ 今天再完成{1}项任务，避免明天−10 XP。 ⇒ Termina {1} tarea(s) más hoy para evitar −10 XP mañana. ⇒ Terminez encore {1} tâche(s) aujourd'hui pour éviter −10 XP demain.
+"{1}" is behind pace: {2} of {3} with {4}% of the time left. ⇒ „{1}“ liegt zurück: {2} von {3}, noch {4}% der Zeit übrig. ⇒ 「{1}」は遅れています：{3}中{2}、残り時間{4}%。 ⇒ “{1}”落后进度：{2}/{3}，剩余时间{4}%。 ⇒ «{1}» va con retraso: {2} de {3} y queda el {4}% del tiempo. ⇒ « {1} » est en retard : {2} sur {3}, avec {4}% du temps restant.
+"{1}" is due {2}. ⇒ „{1}“ ist fällig: {2}. ⇒ 「{1}」の期限：{2}。 ⇒ “{1}”到期：{2}。 ⇒ «{1}» vence: {2}. ⇒ « {1} » arrive à échéance : {2}.
+Nothing logged in Finance for {1} days. Log what you spent. ⇒ Seit {1} Tagen nichts in Finanzen erfasst. Trag ein, was du ausgegeben hast. ⇒ 財務に{1}日間記録がありません。使った分を記録しよう。 ⇒ 财务已{1}天没有记录。把花掉的记下来。 ⇒ Nada registrado en Finanzas desde hace {1} días. Anota lo que gastaste. ⇒ Rien de saisi dans Finances depuis {1} jours. Notez ce que vous avez dépensé.
+{1} open lead[ has|s have] no next step. A lead without a date gets forgotten. ⇒ {1} offene Leads ohne nächsten Schritt. Ein Lead ohne Datum wird vergessen. ⇒ 次の一手がない進行中リードが{1}件。日付のないリードは忘れられます。 ⇒ {1}条进行中线索没有下一步。没有日期的线索会被遗忘。 ⇒ {1} prospecto(s) abierto(s) sin próximo paso. Un prospecto sin fecha se olvida. ⇒ {1} prospect(s) ouvert(s) sans prochaine étape. Un prospect sans date s'oublie.
+Next up: {1} at {2}. ⇒ Als Nächstes: {1} um {2}. ⇒ 次の予定：{2} {1}。 ⇒ 接下来：{2} {1}。 ⇒ A continuación: {1} a las {2}. ⇒ Ensuite : {1} à {2}.
+{1} has no syllabus yet. Paste it in so you can track it. ⇒ {1} hat noch keinen Lehrplan. Füge ihn ein, um ihn zu verfolgen. ⇒ {1}のシラバスがまだありません。貼り付けて進捗を追おう。 ⇒ {1}还没有大纲。粘贴进来以便追踪。 ⇒ {1} aún no tiene temario. Pégalo para poder seguirlo. ⇒ {1} n'a pas encore de programme. Collez-le pour pouvoir le suivre.
+{1} exam in {2} day(s) with {3} topic(s) uncovered. ⇒ {1}-Prüfung in {2} Tag(en), {3} Themen noch offen. ⇒ {1}の試験まで{2}日、未履修トピック{3}件。 ⇒ {1}考试还有{2}天，{3}个主题未学。 ⇒ Examen de {1} en {2} día(s) con {3} tema(s) sin cubrir. ⇒ Examen de {1} dans {2} jour(s), {3} sujet(s) non couvert(s).
+{1} is behind: {2}% covered, {3}% of the term gone. {4} topics a week from here. ⇒ {1} liegt zurück: {2}% behandelt, {3}% des Semesters vorbei. Ab jetzt {4} Themen pro Woche. ⇒ {1}は遅れています：履修{2}%、学期の{3}%が経過。ここから週{4}トピック。 ⇒ {1}进度落后：已学{2}%，学期已过{3}%。从现在起每周{4}个主题。 ⇒ {1} va con retraso: {2}% cubierto, {3}% del trimestre pasado. {4} temas por semana desde ahora. ⇒ {1} est en retard : {2}% couvert, {3}% du semestre écoulé. {4} sujets par semaine désormais.
+You owe {1} that is past its date: {2}. Pay it or agree a new date. ⇒ Du schuldest {1}, die überfällig sind: {2}. Zahle oder vereinbare ein neues Datum. ⇒ 期日を過ぎた借りが{1}あります：{2}。支払うか、新しい期日を決めよう。 ⇒ 你有{1}欠款已过期：{2}。还清或约定新日期。 ⇒ Debes {1} con la fecha vencida: {2}. Paga o acuerda una nueva fecha. ⇒ Vous devez {1} dont la date est dépassée : {2}. Payez ou convenez d'une nouvelle date.
+You owe {1} and have {2} on hand. You could not clear it today. ⇒ Du schuldest {1} und hast {2} verfügbar. Heute könntest du es nicht begleichen. ⇒ 借りは{1}、手元は{2}。今日は清算できません。 ⇒ 你欠{1}，手头有{2}。今天无法还清。 ⇒ Debes {1} y tienes {2} disponibles. Hoy no podrías saldarlo. ⇒ Vous devez {1} et disposez de {2}. Vous ne pourriez pas solder aujourd'hui.
+You owe {1} and the date has passed. ⇒ Du schuldest {1} und das Datum ist verstrichen. ⇒ {1}の借りがあり、期日を過ぎています。 ⇒ 你欠{1}，且已过期。 ⇒ Debes {1} y la fecha ya pasó. ⇒ Vous devez {1} et la date est dépassée.
+{1} is due to {2} today. ⇒ {1} sind heute an {2} fällig. ⇒ {2}への{1}は今日が期日です。 ⇒ 欠{2}的{1}今天到期。 ⇒ {1} vence hoy con {2}. ⇒ {1} sont dus à {2} aujourd'hui.
+{1} is due to {2} on {3}. ⇒ {1} sind an {2} fällig: {3}. ⇒ {2}への{1}の期日：{3}。 ⇒ 欠{2}的{1}到期：{3}。 ⇒ {1} vence con {2}: {3}. ⇒ {1} sont dus à {2} : {3}.
+Daily check not read today: {1}. ⇒ Tagescheck heute nicht gelesen: {1}. ⇒ 今日の確認が未読：{1}。 ⇒ 今日检查未读：{1}。 ⇒ Revisión diaria sin leer hoy: {1}. ⇒ Contrôle du jour non lu : {1}.
+{1}: {2} left, due {3}. ⇒ {1}: noch {2}, fällig {3}. ⇒ {1}：残り{2}、期限 {3}。 ⇒ {1}：还剩{2}，到期 {3}。 ⇒ {1}: quedan {2}, vence {3}. ⇒ {1} : reste {2}, échéance {3}.
+Nothing logged in {1} days. Log every dollar the day it moves. ⇒ Seit {1} Tagen nichts erfasst. Erfasse jeden Dollar am Tag, an dem er sich bewegt. ⇒ {1}日間記録なし。お金が動いたその日に記録しよう。 ⇒ 已{1}天没有记录。钱动的当天就记下每一块。 ⇒ Nada registrado en {1} días. Anota cada dólar el día que se mueve. ⇒ Rien de saisi depuis {1} jours. Notez chaque dollar le jour où il bouge.
+Personal money is {1} up this month. ⇒ Das private Geld liegt diesen Monat {1} im Plus. ⇒ 今月の個人のお金は{1}のプラス。 ⇒ 本月个人资金增加{1}。 ⇒ El dinero personal sube {1} este mes. ⇒ L'argent personnel est en hausse de {1} ce mois-ci.
+You spent {1} more of your own money than came in this month. ⇒ Du hast diesen Monat {1} mehr eigenes Geld ausgegeben als hereinkam. ⇒ 今月は入った額より{1}多く自分のお金を使いました。 ⇒ 本月你花的自己的钱比收入多{1}。 ⇒ Este mes gastaste {1} más de tu propio dinero de lo que entró. ⇒ Ce mois-ci, vous avez dépensé {1} de plus de votre argent qu'il n'en est entré.
+[Target already cleared|Target met]: {1} against the {2} Level {3} minimum. ⇒ Ziel erreicht: {1} gegenüber dem Level-{3}-Minimum von {2}. ⇒ 目標達成：レベル{3}の最低ライン{2}に対して{1}。 ⇒ 目标已达成：{1}，对比等级{3}最低要求{2}。 ⇒ Objetivo cumplido: {1} frente al mínimo de Nivel {3} de {2}. ⇒ Objectif atteint : {1} face au minimum de Niveau {3} de {2}.
+On course for the {1} minimum only if the {2} in retainers still due actually arrives. ⇒ Auf Kurs zum Minimum von {1} nur, wenn die noch fälligen {2} an Pauschalen wirklich eingehen. ⇒ まだ未入金の月額{2}が実際に入れば、最低ライン{1}に届きます。 ⇒ 只有尚未到账的{2}月费真的到账，才能达到{1}的最低要求。 ⇒ Vas hacia el mínimo de {1} solo si llegan de verdad los {2} de igualas pendientes. ⇒ En bonne voie pour le minimum de {1} seulement si les {2} de forfaits encore dus arrivent vraiment.
+At this pace you finish {1} short of the {2} Level {3} minimum. That's {4} more profit every day, starting today. ⇒ Bei diesem Tempo fehlen dir am Ende {1} zum Level-{3}-Minimum von {2}. Das sind ab heute {4} mehr Gewinn pro Tag. ⇒ このペースではレベル{3}の最低ライン{2}に{1}届きません。今日から毎日{4}の利益上積みが必要です。 ⇒ 按这个进度，你将比等级{3}的最低要求{2}少{1}。从今天起每天需多赚{4}利润。 ⇒ A este ritmo terminas {1} por debajo del mínimo de Nivel {3} de {2}. Son {4} más de beneficio cada día, desde hoy. ⇒ À ce rythme, il vous manquera {1} pour le minimum de Niveau {3} de {2}. Cela fait {4} de bénéfice en plus chaque jour, dès aujourd'hui.
+Missed the Level {1} minimum by {2}. ⇒ Level-{1}-Minimum um {2} verfehlt. ⇒ レベル{1}の最低ラインに{2}届きませんでした。 ⇒ 比等级{1}最低要求少{2}。 ⇒ Mínimo de Nivel {1} no alcanzado por {2}. ⇒ Minimum de Niveau {1} manqué de {2}.
+{1} spent and nothing earned in {2}. ⇒ {1} ausgegeben und nichts verdient im {2}. ⇒ {2}は{1}使って収入ゼロ。 ⇒ {2}花了{1}，却没有任何收入。 ⇒ {1} gastados y nada ganado en {2}. ⇒ {1} dépensés et rien gagné en {2}.
+You keep {1}¢ of every dollar earned. Keep at least 30¢. ⇒ Du behältst {1}¢ von jedem verdienten Dollar. Behalte mindestens 30¢. ⇒ 稼いだ1ドルあたり手元に残るのは{1}¢。最低30¢は残そう。 ⇒ 每赚一块钱你留下{1}¢。至少留下30¢。 ⇒ Conservas {1}¢ de cada dólar ganado. Conserva al menos 30¢. ⇒ Vous gardez {1}¢ par dollar gagné. Gardez-en au moins 30¢.
+Spending [is heading|was] {1}% higher than {2}. ⇒ Ausgaben {1}% höher als im {2}. ⇒ 支出は{2}より{1}%増。 ⇒ 支出比{2}高{1}%。 ⇒ El gasto es un {1}% mayor que en {2}. ⇒ Les dépenses sont {1}% plus élevées qu'en {2}.
+{1}: {2} spent against a {3} budget. Over by {4}. ⇒ {1}: {2} ausgegeben bei einem Budget von {3}. {4} darüber. ⇒ {1}：予算{3}に対して{2}の支出。{4}超過。 ⇒ {1}：预算{3}，已花{2}。超支{4}。 ⇒ {1}: {2} gastados con un presupuesto de {3}. Exceso de {4}. ⇒ {1} : {2} dépensés pour un budget de {3}. Dépassement de {4}.
+{1} is running ahead of its budget pace ({2} of {3} with {4} days left). ⇒ {1} läuft dem Budgettempo voraus ({2} von {3}, noch {4} Tage). ⇒ {1}は予算ペースを上回っています（{3}中{2}、残り{4}日）。 ⇒ {1}超出预算进度（{2}/{3}，还剩{4}天）。 ⇒ {1} va por delante del ritmo del presupuesto ({2} de {3}, quedan {4} días). ⇒ {1} dépasse le rythme de son budget ({2} sur {3}, {4} jours restants).
+{1} spent on {2} with no budget set. ⇒ {1} für {2} ausgegeben, ohne Budget. ⇒ 予算なしで{2}に{1}支出。 ⇒ 在{2}上花了{1}，但没有设预算。 ⇒ {1} gastados en {2} sin presupuesto. ⇒ {1} dépensés en {2} sans budget défini.
+Unpaid retainers: {1}. That's {2}. Chase it today. ⇒ Unbezahlte Pauschalen: {1}. Das sind {2}. Heute mahnen. ⇒ 未払いの月額：{1}。合計{2}。今日催促しよう。 ⇒ 未付月费：{1}。共{2}。今天就去催。 ⇒ Igualas sin pagar: {1}. Son {2}. Reclámalo hoy. ⇒ Forfaits impayés : {1}. Soit {2}. Relancez aujourd'hui.
+{1} owe(s) you {2} past the agreed date. Ask for it. ⇒ {1}: schuldet dir {2} über das vereinbarte Datum hinaus. Fordere es ein. ⇒ {1}からの{2}が約束の期日を過ぎています。請求しよう。 ⇒ {1}欠你{2}，已过约定日期。去要回来。 ⇒ {1}: te debe {2} pasada la fecha acordada. Pídelo. ⇒ {1} : vous doit {2} après la date convenue. Réclamez-le.
+Clients still owe {1} on project fees. Collect before you spend. ⇒ Kunden schulden noch {1} an Projekthonoraren. Erst eintreiben, dann ausgeben. ⇒ 顧客のプロジェクト費用が{1}未回収。使う前に回収しよう。 ⇒ 客户还欠{1}项目费。先收款再花钱。 ⇒ Los clientes aún deben {1} de honorarios. Cobra antes de gastar. ⇒ Les clients doivent encore {1} d'honoraires. Encaissez avant de dépenser.
+No income in {1} days. ⇒ Seit {1} Tagen keine Einnahmen. ⇒ {1}日間収入なし。 ⇒ 已{1}天没有收入。 ⇒ Sin ingresos en {1} días. ⇒ Aucun revenu depuis {1} jours.
+Cash covers {1} months of spending. You want 3 or more. ⇒ Das Bargeld deckt {1} Monate Ausgaben. Du willst 3 oder mehr. ⇒ 手元資金は支出{1}か月分。3か月以上が目標です。 ⇒ 现金可覆盖{1}个月开销。你需要3个月以上。 ⇒ El efectivo cubre {1} meses de gasto. Necesitas 3 o más. ⇒ La trésorerie couvre {1} mois de dépenses. Il en faut 3 ou plus.
+Short by {1} ⇒ Es fehlen {1} ⇒ {1}不足 ⇒ 差{1} ⇒ Faltan {1} ⇒ Il manque {1}
+Project folder problem: {1}. ⇒ Problem mit dem Projektordner: {1}. ⇒ プロジェクトフォルダの問題：{1}。 ⇒ 项目文件夹问题：{1}。 ⇒ Problema con la carpeta del proyecto: {1}. ⇒ Problème de dossier du projet : {1}.
+{1} key[ is|s are] empty: {2}. ⇒ Leere Schlüssel ({1}): {2}. ⇒ 空のキーが{1}件：{2}。 ⇒ {1}个密钥为空：{2}。 ⇒ {1} clave(s) vacía(s): {2}. ⇒ {1} clé(s) vide(s) : {2}.
+{1} still looks like a placeholder. Card payments can't work with a fake key. ⇒ {1} sieht noch wie ein Platzhalter aus. Kartenzahlungen funktionieren nicht mit einem falschen Schlüssel. ⇒ {1}はまだ仮の値のようです。偽のキーではカード決済は動きません。 ⇒ {1}看起来仍是占位符。假密钥无法处理刷卡付款。 ⇒ {1} todavía parece un valor de relleno. Los pagos con tarjeta no funcionan con una clave falsa. ⇒ {1} ressemble encore à une valeur factice. Les paiements par carte ne fonctionnent pas avec une fausse clé.
+{1} is committed to git. Anyone with the repo has it. ⇒ {1} ist in Git eingecheckt. Jeder mit dem Repository hat es. ⇒ {1}がgitにコミットされています。リポジトリを持つ誰もが見られます。 ⇒ {1}已提交到git。任何有仓库的人都能拿到。 ⇒ {1} está subido a git. Cualquiera con el repositorio lo tiene. ⇒ {1} est validé dans git. Quiconque a le dépôt l'a.
+WiPay settings are still in the project, but WiPay was replaced by Fygaro. Remove them. ⇒ WiPay-Einstellungen sind noch im Projekt, aber WiPay wurde durch Fygaro ersetzt. Entferne sie. ⇒ WiPayの設定がまだ残っていますが、Fygaroに置き換え済みです。削除しよう。 ⇒ 项目里还有WiPay设置，但WiPay已被Fygaro取代。请移除。 ⇒ Los ajustes de WiPay siguen en el proyecto, pero WiPay fue sustituido por Fygaro. Quítalos. ⇒ Les réglages WiPay sont encore dans le projet, mais WiPay a été remplacé par Fygaro. Retirez-les.
+{1} file(s) changed but not committed. ⇒ {1} Datei(en) geändert, aber nicht committet. ⇒ 変更済み・未コミットのファイルが{1}件。 ⇒ {1}个文件已修改但未提交。 ⇒ {1} archivo(s) cambiado(s) sin confirmar. ⇒ {1} fichier(s) modifié(s) mais non validé(s).
+{1} commit(s) not pushed to GitHub. ⇒ {1} Commit(s) nicht zu GitHub gepusht. ⇒ GitHubに未プッシュのコミットが{1}件。 ⇒ {1}个提交未推送到GitHub。 ⇒ {1} commit(s) sin subir a GitHub. ⇒ {1} commit(s) non poussé(s) vers GitHub.
+{1} commit(s) on GitHub you don't have here. ⇒ {1} Commit(s) auf GitHub, die du hier nicht hast. ⇒ GitHubにあってここにないコミットが{1}件。 ⇒ GitHub上有{1}个提交你本地没有。 ⇒ {1} commit(s) en GitHub que no tienes aquí. ⇒ {1} commit(s) sur GitHub que vous n'avez pas ici.
+No commits in {1} days. Is this still moving? ⇒ Seit {1} Tagen keine Commits. Bewegt sich das noch? ⇒ {1}日間コミットなし。まだ動いていますか？ ⇒ 已{1}天没有提交。这个还在推进吗？ ⇒ Sin commits en {1} días. ¿Sigue avanzando? ⇒ Aucun commit depuis {1} jours. Est-ce que ça avance encore ?
+{1} card payment(s) started in the last 3 days never completed ({2}). Abandoned, or a webhook problem? ⇒ {1} Kartenzahlung(en) der letzten 3 Tage wurden nie abgeschlossen ({2}). Abgebrochen oder ein Webhook-Problem? ⇒ 過去3日に開始されたカード決済{1}件が未完了（{2}）。放棄か、Webhookの問題か？ ⇒ 最近3天开始的{1}笔刷卡付款从未完成（{2}）。是放弃了，还是webhook有问题？ ⇒ {1} pago(s) con tarjeta iniciado(s) en los últimos 3 días nunca se completaron ({2}). ¿Abandonados o un problema de webhook? ⇒ {1} paiement(s) par carte commencé(s) ces 3 derniers jours jamais terminé(s) ({2}). Abandon ou problème de webhook ?
+{1} refund(s) this week went back as coins, not to the card. Check each one. ⇒ {1} Erstattung(en) dieser Woche gingen als Coins zurück, nicht auf die Karte. Prüfe jede einzeln. ⇒ 今週の返金{1}件がカードではなくコインで戻されました。1件ずつ確認しよう。 ⇒ 本周有{1}笔退款以金币而非原卡退回。逐笔检查。 ⇒ {1} reembolso(s) de esta semana volvieron como monedas, no a la tarjeta. Revisa cada uno. ⇒ {1} remboursement(s) cette semaine rendu(s) en pièces, pas sur la carte. Vérifiez chacun.
+{1} payment(s) this week landed after the order was cancelled. ⇒ {1} Zahlung(en) dieser Woche gingen nach der Stornierung ein. ⇒ 今週、注文キャンセル後に着金した支払いが{1}件。 ⇒ 本周有{1}笔付款在订单取消后到账。 ⇒ {1} pago(s) de esta semana llegaron después de cancelarse el pedido. ⇒ {1} paiement(s) cette semaine arrivé(s) après l'annulation de la commande.
+{1} order(s) this week cancelled because no runner took [it|them]. That's lost money and a lost customer. ⇒ {1} Bestellung(en) dieser Woche storniert, weil kein Runner sie übernahm. Das ist verlorenes Geld und ein verlorener Kunde. ⇒ 今週、ランナー不在でキャンセルになった注文が{1}件。失ったお金と失った顧客です。 ⇒ 本周有{1}个订单因无人接单而取消。这是损失的钱和流失的客户。 ⇒ {1} pedido(s) de esta semana cancelado(s) porque ningún runner lo(s) tomó. Es dinero perdido y un cliente perdido. ⇒ {1} commande(s) annulée(s) cette semaine faute de runner. C'est de l'argent perdu et un client perdu.
+{1} order(s) this week timed out waiting for payment. ⇒ {1} Bestellung(en) dieser Woche liefen beim Warten auf Zahlung ab. ⇒ 今週、支払い待ちでタイムアウトした注文が{1}件。 ⇒ 本周有{1}个订单等待付款超时。 ⇒ {1} pedido(s) de esta semana caducaron esperando el pago. ⇒ {1} commande(s) cette semaine expirée(s) en attente de paiement.
+No orders in the last 7 days. ⇒ Keine Bestellungen in den letzten 7 Tagen. ⇒ 過去7日間に注文なし。 ⇒ 最近7天没有订单。 ⇒ Sin pedidos en los últimos 7 días. ⇒ Aucune commande ces 7 derniers jours.
+Couldn't read live data: {1} ⇒ Live-Daten konnten nicht gelesen werden: {1} ⇒ ライブデータを読めませんでした：{1} ⇒ 无法读取实时数据：{1} ⇒ No se pudieron leer los datos en vivo: {1} ⇒ Lecture des données en direct impossible : {1}
+{1} of {2} services not checked today: {3}. ⇒ {1} von {2} Diensten heute nicht geprüft: {3}. ⇒ 本日未確認のサービスが{2}件中{1}件：{3}。 ⇒ {2}项服务中有{1}项今天未检查：{3}。 ⇒ {1} de {2} servicios sin revisar hoy: {3}. ⇒ {1} services sur {2} non vérifiés aujourd'hui : {3}.
+{1} move(s) past [its|their] date: {2}. ⇒ {1} Schritt(e) überfällig: {2}. ⇒ 期日を過ぎた一手が{1}件：{2}。 ⇒ {1}个步骤已过期：{2}。 ⇒ {1} paso(s) con la fecha vencida: {2}. ⇒ {1} action(s) en retard : {2}.
+Due today: {1}. ⇒ Heute fällig: {1}. ⇒ 今日が期限：{1}。 ⇒ 今天到期：{1}。 ⇒ Vence hoy: {1}. ⇒ À faire aujourd'hui : {1}.
+{1} was due to renew {2} day(s) ago. Is it still running? ⇒ {1} sollte vor {2} Tag(en) verlängert werden. Läuft es noch? ⇒ {1}は{2}日前に更新予定でした。まだ動いていますか？ ⇒ {1}本应在{2}天前续费。它还在运行吗？ ⇒ {1} debía renovarse hace {2} día(s). ¿Sigue funcionando? ⇒ {1} devait être renouvelé il y a {2} jour(s). Fonctionne-t-il encore ?
+{1} renews {2}. ⇒ {1} verlängert sich: {2}. ⇒ {1}の更新：{2}。 ⇒ {1}续费：{2}。 ⇒ {1} se renueva: {2}. ⇒ {1} se renouvelle : {2}.
+Check {1} more service(s) first › ⇒ Erst noch {1} Dienst(e) prüfen › ⇒ 先にあと{1}件のサービスを確認 › ⇒ 先再检查{1}项服务 › ⇒ Revisa antes {1} servicio(s) más › ⇒ Vérifiez d'abord {1} service(s) de plus ›
+Findings are worked out from the real project, plan and bills. +10 XP for reading it; −10 XP for every day you don't. ⇒ Die Befunde stammen aus dem echten Projekt, dem Plan und den Rechnungen. +10 XP fürs Lesen; −10 XP für jeden Tag ohne. ⇒ 所見は実際のプロジェクト・計画・請求から算出。読めば+10 XP、読まない日は−10 XP。 ⇒ 结论来自真实的项目、计划和账单。阅读+10 XP；每天不读−10 XP。 ⇒ Los hallazgos salen del proyecto real, el plan y las facturas. +10 XP por leerlo; −10 XP por cada día que no. ⇒ Les constats viennent du vrai projet, du plan et des factures. +10 XP pour la lecture ; −10 XP par jour sans.
+{1} of {2} tasks done ⇒ {1} von {2} Aufgaben erledigt ⇒ タスク {1}/{2} 完了 ⇒ 任务完成 {1}/{2} ⇒ {1} de {2} tareas hechas ⇒ {1} tâches sur {2} faites
+{1} of {2} habits today ⇒ {1} von {2} Gewohnheiten heute ⇒ 今日の習慣 {1}/{2} ⇒ 今日习惯 {1}/{2} ⇒ {1} de {2} hábitos hoy ⇒ {1} habitudes sur {2} aujourd'hui
+Focusing on {1} ⇒ Fokus auf {1} ⇒ {1}に集中中 ⇒ 正在专注：{1} ⇒ Enfocado en {1} ⇒ Concentré sur {1}
+This month {1} net ⇒ Dieser Monat {1} netto ⇒ 今月 純額{1} ⇒ 本月净额{1} ⇒ Este mes {1} neto ⇒ Ce mois-ci {1} net
+{1} launch step(s) behind ⇒ {1} Startschritt(e) im Rückstand ⇒ ローンチ手順 {1}件遅れ ⇒ {1}个上线步骤落后 ⇒ {1} paso(s) de lanzamiento con retraso ⇒ {1} étape(s) de lancement en retard
+{1} launch step(s) for today ⇒ {1} Startschritt(e) für heute ⇒ 今日のローンチ手順 {1}件 ⇒ 今天有{1}个上线步骤 ⇒ {1} paso(s) de lanzamiento para hoy ⇒ {1} étape(s) de lancement pour aujourd'hui
+{1} exam in {2} ⇒ {1}-Prüfung: noch {2} ⇒ {1}の試験まで{2} ⇒ {1}考试还有{2} ⇒ Examen de {1} en {2} ⇒ Examen de {1} dans {2}
+{1} owed to you ⇒ {1} werden dir geschuldet ⇒ 未回収 {1} ⇒ 别人欠你{1} ⇒ Te deben {1} ⇒ On vous doit {1}
+You owe {1} ⇒ Du schuldest {1} ⇒ 借り {1} ⇒ 你欠{1} ⇒ Debes {1} ⇒ Vous devez {1}
+{1} XP to Level {2} ⇒ {1} XP bis Level {2} ⇒ レベル{2}まで{1} XP ⇒ 距等级{2}还差{1} XP ⇒ {1} XP para el Nivel {2} ⇒ {1} XP avant le Niveau {2}
+{1} item(s) ⇒ {1} Punkt(e) ⇒ {1}件 ⇒ {1}项 ⇒ {1} elemento(s) ⇒ {1} élément(s)
+in {1} day(s) ({2}) ⇒ in {1} Tag(en) ({2}) ⇒ {1}日後（{2}） ⇒ {1}天后（{2}） ⇒ en {1} día(s) ({2}) ⇒ dans {1} jour(s) ({2})
+in {1} day(s) ⇒ in {1} Tag(en) ⇒ {1}日後 ⇒ {1}天后 ⇒ en {1} día(s) ⇒ dans {1} jour(s)
+· {1} day(s) left ⇒ · noch {1} Tag(e) ⇒ · 残り{1}日 ⇒ · 还剩{1}天 ⇒ · quedan {1} día(s) ⇒ · {1} jour(s) restant(s)
++10 a day done, −10 a day missed ⇒ +10 pro erledigtem Tag, −10 pro verpasstem Tag ⇒ 実行した日+10、逃した日−10 ⇒ 完成一天+10，错过一天−10 ⇒ +10 por día cumplido, −10 por día perdido ⇒ +10 par jour fait, −10 par jour manqué
++5 a task done; −10 each one missed, −10 for a day under five ⇒ +5 pro erledigter Aufgabe; −10 pro verpasster, −10 für einen Tag unter fünf ⇒ タスク完了+5；未達1件ごとに−10、5件未満の日は−10 ⇒ 完成一项任务+5；每错过一项−10，不足五项的一天−10 ⇒ +5 por tarea hecha; −10 por cada una perdida, −10 por un día con menos de cinco ⇒ +5 par tâche faite ; −10 par tâche manquée, −10 pour un jour à moins de cinq
++1 per 10 minutes, a bonus for finishing, the same taken for failing ⇒ +1 je 10 Minuten, ein Bonus fürs Schaffen, derselbe Abzug fürs Scheitern ⇒ 10分ごとに+1、完了でボーナス、失敗で同額を減点 ⇒ 每10分钟+1，完成有奖励，失败扣除同等数额 ⇒ +1 por cada 10 minutos, un extra por terminar, lo mismo de menos por fallar ⇒ +1 par 10 minutes, un bonus si terminé, le même retiré en cas d'échec
++100 reached, −50 missed or given up ⇒ +100 erreicht, −50 verpasst oder aufgegeben ⇒ 達成+100、未達・断念−50 ⇒ 达成+100，错过或放弃−50 ⇒ +100 alcanzada, −50 perdida o abandonada ⇒ +100 atteint, −50 manqué ou abandonné
++15 an entry, −5 for a day with none ⇒ +15 pro Eintrag, −5 für einen Tag ohne ⇒ 1件+15、記録なしの日−5 ⇒ 每条记录+15，没有记录的一天−5 ⇒ +15 por entrada, −5 por un día sin ninguna ⇒ +15 par entrée, −5 pour un jour sans
++5 a topic backed by study time, −20 for a week under two hours of study ⇒ +5 pro Thema mit Lernzeit, −20 für eine Woche unter zwei Stunden Lernen ⇒ 学習時間の裏付けがあるトピック+5、学習2時間未満の週−20 ⇒ 有学习时间支撑的主题+5，一周学习不足两小时−20 ⇒ +5 por tema respaldado con estudio, −20 por una semana con menos de dos horas ⇒ +5 par sujet appuyé par du temps d'étude, −20 pour une semaine sous deux heures
++200 a client won, −5 for each next action left past its date ⇒ +200 pro gewonnenem Kunden, −5 für jede überfällige nächste Aktion ⇒ 顧客獲得+200、期日を過ぎた次のアクション1件ごとに−5 ⇒ 赢得一位客户+200，每个过期未做的下一步−5 ⇒ +200 por cliente ganado, −5 por cada próxima acción vencida ⇒ +200 par client gagné, −5 par prochaine action en retard
++20 a retainer collected, −20 for each month one is unpaid ⇒ +20 pro kassierter Pauschale, −20 für jeden unbezahlten Monat ⇒ 月額回収+20、未払い1か月ごとに−20 ⇒ 收到一笔月费+20，每拖欠一个月−20 ⇒ +20 por iguala cobrada, −20 por cada mes sin pagar ⇒ +20 par forfait encaissé, −20 par mois impayé
++2 a transaction logged (5 a day), +10 a debt cleared; −15 a month in the red, −10 a broken budget, −10 a debt past its date ⇒ +2 pro erfasster Buchung (5 pro Tag), +10 pro beglichener Schuld; −15 für einen Monat im Minus, −10 für ein gesprengtes Budget, −10 für eine überfällige Schuld ⇒ 取引記録+2（1日5件まで）、完済+10；赤字の月−15、予算超過−10、期日超過の借り−10 ⇒ 记录一笔交易+2（每天5笔），还清一笔债+10；亏损的月份−15，超出预算−10，过期债务−10 ⇒ +2 por movimiento registrado (5 al día), +10 por deuda saldada; −15 por mes en rojo, −10 por presupuesto roto, −10 por deuda vencida ⇒ +2 par transaction saisie (5 par jour), +10 par dette soldée ; −15 pour un mois dans le rouge, −10 par budget dépassé, −10 par dette en retard
++10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late ⇒ +10 pro Tagescheck, +10 pro erledigtem Schritt; −10 für einen verpassten Check oder überfälligen Schritt, −5 für einen verspätet erledigten ⇒ 毎日の確認+10、一手完了+10；確認漏れ・期日超過の一手−10、遅れて完了−5 ⇒ 每日检查+10，完成一步+10；漏检或步骤过期−10，延迟完成−5 ⇒ +10 por revisión diaria, +10 por paso terminado; −10 por revisión perdida o paso vencido, −5 por paso terminado tarde ⇒ +10 par contrôle quotidien, +10 par action terminée ; −10 par contrôle manqué ou action en retard, −5 par action terminée en retard
+`;
+// A slot that is plainly a count ("{1} commits", "in {1} days", "Level {3}") only accepts a number
+const numbered = en => en.replace(/\{(\d)\}(?=( (more |open |card |launch |unpaid )?[a-z-]+(\(s\)|\[)| days| months| more |%|¢|-day| XP| topics| tasks| habits| services))/g, '{$1#}')
+  .replace(/(Level )\{(\d)\}(?= |\.)/g, '$1{$2#}').replace(/^\{(\d)\}(?= of \{)/, '{$1#}');
+const esc = t => t.replace(/[.*+?^$()|\\/]/g, '\\$&');
+const SENT = SENTENCES.trim().split('\n').map(row => {
+  const [en, ...rest] = row.split(' ⇒ ');
+  const slots = [];
+  const src = numbered(en).split(/(\{\d#?\}|\(s\)|\[[^\]]+\])/).map(part => {
+    if (/^\{\d\}$/.test(part)) { slots.push(part[1]); return '(.+?)'; }
+    if (/^\{\d#\}$/.test(part)) { slots.push(part[1]); return '([\\d,.]+)'; }
+    if (part === '(s)') return 's?';
+    if (part[0] === '[' && part.length > 1) return `(?:${part.slice(1, -1).split('|').map(esc).join('|')})`;
+    return esc(part);
+  }).join('');
+  return { re: new RegExp(`^${src}$`), slots, out: Object.fromEntries(ORDER.map((l, i) => [l, rest[i]])) };
+});
+const TIME = /^(today|tomorrow|in \d+ days?( \(.+\))?|\d+ days?)$/;
+function sentence(core, lang) {
+  for (const s of SENT) {
+    const m = core.match(s.re);
+    if (!m) continue;
+    // Only time words inside a sentence are translated; names and titles are left alone
+    const val = {}; s.slots.forEach((n, i) => { val[n] = TIME.test(m[i + 1]) ? lookup(m[i + 1], lang) : m[i + 1]; });
+    // "(s)", "(n)", "(e)", "(en)" after a word follow the count just before them
+    let count = null;
+    return s.out[lang].replace(/\{(\d)\}|\((s|n|e|en|es)\)/g, (all, n, plural) => {
+      if (n) { if (/^[\d,.]+$/.test(val[n])) count = Number(val[n].replace(/,/g, '')); return val[n]; }
+      return count === 1 ? '' : plural;
+    });
+  }
+  return undefined;
+}
+
 function lookup(text, lang) {
   if (lang === 'en' || !DICT[lang]) return text;
   const core = text.trim();
   if (!core) return text;
   let out = DICT[lang].get(core);
   if (out === undefined) { for (const [re, fn] of PATTERNS) { const m = core.match(re); if (m) { out = fn(m, lang); break; } } }
+  if (out === undefined && core.length > 6) out = sentence(core, lang);
+  // "WhatsApp Bot · 1 commit not pushed…": translate each side of the dot on its own
+  if (out === undefined && core.includes(' · ')) { const parts = core.split(' · '); const done = parts.map(x => lookup(x, lang)); if (done.some((x, i) => x !== parts[i])) out = done.join(' · '); }
   return out === undefined ? text : text.replace(core, out);
 }
 

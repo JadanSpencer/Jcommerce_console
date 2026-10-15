@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, auth } from './firebase';
 import { LANGS, setLanguage, localeOf } from './i18n';
+import RunnerControl, { RunnerWatch } from './RunnerControl';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut,
@@ -114,44 +115,80 @@ const ALL_LOCATIONS = [...JAMAICAN_PARISHES, ...CARIBBEAN_COUNTRIES, ...US_STATE
 const LOGO_B64 = 'data:image/jpeg;base64,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';
 
 
-// Hollow neon SVG face icons — rendered inline as SVG paths
-const EMOTION_SVG = {
-  thriving: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
-    <circle cx="17" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <circle cx="31" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <path d="M15 29 Q24 37 33 29" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path d="M19 14 L17 11 M29 14 L31 11" stroke="${c}" stroke-width="1.5" stroke-linecap="round"/>
-  </svg>`,
-  good: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
-    <circle cx="17" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <circle cx="31" cy="19" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <path d="M16 29 Q24 35 32 29" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
-  </svg>`,
-  watchout: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
-    <line x1="15" y1="19" x2="21" y2="19" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-    <line x1="27" y1="19" x2="33" y2="19" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-    <line x1="16" y1="32" x2="32" y2="32" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-  </svg>`,
-  struggling: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
-    <path d="M15 18 L21 20 M33 18 L27 20" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="17" cy="21" r="2" stroke="${c}" stroke-width="1.5"/>
-    <circle cx="31" cy="21" r="2" stroke="${c}" stroke-width="1.5"/>
-    <path d="M16 33 Q24 27 32 33" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>
-  </svg>`,
-  danger: (c) => `<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="24" cy="24" r="20" stroke="${c}" stroke-width="2"/>
-    <path d="M15 17 L21 21 M33 17 L27 21" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="17" cy="22" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <circle cx="31" cy="22" r="2.5" stroke="${c}" stroke-width="1.5"/>
-    <path d="M15 34 Q24 28 33 34" stroke="${c}" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-    <line x1="24" y1="8" x2="24" y2="12" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-    <line x1="35" y1="11" x2="33" y2="14" stroke="${c}" stroke-width="2" stroke-linecap="round"/>
-  </svg>`,
-};
+// The mood mask: five hand-cut theatre masks, one per state of the books.
+// Paper face, ink line, a hard offset shadow in the state's colour.
+const MASK_FACE = 'M36 10 C52 10 60 20 60 34 C60 51 49 64 36 64 C23 64 12 51 12 34 C12 20 20 10 36 10 Z';
+function MoodMask({ level, color, size = 104 }) {
+  const ink = '#0c0a09', paper = '#f3e6cf', seal = '#c8202f';
+  const line = { stroke: ink, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' };
+  const parts = {
+    // Fox spirit, laughing
+    thriving: <>
+      <path d="M16 23 L12 3 L30 12 Z M56 23 L60 3 L42 12 Z" fill={paper} stroke={ink} strokeWidth="2.4" strokeLinejoin="round"/>
+      <path d="M17.5 17 L16 8 L24.5 12.5 Z M54.5 17 L56 8 L47.5 12.5 Z" fill={seal}/>
+      <path d={MASK_FACE} fill={paper} stroke={ink} strokeWidth="2.6"/>
+      <path d="M36 15 L39 21 L36 27 L33 21 Z" fill={seal}/>
+      <path d="M19 37 Q24.5 29 30 37 M42 37 Q47.5 29 53 37" {...line} strokeWidth="3"/>
+      <path d="M17 39 Q14.5 36 14 31 M55 39 Q57.5 36 58 31" {...line} stroke={seal} strokeWidth="2"/>
+      <circle cx="20" cy="46" r="3.2" fill={seal} opacity="0.55"/><circle cx="52" cy="46" r="3.2" fill={seal} opacity="0.55"/>
+      <path d="M25 46 Q36 61 47 46 Q36 50 25 46 Z" fill={seal} stroke={ink} strokeWidth="2.2" strokeLinejoin="round"/>
+      <path d="M31 48.6 L32 51.5 L34 49.4 M41 48.6 L40 51.5 L38 49.4" {...line} stroke={paper} strokeWidth="1.3"/>
+      <path className="mm-spark" d="M66 8 L67.6 12.4 L72 14 L67.6 15.6 L66 20 L64.4 15.6 L60 14 L64.4 12.4 Z" fill={color} stroke={ink} strokeWidth="1"/>
+      <path className="mm-spark late" d="M5 40 L6.2 43.3 L9.5 44.5 L6.2 45.7 L5 49 L3.8 45.7 L0.5 44.5 L3.8 43.3 Z" fill={color} stroke={ink} strokeWidth="1"/>
+    </>,
+    // Calm, composed
+    good: <>
+      <path d={MASK_FACE} fill={paper} stroke={ink} strokeWidth="2.6"/>
+      <circle cx="36" cy="20" r="2.8" fill={seal}/>
+      <path d="M19 28 Q25 24.5 31 28 M41 28 Q47 24.5 53 28" {...line} strokeWidth="2.6"/>
+      <ellipse className="mm-eye" cx="25" cy="36" rx="2.7" ry="3.8" fill={ink}/><ellipse className="mm-eye" cx="47" cy="36" rx="2.7" ry="3.8" fill={ink}/>
+      <circle cx="19.5" cy="45" r="3" fill={seal} opacity="0.4"/><circle cx="52.5" cy="45" r="3" fill={seal} opacity="0.4"/>
+      <path d="M27 48 Q36 56 45 48" {...line} strokeWidth="2.8"/>
+      <path d="M33 59 H39" {...line} stroke={seal} strokeWidth="2"/>
+    </>,
+    // Side-eye and a bead of sweat
+    watchout: <>
+      <path d={MASK_FACE} fill={paper} stroke={ink} strokeWidth="2.6"/>
+      <path d="M18 27 L31 30 M54 27 L41 30" {...line} strokeWidth="3.2"/>
+      <path d="M19 35 H31 M41 35 H53" {...line} strokeWidth="2.6"/>
+      <g className="mm-glance"><circle cx="26" cy="38" r="2.6" fill={ink}/><circle cx="48" cy="38" r="2.6" fill={ink}/></g>
+      <path d="M26 51 Q31 46.5 36 51 Q41 55.5 46 51" {...line} strokeWidth="2.8"/>
+      <path className="mm-sweat" d="M57 17 Q62 25 57 27.5 Q52 25 57 17 Z" fill="#8fdcec" stroke={ink} strokeWidth="1.4" strokeLinejoin="round"/>
+    </>,
+    // Gritted teeth, patched up
+    struggling: <>
+      <path d={MASK_FACE} fill={paper} stroke={ink} strokeWidth="2.6"/>
+      <path d="M43 15 L53 22 M53 15 L43 22" {...line} stroke="#fff" strokeWidth="5"/><path d="M43 15 L53 22 M53 15 L43 22" {...line} strokeWidth="1.3" strokeDasharray="0.1 3"/>
+      <path d="M17 31 L31 26 M55 31 L41 26" {...line} strokeWidth="3.2"/>
+      <path d="M20 33 L29 37.5 L20 42 M52 33 L43 37.5 L52 42" {...line} strokeWidth="2.8"/>
+      <rect x="25" y="47" width="22" height="9" rx="2.5" fill="#fff" stroke={ink} strokeWidth="2.3"/>
+      <path d="M30.5 47 V56 M36 47 V56 M41.5 47 V56 M25 51.5 H47" {...line} strokeWidth="1.4"/>
+      <path className="mm-sweat" d="M10 20 Q14 27 10 29 Q6 27 10 20 Z" fill="#8fdcec" stroke={ink} strokeWidth="1.4" strokeLinejoin="round"/>
+      <path className="mm-sweat late" d="M62 26 Q65.5 32 62 34 Q58.5 32 62 26 Z" fill="#8fdcec" stroke={ink} strokeWidth="1.4" strokeLinejoin="round"/>
+    </>,
+    // Oni: horns, fangs, burning eyes
+    danger: <>
+      <path d="M21 19 Q15 7 9 1 Q23 4 29 13 Z M51 19 Q57 7 63 1 Q49 4 43 13 Z" fill={color} stroke={ink} strokeWidth="2.4" strokeLinejoin="round"/>
+      <path d={MASK_FACE} fill={paper} stroke={ink} strokeWidth="2.6"/>
+      <path d="M31 18 L36 24 L41 18 M33 15 L36 18.5 L39 15" {...line} stroke={seal} strokeWidth="2"/>
+      <path d="M15 26 L32 32.5 L31 36 L15 31 Z M57 26 L40 32.5 L41 36 L57 31 Z" fill={ink}/>
+      <g className="mm-glow"><circle cx="25" cy="39.5" r="4.2" fill={color} stroke={ink} strokeWidth="1.6"/><circle cx="47" cy="39.5" r="4.2" fill={color} stroke={ink} strokeWidth="1.6"/></g>
+      <circle cx="25" cy="39.5" r="1.5" fill={ink}/><circle cx="47" cy="39.5" r="1.5" fill={ink}/>
+      <path d="M21 49 Q36 43.5 51 49 L47.5 58 Q36 53.5 24.5 58 Z" fill={ink} stroke={ink} strokeWidth="1.6" strokeLinejoin="round"/>
+      <path d="M26 57 L28.6 48.6 L31.4 55.6 Z M46 57 L43.4 48.6 L40.6 55.6 Z" fill="#fff" stroke={ink} strokeWidth="1"/>
+      <path d="M32.5 46.6 L34 50 L35.6 46.2 Z M36.4 46.2 L38 50 L39.5 46.6 Z" fill="#fff"/>
+      <path className="mm-spark" d="M64 22 Q66 26 70 26 M66 20 Q69 21 71 18 M63 27 Q64 31 68 32" {...line} stroke={color} strokeWidth="2"/>
+    </>,
+  };
+  return (
+    <svg className={`mood-mask mm-${level}`} viewBox="-2 -2 78 74" width={size} height={size} aria-hidden="true">
+      <g className="mm-bob">
+        <path d={MASK_FACE} transform="translate(3.5 3.5)" fill={color}/>
+        {parts[level] || parts.good}
+      </g>
+    </svg>
+  );
+}
 
 const EMOTION_LEVELS = [
   { svgKey:'thriving',   label:'Thriving',   color:'#f2ddab', bg:'rgba(242,221,171,0.07)', desc:'Ahead of target — keep going' },
@@ -417,6 +454,9 @@ function urlBase64ToUint8Array(base64String) {
 
 // Set by electron/preload.js when running as the installed Mac app
 const DESKTOP = typeof window !== 'undefined' ? window.desktop : undefined;
+// Runner control room: Mac notifications and saving its alert log
+const RUNNER_NOTIFY = DESKTOP?.notify ? (title, body) => DESKTOP.notify(title, body) : null;
+const RUNNER_EXPORT = DESKTOP?.exportData ? (text, filename) => DESKTOP.exportData(text, filename) : null;
 
 // Charts get more vertical room on wide (desktop) layouts
 const CHART_H = h => (window.innerWidth >= 760 ? Math.round(h * 1.6) : h);
@@ -1902,6 +1942,7 @@ function App() {
         </div>
       </header>
       {live && <Petals/>}
+      {DESKTOP?.venture?.ops && <RunnerWatch api={DESKTOP.venture} notify={RUNNER_NOTIFY}/>}
       <Ticker onNav={setTab} items={(() => {
         const out = [], days = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
         ventures.filter(v => v.launchDate && v.stage !== 'Paused').forEach(v => {
@@ -2364,7 +2405,7 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
       <div className="card home-moves span-8">
         <div className="row-between" style={{ marginBottom:'0.6rem' }}>
           <span className="card-label" style={{ margin:0 }}>Next moves</span>
-          <span className="fin-delta">{moves.length} item{moves.length === 1 ? '' : 's'}</span>
+          <span className="fin-delta">{`${moves.length} item${moves.length === 1 ? '' : 's'}`}</span>
         </div>
         {moves.length === 0 ? <div className="agenda-empty small">Nothing urgent. Go find the next client.</div> : (
           <ul className="moves">
@@ -3451,36 +3492,81 @@ function Hourglass({ id, pct, liquid, running, done, failed }) {
       default: return null;
     }
   };
-  const body = (surface, floor) => (
-    <g className="hg-liquid" style={{ transform: `translateY(${surface - 4}px)` }}>
-      <path className="hg-wave back" d={wave(5)} fill={L.stops[1]} opacity="0.45"/>
-      <path className="hg-wave front" d={wave(-5)} fill={`url(#${g}-fill)`}/>
-    </g>
-  );
+  // The liquid: three moving layers, a lit surface edge, depth shading across
+  // the bulb, light glowing up through it, and a slow glint on the glass side.
+  const waveLine = bend => `M0 4 Q15 ${4 - bend} 30 4 T60 4 T90 4 T120 4 T150 4 T180 4 T210 4 T240 4`;
+  const body = (surface, floor) => {
+    const h = Math.max(0, floor - surface);
+    return (<>
+      <g className="hg-liquid" style={{ transform: `translateY(${surface - 4}px)` }}>
+        <path className="hg-wave back" d={wave(5)} fill={L.stops[1]} opacity="0.4"/>
+        <path className="hg-wave mid" d={wave(3)} fill={L.stops[2]} opacity="0.35"/>
+        <path className="hg-wave front" d={wave(-5)} fill={`url(#${g}-fill)`}/>
+        <path className="hg-wave front hg-edge" d={waveLine(-5)} stroke={L.froth} strokeWidth="1.3" fill="none"/>
+      </g>
+      {h > 2 && <>
+        <ellipse className="hg-under" cx="60" cy={surface + Math.min(14, h / 2)} rx="34" ry={Math.min(10, h / 2)} fill={`url(#${g}-light)`}/>
+        <rect x="0" y={surface + 4} width="120" height={Math.max(0, h)} fill={`url(#${g}-shade)`}/>
+        {h > 10 && <rect className="hg-glint" x="36" y={surface + 7} width="3" height={h - 9} rx="1.5" fill={`url(#${g}-glint)`} transform={`skewX(-8)`}/>}
+      </>}
+    </>);
+  };
+  const crackFailed = failed && <path d="M38 40 l9 7 -4 6 10 5 -3 8 8 6" className="hg-crack"/>;
   return (
     <svg className={`hourglass brew-${L.id} ${running ? 'running' : ''} ${done ? 'done' : ''} ${failed ? 'failed' : ''}`} viewBox="0 0 120 200" style={{ '--liq': L.glow, '--speed': `${L.speed}s` }}>
       <defs>
         <clipPath id={`${g}-top`}><path d={TOP}/></clipPath>
         <clipPath id={`${g}-bot`}><path d={BOT}/></clipPath>
         <linearGradient id={`${g}-fill`} x1="0" y1="0" x2="0" y2="110" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor={L.stops[0]}/><stop offset="0.18" stopColor={L.stops[1]}/><stop offset="0.6" stopColor={L.stops[2]}/><stop offset="1" stopColor={L.stops[3]}/>
+          <stop offset="0" stopColor={L.stops[0]}/><stop offset="0.16" stopColor={L.stops[1]}/><stop offset="0.6" stopColor={L.stops[2]}/><stop offset="1" stopColor={L.stops[3]}/>
         </linearGradient>
-        <radialGradient id={`${g}-glass`} cx="0.35" cy="0.3" r="0.9"><stop offset="0" stopColor="rgba(255,255,255,0.10)"/><stop offset="1" stopColor="rgba(10,4,5,0.72)"/></radialGradient>
+        {/* rounds the liquid: darker at the glass walls, a little light in the middle */}
+        <linearGradient id={`${g}-shade`} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0.18" stopColor="#000" stopOpacity="0.55"/><stop offset="0.34" stopColor="#000" stopOpacity="0"/>
+          <stop offset="0.5" stopColor="#fff" stopOpacity="0.07"/><stop offset="0.68" stopColor="#000" stopOpacity="0"/><stop offset="0.84" stopColor="#000" stopOpacity="0.6"/>
+        </linearGradient>
+        <linearGradient id={`${g}-glint`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" stopOpacity="0.5"/><stop offset="1" stopColor="#fff" stopOpacity="0"/></linearGradient>
+        <radialGradient id={`${g}-light`}><stop offset="0" stopColor={L.stops[0]} stopOpacity="0.55"/><stop offset="1" stopColor={L.stops[0]} stopOpacity="0"/></radialGradient>
+        <radialGradient id={`${g}-glass`} cx="0.32" cy="0.28" r="0.95">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.16"/><stop offset="0.5" stopColor="#1a1214" stopOpacity="0.42"/><stop offset="1" stopColor={L.glow} stopOpacity="0.22"/>
+        </radialGradient>
+        <linearGradient id={`${g}-wood`} x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#1c0d07"/><stop offset="0.45" stopColor="#6b3a1e"/><stop offset="1" stopColor="#1a0b06"/></linearGradient>
+        <linearGradient id={`${g}-lacquer`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3a1410"/><stop offset="0.5" stopColor="#170807"/><stop offset="1" stopColor="#070202"/></linearGradient>
+        <linearGradient id={`${g}-brass`} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff2b8"/><stop offset="0.5" stopColor="#c8932f"/><stop offset="1" stopColor="#5c3b0c"/></linearGradient>
       </defs>
-      {/* frame */}
-      <line className="hg-post" x1="19" y1="20" x2="19" y2="180"/><line className="hg-post" x1="101" y1="20" x2="101" y2="180"/>
-      <rect className="hg-cap" x="12" y="10" width="96" height="13" rx="2"/><rect className="hg-cap" x="12" y="177" width="96" height="13" rx="2"/>
-      <rect className="hg-cap-line" x="12" y="14" width="96" height="2"/><rect className="hg-cap-line" x="12" y="184" width="96" height="2"/>
+      <ellipse cx="60" cy="195" rx="50" ry="3.6" fill="#000" opacity="0.5"/>
+      {/* frame: turned posts with beads, lacquered caps */}
+      {[19, 101].map(x => (
+        <g key={x}>
+          <rect x={x - 2.6} y="20" width="5.2" height="160" rx="2.6" fill={`url(#${g}-wood)`}/>
+          {[44, 100, 156].map(y => <ellipse key={y} cx={x} cy={y} rx="4.4" ry="3.2" fill={`url(#${g}-wood)`} stroke="#000" strokeWidth="0.8"/>)}
+          <line x1={x - 0.8} y1="24" x2={x - 0.8} y2="176" stroke="#c78a52" strokeOpacity="0.35" strokeWidth="0.8"/>
+        </g>
+      ))}
+      <rect x="10" y="9" width="100" height="14" rx="3" fill={`url(#${g}-lacquer)`} stroke="#000" strokeWidth="1.4"/>
+      <rect x="10" y="177" width="100" height="14" rx="3" fill={`url(#${g}-lacquer)`} stroke="#000" strokeWidth="1.4"/>
+      <rect className="hg-cap-line" x="12" y="19.5" width="96" height="1.6"/><rect className="hg-cap-line" x="12" y="179" width="96" height="1.6"/>
       {/* glass */}
       <path d={TOP} fill={`url(#${g}-glass)`}/><path d={BOT} fill={`url(#${g}-glass)`}/>
       <g clipPath={`url(#${g}-top)`}>{body(yTop, 100)}{deco(yTop, 100)}</g>
       <g clipPath={`url(#${g}-bot)`}>
-        {running && k < 1 && <rect className="hg-stream" x="58.6" y="100" width="2.8" height={Math.max(0, yBot - 98)} fill={L.stops[1]}/>}
+        {running && k < 1 && <>
+          <line className="hg-fall-core" x1="60" y1="99" x2="60" y2={yBot + 2} stroke={L.stops[1]} strokeWidth="1.8" strokeOpacity="0.85"/>
+          <line className="hg-fall" x1="60" y1="99" x2="60" y2={yBot + 2} stroke={L.stops[0]} strokeWidth="2" strokeLinecap="round" strokeDasharray="2 4"/>
+          {[0, 1].map(i => <ellipse key={i} className="hg-ripple" cx="60" cy={yBot + 1} rx="9" ry="2.2" fill="none" stroke={L.froth} strokeWidth="1" style={{ animationDelay: `${i * 0.6}s` }}/>)}
+        </>}
         {body(yBot, 176)}{deco(yBot, 176)}
       </g>
+      <path d={TOP} className="hg-glass-rim"/><path d={BOT} className="hg-glass-rim"/>
       <path d={TOP} className="hg-glass"/><path d={BOT} className="hg-glass"/>
-      <path d="M31 34c2 16 9 27 17 36" className="hg-shine"/><path d="M34 166c1 -12 6 -22 13 -30" className="hg-shine"/>
-      <text className="hg-mark" x="60" y="19.5" textAnchor="middle" lang="ja">{L.jp}</text>
+      <path d="M30 32c2 17 9 28 18 38" className="hg-shine"/><path d="M33 168c1 -13 6 -23 14 -32" className="hg-shine"/>
+      <path d="M90 34c-1 10 -4 18 -9 25" className="hg-shine soft"/><path d="M89 166c-1 -9 -4 -16 -8 -22" className="hg-shine soft"/>
+      <circle cx="36" cy="44" r="1.6" fill="#fff" opacity="0.7"/><circle cx="38" cy="150" r="1.3" fill="#fff" opacity="0.55"/>
+      {crackFailed}
+      {/* brass collar at the neck, and the brew's seal on the top cap */}
+      <rect x="53" y="96.6" width="14" height="6.8" rx="2.4" fill={`url(#${g}-brass)`} stroke="#000" strokeWidth="0.9"/>
+      <rect x="53.5" y="10.6" width="13" height="11" rx="1.2" className="hg-seal" transform="rotate(-4 60 16)"/>
+      <text className="hg-mark" x="60" y="19.2" textAnchor="middle" lang="ja" transform="rotate(-4 60 16)">{L.jp}</text>
     </svg>
   );
 }
@@ -4848,7 +4934,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
           </div>}
           <div className="fin-bar-legend" style={personalOnly ? { display: 'none' } : undefined}>
             {isCurrent
-              ? <>Projected <b className={projNet >= target ? 'good' : 'bad'}>{J(projNet)}</b> · {daysLeft} day{daysLeft === 1 ? '' : 's'} left{perDay > 0 && <> · need <b className="bad">{J(perDay)}/day</b></>}</>
+              ? <>Projected <b className={projNet >= target ? 'good' : 'bad'}>{J(projNet)}</b> {` · ${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}{perDay > 0 && <> · need <b className="bad">{J(perDay)}/day</b></>}</>
               : <>{net >= target ? 'Target met' : `Short by ${J(target - net)}`}</>}
           </div>
           <ul className="fin-findings">
@@ -4859,8 +4945,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
 
         <div className="card fin-health span-4" style={{ '--hc': health.color }}>
           <div className="fin-health-top">
-            <div className={`emotion-face lv-${health.svgKey}`} style={{ width:58, height:58, color: health.color }}
-              dangerouslySetInnerHTML={{ __html: EMOTION_SVG[health.svgKey](health.color) }}/>
+            <MoodMask level={health.svgKey} color={health.color}/>
             <div>
               <div className="fin-health-label">{health.label}</div>
               <div className="fin-health-line">{judged < 0 ? "You're bleeding money." : LEDGER_LINES[healthIdx]}</div>
@@ -7034,6 +7119,9 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
   const setFx = n => { const val = Math.max(1, Number(n) || 160); setFxRaw(val); try { localStorage.setItem('jc_fx', String(val)); } catch {} };
   const [gcpBilling, setGcpBilling] = useState(null);
   const fbProject = d?.o?.ok ? d.o.firebaseProject : '';
+  // A venture with a live service opens on its control room, until you pick another tab
+  const pickedView = useRef(false);
+  useEffect(() => { if (fbProject && !pickedView.current) setView('control'); }, [fbProject]);
   const billPager = usePager(6);
   // Live cost figures: fetched by the Mac app itself, never by the window
   const [liveData, setLiveData] = useState({});
@@ -7105,7 +7193,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
   const hasFolder = !!o?.ok;
   const plan = launchPlan(v, items, todayStr);
   const backlog = moves.filter(m => !m.phase);
-  const tabs = [...(plan ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
+  const tabs = [...(fbProject ? [['control','Control room']] : []), ...(plan ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
     ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : [])];
 
   const addMove = () => {
@@ -7166,7 +7254,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
           <span className={`vt-stage s-${(v.stage || 'Building').toLowerCase()}`}>{v.stage || 'Building'}<i lang="ja" aria-hidden="true">{STAGE_JP[v.stage || 'Building']}</i></span>
         </div>
         <div className="seg">
-          {tabs.map(([id, label]) => <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>)}
+          {tabs.map(([id, label]) => <button key={id} className={view === id ? 'on' : ''} onClick={() => { pickedView.current = true; setView(id); }}>{label}</button>)}
         </div>
         <span className="row-gap">
           {v.dir && <button className="btn-ghost" onClick={() => api.open(v.dir)} title={v.dir}>Open folder</button>}
@@ -7175,6 +7263,9 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
         </span>
       </div>
       {v.tagline && <div className="fin-delta vt-tagline">{v.tagline}</div>}
+
+      {view === 'control' && fbProject && <RunnerControl project={fbProject} dir={v.dir} api={api} Mask={MoodMask} notify={RUNNER_NOTIFY}
+        bills={bills} onRecordPayout={onAddBill} exportFile={RUNNER_EXPORT}/>}
 
       {view === 'launch' && plan && (<>
         <div className="card lp-hero">
@@ -7279,7 +7370,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
           <div className="vt-check-foot">
             {checkedToday
               ? <span className="good vt-done"><b className="jp-stamp" lang="ja" aria-hidden="true">済</b>Checked today</span>
-              : h.roundsLeft.length ? <button className="btn-ghost" onClick={() => setView('services')}>Check {h.roundsLeft.length} more service{h.roundsLeft.length === 1 ? '' : 's'} first ›</button>
+              : h.roundsLeft.length ? <button className="btn-ghost" onClick={() => setView('services')}>{`Check ${h.roundsLeft.length} more service${h.roundsLeft.length === 1 ? '' : 's'} first ›`}</button>
               : <button className="btn-primary" onClick={markChecked} disabled={loading}>I've read today's check</button>}
             <span className="fin-delta">Findings are worked out from the real project, plan and bills. +10 XP for reading it; −10 XP for every day you don't.</span>
           </div>

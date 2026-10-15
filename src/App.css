@@ -3215,3 +3215,55 @@ html[lang="ja"] body, html[lang="zh"] body { line-break: strict; }
 .card:is(.span-3, .span-4, .span-5) .tk-row { flex-wrap: wrap; }
 .card:is(.span-3, .span-4, .span-5) .tk-main { flex: 1 1 62%; }
 .card:is(.span-3, .span-4, .span-5) .tk-carry { margin-left: calc(26px + 0.6rem); }
+
+/* ═══ MOOD MASK ══════════════════════════════════════════════════════════════
+   The face on the Finance health card. Each state moves in its own way. */
+.mood-mask { flex: none; overflow: visible; }
+.mood-mask .mm-bob { transform-box: fill-box; transform-origin: 50% 90%; animation: mmBob 3.8s ease-in-out infinite; }
+.mood-mask .mm-eye { transform-box: fill-box; transform-origin: center; animation: mmBlink 4.6s infinite; }
+.mood-mask .mm-glance { animation: mmGlance 3.2s ease-in-out infinite; }
+.mood-mask .mm-sweat { transform-box: fill-box; animation: mmSweat 1.9s ease-in infinite; }
+.mood-mask .mm-spark { transform-box: fill-box; transform-origin: center; animation: mmTwinkle 1.7s ease-in-out infinite; }
+.mood-mask .late { animation-delay: 0.8s; }
+.mood-mask.mm-thriving .mm-bob { animation: mmLaugh 1.1s ease-in-out infinite; }
+.mood-mask.mm-struggling .mm-bob { animation: mmShake 0.45s linear infinite; }
+.mood-mask.mm-danger .mm-bob { animation: mmThrob 0.85s ease-in-out infinite; }
+.mood-mask .mm-glow { animation: mmGlow 0.85s ease-in-out infinite; }
+@keyframes mmBob { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg) translateY(-1px); } }
+@keyframes mmLaugh { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-2.5px) rotate(2deg); } }
+@keyframes mmBlink { 0%, 92%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+@keyframes mmGlance { 0%, 40%, 100% { transform: translateX(-2.5px); } 50%, 90% { transform: translateX(2.5px); } }
+@keyframes mmSweat { 0% { transform: translateY(-3px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(14px); opacity: 0; } }
+@keyframes mmTwinkle { 0%, 100% { transform: scale(0.5) rotate(0deg); opacity: 0.3; } 50% { transform: scale(1.1) rotate(20deg); opacity: 1; } }
+@keyframes mmShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-1.2px) rotate(-1deg); } 75% { transform: translateX(1.2px) rotate(1deg); } }
+@keyframes mmThrob { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes mmGlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .mood-mask * { animation: none !important; } }
+
+/* ═══ HOURGLASS, refined ═════════════════════════════════════════════════════
+   Thicker glass with a dark rim, depth in the liquid, a lit surface edge,
+   a falling stream that ripples where it lands, light through the liquid. */
+.hourglass .hg-glass { stroke: rgba(255,236,210,0.6); stroke-width: 1.3; }
+.hourglass .hg-glass-rim { fill: none; stroke: #000; stroke-width: 3.6; stroke-opacity: 0.85; }
+.hourglass .hg-shine { stroke: rgba(255,255,255,0.42); stroke-width: 2.4; }
+.hourglass .hg-shine.soft { stroke: rgba(255,255,255,0.14); stroke-width: 1.6; }
+.hourglass .hg-seal { fill: var(--seal, #c8202f); stroke: #000; stroke-width: 0.9; }
+.hourglass .hg-mark { fill: #fff6ea; font-size: 8.5px; }
+.hourglass .hg-cap-line { opacity: 0.95; }
+.hourglass .hg-edge { opacity: 0.85; filter: drop-shadow(0 0 1.5px var(--liq)); }
+.hourglass .hg-wave.mid { animation: bottleWave calc(var(--speed, 4s) * 1.25 * var(--slow, 1)) linear infinite; animation-delay: -1.3s; }
+.hourglass .hg-under { animation: hgUnder calc(3.2s * var(--slow, 1)) ease-in-out infinite; }
+@keyframes hgUnder { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.hourglass .hg-glint { animation: hgGlint calc(9s * var(--slow, 1)) ease-in-out infinite; }
+@keyframes hgGlint { 0%, 100% { translate: 0 0; opacity: 0.25; } 50% { translate: 40px 0; opacity: 0.6; } }
+.hourglass .hg-fall { animation: hgFall 0.42s linear infinite; }
+@keyframes hgFall { from { stroke-dashoffset: 6; } to { stroke-dashoffset: 0; } }
+.hourglass .hg-fall-core { opacity: 0.8; }
+.hourglass .hg-ripple { transform-box: fill-box; transform-origin: center; animation: hgRipple 1.2s ease-out infinite; }
+@keyframes hgRipple { from { transform: scale(0.25); opacity: 0.95; } to { transform: scale(1.5); opacity: 0; } }
+.hourglass .hg-crack { fill: none; stroke: rgba(255,255,255,0.75); stroke-width: 1; stroke-linejoin: round; }
+.hourglass.running { filter: drop-shadow(0 0 12px color-mix(in srgb, var(--liq) 50%, transparent)) drop-shadow(0 6px 6px rgba(0,0,0,0.55)); }
+.hourglass:not(.running):not(.failed) { filter: drop-shadow(0 6px 6px rgba(0,0,0,0.55)); }
+.hourglass.done .hg-glass { stroke: color-mix(in srgb, var(--liq) 80%, white); stroke-width: 1.8; }
+.hourglass.failed .hg-under, .hourglass.failed .hg-glint { animation: none; }
+@media (prefers-reduced-motion: reduce) { .hourglass .hg-fall, .hourglass .hg-ripple, .hourglass .hg-glint, .hourglass .hg-under { animation: none; } }

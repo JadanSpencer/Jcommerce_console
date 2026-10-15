@@ -1,7 +1,7 @@
 // electron/main.js
 // Desktop shell for JCommerce Console. Serves the CRA build over app:// so the
 // absolute paths CRA emits (/static/..., /service-worker.js) resolve correctly.
-const { app, BrowserWindow, Menu, protocol, net, shell, ipcMain, dialog, screen } = require('electron');
+const { app, BrowserWindow, Menu, protocol, net, shell, ipcMain, dialog, screen, Notification } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 const fsSync = require('fs');
@@ -98,11 +98,20 @@ ipcMain.handle('invoice:save-pdf', async (_e, { html, filename }) => {
 ipcMain.handle('data:export', async (_e, { json, filename }) => {
   const { canceled, filePath } = await dialog.showSaveDialog(win, {
     defaultPath: path.join(app.getPath('documents'), path.basename(filename)),
-    filters: [{ name: 'Backup', extensions: ['json'] }],
+    filters: [/\.txt$/i.test(filename) ? { name: 'Text', extensions: ['txt'] } : { name: 'Backup', extensions: ['json'] }],
   });
   if (canceled || !filePath) return { ok: false };
   await fs.writeFile(filePath, json, 'utf8');
   return { ok: true, filePath };
+});
+
+// A Mac notification for something that needs the owner now (Runner control room)
+ipcMain.handle('app:notify', (_e, { title, body } = {}) => {
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({ title: String(title || '').slice(0, 80), body: String(body || '').slice(0, 300), silent: false });
+  n.on('click', () => { if (win) { if (win.isMinimized()) win.restore(); win.show(); win.focus(); } });
+  n.show();
+  return true;
 });
 
 // Read-only access to another project folder (Ventures section)
