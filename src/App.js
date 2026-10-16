@@ -1767,12 +1767,29 @@ function App() {
     else await add('budgets', { category, limit });
   };
 
+  // Every finance entry goes through here: income from a pipeline lead makes them a client
+  const addFinance = async d => {
+    const ref = await add('finances', d);
+    const lead = ref && d.type === 'income' && d.pipelineLeadId && leads.find(l => l.id === d.pipelineLeadId);
+    if (lead && lead.status !== 'Paid') await update('leads', lead.id, { status: 'Paid', clientStatus: lead.clientStatus || 'Active', clientSince: lead.clientSince || d.date || todayStr });
+    return ref;
+  };
+  // Wipe the books (after a backup) and close out what clients owed before today
+  const startFinancesOver = async () => {
+    if (!DESKTOP?.exportData) { toast('Start over only works in the Mac app, so a backup can be saved first', 'bad'); return; }
+    const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), note: 'Finances before start over', collections: { finances, debts, budgets, leads } }, null, 1), `jcommerce-finances-before-reset-${todayStr}.json`);
+    if (!r?.ok) return;
+    await Promise.all([...finances.map(f => remove('finances', f.id)), ...debts.map(d => remove('debts', d.id)), ...budgets.map(b => remove('budgets', b.id)),
+      ...leads.filter(l => l.status === 'Paid').map(l => update('leads', l.id, { settledBefore: todayStr, retainerLog: {} }))]);
+    toast(`Finances cleared: ${finances.length + debts.length + budgets.length} records. Backup saved.`);
+  };
   const logPayment = async (lead, stage, amount, date) => {
-    if (finances.some(f => f.pipelineLeadId===lead.id && f.paymentStage===stage)) return;
-    await add('finances', { type:'income', description:`${lead.businessName} — ${stage}`, amount:Number(amount), category:stage.includes('Retainer')?'Monthly Retainer':'Setup Fee', date:date||todayStr, pipelineLeadId:lead.id, paymentStage:stage });
+    // one entry per stage; retainers are one per month
+    if (finances.some(f => f.pipelineLeadId===lead.id && f.paymentStage===stage && (stage!=='Monthly Retainer' || monthOf(f.date)===monthOf(date||todayStr)))) return;
+    await addFinance({ type:'income', description:`${lead.businessName} — ${stage}`, amount:Number(amount), category:stage.includes('Retainer')?'Monthly Retainer':'Setup Fee', date:date||todayStr, pipelineLeadId:lead.id, paymentStage:stage });
   };
   const updateLinkedPayment = async (lead, stage, amount, date) => {
-    const entry = finances.find(f => f.pipelineLeadId===lead.id && f.paymentStage===stage);
+    const entry = finances.find(f => f.pipelineLeadId===lead.id && f.paymentStage===stage && (stage!=='Monthly Retainer' || monthOf(f.date)===monthOf(date||todayStr)));
     if (entry) await update('finances', entry.id, { amount:Number(amount), date:date||todayStr, description:`${lead.businessName} — ${stage}` });
     else await logPayment(lead, stage, amount, date);
   };
@@ -1833,7 +1850,7 @@ function App() {
   const paletteRun = {
     nav: id => { setTab(id); },
     toast,
-    addFinance: d => { add('finances', d); return `Logged ${d.type === 'income' ? '+' : '−'}${J(d.amount)} · ${d.category}`; },
+    addFinance: d => { addFinance(d); return `Logged ${d.type === 'income' ? '+' : '−'}${J(d.amount)} · ${d.category}`; },
     addTodo: title => { add('todos', { title, note: '', doneOn: {}, addedDate: todayStr }); return `Task added: ${title}`; },
     addLead: name => { add('leads', { businessName: name, status: 'New', priority: 'medium', value: '', nextAction: 'First contact', nextActionDate: todayStr, source: 'Manual' }); return `Lead added: ${name}`; },
     toggleHabit: h => { toggleHabit(h, todayStr); return `${h.completions?.[todayStr] ? 'Unticked' : 'Ticked'}: ${h.name}`; },
@@ -1997,9 +2014,9 @@ function App() {
         {tab==='studies'  && <Studies courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
           onAdd={d=>add('courses',d)} onUpdate={(id,d)=>update('courses',id,d)} onDelete={removeCourse}
           onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
-        {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
+        {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{addedDate:todayStr,...d,doneOn:{}})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
-        {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={d=>add('finances',d)} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
+        {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={addFinance} onStartOver={startFinancesOver} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
@@ -2008,7 +2025,7 @@ function App() {
             if (doc) update('service_rounds', doc.id, { done: { ...(doc.done || {}), [serviceId]: !doc.done?.[serviceId] } });
             else add('service_rounds', { ventureId, date: todayStr, done: { [serviceId]: true } });
           }}
-          leads={leads} timers={timers} onNav={setTab} ventures={ventures} finances={finances} onAddFinance={d => add('finances', d)} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
+          leads={leads} timers={timers} onNav={setTab} ventures={ventures} finances={finances} onAddFinance={addFinance} services={ventureServices_} checks={ventureChecks} items={ventureItems} todayStr={todayStr}
           onSaveVenture={d => { const { id, ...data } = d; id ? update('ventures', id, data) : add('ventures', data); }}
           onDeleteVenture={v => {
             const firstId = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
@@ -2027,7 +2044,7 @@ function App() {
           onSaveItem={d => { const { id, createdAt, ...data } = d; id ? update('venture_items', id, data) : add('venture_items', data); }}
           onDeleteItem={id => remove('venture_items', id)}
           onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}/>}
-        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={add} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
+        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
         </SectionBoundary>
       </main>
 
@@ -2591,8 +2608,11 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
   const getPayments = lid => finances.filter(f=>f.pipelineLeadId===lid);
 
   const getAlert = lead => {
-    if (!lead.retainerAmount || !lead.retainerDueDay) return null;
+    if (!lead.retainerAmount || !lead.retainerDueDay || lead.status!=='Paid' || (lead.clientStatus||'Active')!=='Active') return null;
     const today=new Date(); const dueDay=parseInt(lead.retainerDueDay);
+    if (retainerCollected(lead, localDateStr().slice(0,7), finances)) {
+      return {daysUntil:Math.ceil((new Date(today.getFullYear(),today.getMonth()+1,dueDay)-today)/86400000),isOverdue:false};
+    }
     const thisMonth=new Date(today.getFullYear(),today.getMonth(),dueDay);
     const nextMonth=new Date(today.getFullYear(),today.getMonth()+1,dueDay);
     const dT=Math.ceil((thisMonth-today)/86400000);
@@ -2856,10 +2876,10 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
           <div className="list">
             {paged.map(l => {
               const payments = getPayments(l.id);
-              const received = payments.reduce((s,p)=>s+(Number(p.amount)||0),0);
+              const received = projectPaidOf(l, finances);
               const total    = Number(l.value)||0;
-              const remaining = total - received;
-              const pct = total>0 ? Math.min(100,(received/total)*100) : 0;
+              const remaining = projectOwed(l, finances);
+              const pct = total>0 ? Math.min(100,((total-remaining)/total)*100) : 0;
               const alert = getAlert(l);
               const isOpen = expanded===l.id;
               return (
@@ -2922,7 +2942,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                           <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px'}}>
                             <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>J${received.toLocaleString()} received</span>
                             <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:remaining>0?'#f0c060':'#1adb8a'}}>
-                              {remaining>0?`J$${remaining.toLocaleString()} due`:'✓ Fully paid'}
+                              {remaining>0?`J$${remaining.toLocaleString()} due`:l.settledBefore&&!received?'Settled before reset':'✓ Fully paid'}
                             </span>
                           </div>
                           <div style={{height:'4px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
@@ -3262,6 +3282,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   const [form, setForm] = useState(null);
   const [newTitle, setNewTitle] = useState('');
   const [star, setStar] = useState(false);
+  const [due, setDue] = useState(todayStr);
   const upPager = usePager(6), oldPager = usePager(6);
   const yesterday = addDays(todayStr, -1);
 
@@ -3282,8 +3303,8 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 
   const quickAdd = () => {
     if (!newTitle.trim()) return;
-    onAdd({ title: newTitle.trim(), note: '', starred: star });
-    setNewTitle(''); setStar(false);
+    onAdd({ title: newTitle.trim(), note: '', starred: star, addedDate: due && due > todayStr ? due : todayStr });
+    setNewTitle(''); setStar(false); setDue(todayStr);
   };
   const carry = async t => {
     const ref = await onAdd({ title: t.title, note: t.note || '', starred: !!t.starred, carriedFrom: t.id });
@@ -3310,7 +3331,8 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
 
       <div className="card tk-add">
         <button className={`tk-star ${star ? 'on' : ''}`} onClick={() => setStar(v => !v)} title="Important">★</button>
-        <input className="input" value={newTitle} onChange={e => setNewTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && quickAdd()} placeholder="Add a task for today and press Enter…"/>
+        <input className="input" value={newTitle} onChange={e => setNewTitle(e.target.value)} onKeyDown={e => e.key === 'Enter' && quickAdd()} placeholder={due > todayStr ? `Add a task due ${fmtDate(due, { weekday:'short', month:'short', day:'numeric' })}…` : 'Add a task for today and press Enter…'}/>
+        <input className="input tk-date" type="date" min={todayStr} value={due} onChange={e => setDue(e.target.value || todayStr)} title="Complete by"/>
         <button className="btn-primary icon-only" onClick={quickAdd}><Icons.plus size={16}/></button>
       </div>
 
@@ -3381,7 +3403,14 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
         <Modal title="Edit Task" onClose={() => setForm(null)}>
           <Field label="Task"><input className="input" autoFocus defaultValue={form.title || ''} id="ttitle"/></Field>
           <Field label="Note"><input className="input" defaultValue={form.note || ''} id="tnote"/></Field>
-          <ModalFoot onClose={() => setForm(null)} onSave={() => { const t = document.getElementById('ttitle').value.trim(); const n = document.getElementById('tnote').value.trim(); if (t) { onUpdate(form.id, { title: t, note: n }); setForm(null); } }}/>
+          {form.addedDate >= todayStr && <Field label="Complete by"><input className="input" type="date" min={todayStr} defaultValue={form.addedDate} id="tdue"/></Field>}
+          <ModalFoot onClose={() => setForm(null)} onSave={() => {
+            const t = document.getElementById('ttitle').value.trim(), n = document.getElementById('tnote').value.trim();
+            const d = document.getElementById('tdue')?.value;
+            if (!t) return;
+            onUpdate(form.id, { title: t, note: n, ...(d && d >= todayStr ? { addedDate: d } : {}) });
+            setForm(null);
+          }}/>
         </Modal>
       )}
       {ConfirmUI}
@@ -4605,11 +4634,15 @@ const pctChange = (a, b) => (b ? Math.round(((a - b) / Math.abs(b)) * 100) : nul
 // Only Active clients owe retainers; Paused and Churned don't accrue.
 const clientSinceOf = l => l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : '');
 const retainerDueDate = (l, mk) => `${mk}-${String(Math.min(Number(l.retainerDueDay) || 1, daysInMonth(mk))).padStart(2, '0')}`;
+// "Start over" in Finance stamps clients with settledBefore: nothing before
+// that date counts as owed, so wiping old payments doesn't invent debts.
+const projectPaidOf = (l, finances) => finances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
+const projectOwed = (l, finances) => (l.settledBefore ? 0 : Math.max(0, (Number(l.value) || 0) - projectPaidOf(l, finances)));
 const retainerCollected = (l, mk, finances) => !!(l.retainerLog || {})[mk] ||
   finances.some(f => f.pipelineLeadId === l.id && f.paymentStage === 'Monthly Retainer' && monthOf(f.date) === mk);
 function retainerArrears(l, finances, todayStr) {
   if (!(Number(l.retainerAmount) > 0) || (l.clientStatus || 'Active') !== 'Active') return [];
-  const since = clientSinceOf(l), out = [];
+  const since = [clientSinceOf(l), l.settledBefore || ''].sort().pop(), out = [];
   for (let i = 0; i < 12; i++) {
     const mk = addMonths(todayStr.slice(0, 7), -i), due = retainerDueDate(l, mk);
     if (since && due < since) break;           // before they were a client
@@ -4633,7 +4666,7 @@ function SectionGhost({ src }) {
   return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
 }
 
-function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onUpdate,onDelete,onSetBudget}) {
+function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onStartOver,onUpdate,onDelete,onSetBudget}) {
   // Work, personal, or both. `finances` below is always the chosen slice, so
   // every total, chart and list on the page agrees with the switch.
   const [scope, setScopeRaw] = useState(() => { try { return localStorage.getItem('jc_fin_scope') || 'all'; } catch { return 'all'; } });
@@ -4715,10 +4748,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
     .map(l => ({ l, amount: Number(l.retainerAmount), due: Number(l.retainerDueDay) || 1, got: retainerIn(l, thisMonth) }));
   const overdueRet = retainers.map(r => { const months = retainerArrears(r.l, allFinances, todayStr); return { ...r, months, amount: months.length * r.amount }; }).filter(r => r.months.length);
   const pendingRet = retainers.filter(r => !r.got && r.due >= today);
-  const setupOwed = paidClients.map(l => {
-    const paid = allFinances.filter(f => f.type === 'income' && f.pipelineLeadId === l.id && f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
-    return { l, due: Math.max(0, (Number(l.value) || 0) - paid) };
-  }).filter(x => x.due > 0);
+  const setupOwed = paidClients.map(l => ({ l, due: projectOwed(l, allFinances) })).filter(x => x.due > 0);
   const owed = overdueRet.reduce((s, r) => s + r.amount, 0) + setupOwed.reduce((s, x) => s + x.due, 0);
 
   // ── Strict projection for the current month ───────────────────────────────
@@ -5269,6 +5299,13 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
           onDelete={form.id ? deleteForm : null}
           onClose={() => setForm(null)}/>
       )}
+      {onStartOver && (allFinances.length + allDebts.length + budgets.length > 0) && (
+        <div className="fin-reset">
+          <button className="link-btn danger" onClick={async () => {
+            if (await confirm({ message: `Delete all ${allFinances.length} transactions, ${allDebts.length} debts and ${budgets.length} budgets? A backup file is saved first. Clients keep their details; anything they owed before today is closed out.`, label: 'Start over', danger: true })) onStartOver();
+          }}>Start finances over…</button>
+        </div>
+      )}
       {ConfirmUI}
     </div>
   );
@@ -5479,10 +5516,11 @@ function FinanceModal({data,leads,ventures = [],onSave,onDelete,onClose}) {
       <div className="grid-2">
         <Field label="Date"><input className="input" type="date" value={f.date} onChange={e => s('date', e.target.value)}/></Field>
         {f.type === 'income' && (
-          <Field label="From client (optional)">
+          <Field label="From client or lead (optional)">
             <select className="input" value={f.pipelineLeadId || ''} onChange={e => s('pipelineLeadId', e.target.value)}>
               <option value="">None</option>
-              {leads.filter(l => l.status === 'Paid' || l.id === f.pipelineLeadId).map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}
+              <optgroup label="Clients">{leads.filter(l => l.status === 'Paid').map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}</optgroup>
+              <optgroup label="Pipeline · becomes a client">{leads.filter(l => l.status !== 'Paid' && (!['Flaked','Lost'].includes(l.status) || l.id === f.pipelineLeadId)).map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}</optgroup>
             </select>
           </Field>
         )}
@@ -5818,10 +5856,9 @@ function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onA
   const thisMonth = todayStr.slice(0, 7);
   const today = Number(todayStr.slice(8));
   const paymentsOf = id => finances.filter(f => f.pipelineLeadId === id && f.type === 'income').sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  const projectPaid = id => paymentsOf(id).filter(f => f.paymentStage !== 'Monthly Retainer').reduce((s, f) => s + amountOf(f), 0);
   const retainerGot = (l, mk) => retainerCollected(l, mk, finances);
   const owedBy = l => {
-    const project = Math.max(0, (Number(l.value) || 0) - projectPaid(l.id));
+    const project = projectOwed(l, finances);
     const arrears = retainerArrears(l, finances, todayStr);
     const ret = arrears.length * (Number(l.retainerAmount) || 0);
     return { project, ret, arrears, total: project + ret };

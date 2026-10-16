@@ -1298,6 +1298,8 @@ select.input {
 .agenda-date { font-family: var(--fm); font-size: 10px; letter-spacing: 0.08em; color: var(--ink-2); margin: 0.25rem 0 0.35rem; }
 .agenda-empty { text-align: center; padding: 2.5rem 1rem; color: var(--ink-3); font-family: var(--fe); font-style: italic; font-size: 15px; }
 .agenda-empty.small { padding: 1rem 0.5rem; font-size: 13.5px; }
+.fin-reset { grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 0.5rem; }
+.link-btn.danger { color: #ff8a80; }
 .link-btn { background: none; border: none; cursor: pointer; color: var(--teal-300); font: inherit; font-style: normal; text-decoration: underline; text-underline-offset: 3px; }
 
 .sched-side { display: flex; flex-direction: column; gap: 1rem; }
@@ -1676,6 +1678,7 @@ select.input {
 /* ─── TASKS ───────────────────────────────────────────────────────── */
 .tk-add { display: flex; align-items: center; gap: 0.5rem; padding: 0.7rem 0.9rem !important; }
 .tk-add .input { flex: 1; }
+.tk-add .input.tk-date { flex: 0 0 auto; width: 9.5rem; color-scheme: dark; }
 .tk-star { background: none; border: none; cursor: pointer; font-size: 16px; line-height: 1; color: var(--ink-4); padding: 0 4px; transition: color 0.15s; }
 .tk-star:hover { color: var(--gold-400); }
 .tk-star.on { color: var(--gold-300); text-shadow: 0 0 10px rgba(230,196,124,0.6); }
