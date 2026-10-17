@@ -1656,7 +1656,8 @@ function App() {
   const removeLead = async id => {
     await Promise.all([...finances.filter(f => f.pipelineLeadId === id).map(f => update('finances', f.id, { pipelineLeadId: null })),
       ...ventures.filter(v => v.clientId === id).map(v => update('ventures', v.id, { clientId: '' })),
-      ...invoices.filter(i => i.leadId === id).map(i => update('invoices', i.id, { leadId: '' }))]);
+      ...invoices.filter(i => i.leadId === id).map(i => update('invoices', i.id, { leadId: '' })),
+      ...todos.filter(t => t.leadId === id).map(t => update('todos', t.id, { leadId: '' }))]);
     await remove('leads', id);
   };
   const removeCourse = async id => {
@@ -1684,6 +1685,10 @@ function App() {
     await update('todos', todo.id, { doneOn: {...(todo.doneOn||{}), [todayStr]: done} });
     // A task that came from a venture move finishes (or reopens) that move too
     if (todo.moveId && ventureItems.some(i => i.id === todo.moveId)) await update('venture_items', todo.moveId, { done, doneAt: done ? todayStr : '' });
+    // A task made from a deal's next step logs the contact on the deal and asks for the next step
+    const lead = done && todo.leadId && leads.find(l => l.id === todo.leadId);
+    if (lead) await update('leads', lead.id, { lastContacted: todayStr, nextAction: '', nextActionDate: '',
+      status: lead.status === 'New' ? 'Contacted' : lead.status, activity: [...(lead.activity || []), { date: todayStr, text: `Done: ${todo.title.replace(`${lead.businessName} · `, '')}` }] });
   };
 
   // ── TIDE LOG — a one-line-each nightly check-in that ties the business
@@ -2050,7 +2055,9 @@ function App() {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
         })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
-        {tab==='pipeline' && <Pipeline leads={leads} finances={finances} onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={removeLead} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
+        {tab==='pipeline' && <Pipeline leads={leads} finances={finances} invoices={invoices} todos={todos} todayStr={todayStr} invoiceApi={invoiceApi} onNav={setTab}
+          onAddTask={d => add('todos', { addedDate: todayStr, ...d, doneOn: {} })}
+          onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={removeLead} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='focus'    && <Focus ventures={ventures} timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
         {tab==='studies'  && <Studies courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
@@ -2626,444 +2633,293 @@ function StatCard({label,value,icon:Icon,color}) {
 // ─── PIPELINE ─────────────────────────────────────────────────────────────────
 
 // ─── PIPELINE (ENHANCED) ──────────────────────────────────────────────────────
-function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdatePayment}) {
-  const [form,setForm]           = useState(null);
-  const [payForm,setPayForm]     = useState(null);
-  const { confirm: pipeConfirm, ConfirmUI: PipeConfirmUI } = useConfirm();
-  const handleDeleteLead = async (id, name) => {
-    const ok = await pipeConfirm({ message: `Remove "${name}" from pipeline? This cannot be undone.`, label: 'Delete Lead', danger: true });
-    if (ok) onDelete(id);
+// ─── PIPELINE ─────────────────────────────────────────────────────────────────
+// A board of live deals. Each deal opens into one panel with everything about
+// it: what they need, the next step, quotes and invoices, money in, and a log
+// of every contact. Won deals become clients; tasks made from a next step tick
+// the deal forward when done.
+const STAGES = [
+  { id: 'New', label: 'New', odds: 0.1, jp: '新規' },
+  { id: 'Contacted', label: 'Contacted', odds: 0.25, jp: '接触' },
+  { id: 'Demo Sent', label: 'Proposal', odds: 0.5, jp: '提案' },
+  { id: 'Negotiating', label: 'Negotiating', odds: 0.75, jp: '交渉' },
+];
+const STAGE_ODDS = Object.fromEntries(STAGES.map(s => [s.id, s.odds]));
+// WhatsApp needs the full international number; Jamaican numbers are often saved without the 1
+const waDigits = p => { const d = String(p || '').replace(/\D/g, ''); return d.length === 10 ? `1${d}` : d.length === 7 ? `1876${d}` : d; };
+const waHref = (p, text) => `https://wa.me/${waDigits(p)}${text ? `?text=${encodeURIComponent(text)}` : ''}`;
+const realContact = l => (l.contactName && !/^(to be found|same as business name)$/i.test(l.contactName) ? l.contactName : '');
+
+function Pipeline({ leads, finances, invoices = [], todos = [], todayStr, onAdd, onUpdate, onDelete, onLogPayment, onUpdatePayment, invoiceApi, onAddTask, onNav }) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [form, setForm] = useState(null);
+  const [payForm, setPayForm] = useState(null);
+  const [sel, setSel] = useState(null);
+  const [q, setQ] = useState('');
+  const [src, setSrc] = useState('all');
+  const [showClosed, setShowClosed] = useState(false);
+
+  const log = (l, text, extra = {}) => onUpdate(l.id, { ...extra, activity: [...(l.activity || []), { date: todayStr, text }] });
+  const setStage = (l, status) => {
+    if (status === l.status) return;
+    const won = status === 'Paid';
+    log(l, won ? 'Won: now a client' : `Moved to ${STAGES.find(s => s.id === status)?.label || status}`, {
+      status, ...(won ? { clientStatus: l.clientStatus || 'Active', clientSince: l.clientSince || todayStr } : {}),
+    });
   };
-  const [expanded,setExpanded]   = useState(null);
-  const [showFilters,setShowFilters] = useState(false);
-  const [page,setPage]           = useState(0);
-  const PER_PAGE = 10;
-
-  // Filters
-  const [fStatus,setFStatus]     = useState('All');
-  const [fLocation,setFLocation] = useState('All');
-  const [fSource,setFSource]     = useState('All');
-  const [fWhatsApp,setFWhatsApp] = useState('All'); // All / Yes / No
-  const [fPriority,setFPriority] = useState('All');
-  const [fSize,setFSize] = useState('All'); // All / Small / Medium / Large
-  const [search,setSearch]       = useState('');
-
-  // Dial queue
-  const [dialQueue,setDialQueue] = useState([]);
-  const [dialIdx,setDialIdx]     = useState(0);
-  const [showDial,setShowDial]   = useState(false);
-
-  const totalVal = leads.filter(l=>!['Flaked','Lost'].includes(l.status)).reduce((s,l)=>s+(Number(l.value)||0),0);
-  const getPayments = lid => finances.filter(f=>f.pipelineLeadId===lid);
-
-  const getAlert = lead => {
-    if (!lead.retainerAmount || !lead.retainerDueDay || lead.status!=='Paid' || (lead.clientStatus||'Active')!=='Active') return null;
-    const today=new Date(); const dueDay=parseInt(lead.retainerDueDay);
-    if (retainerCollected(lead, localDateStr().slice(0,7), finances)) {
-      return {daysUntil:Math.ceil((new Date(today.getFullYear(),today.getMonth()+1,dueDay)-today)/86400000),isOverdue:false};
-    }
-    const thisMonth=new Date(today.getFullYear(),today.getMonth(),dueDay);
-    const nextMonth=new Date(today.getFullYear(),today.getMonth()+1,dueDay);
-    const dT=Math.ceil((thisMonth-today)/86400000);
-    const dN=Math.ceil((nextMonth-today)/86400000);
-    const isOverdue=dT<0&&Math.abs(dT)<=5;
-    return {daysUntil:isOverdue?dT:(dT>=0?dT:dN),isOverdue};
-  };
-
-  // Apply all filters
-  const filtered = leads.filter(l => {
-    if (fStatus!=='All' && l.status!==fStatus) return false;
-    if (fLocation!=='All' && (l.location||l.parish||'')!==fLocation) return false;
-    if (fSource!=='All') {
-      if (fSource==='JAXON' && l.source!=='JAXON Agent') return false;
-      if (fSource==='Manual' && l.source==='JAXON Agent') return false;
-    }
-    if (fWhatsApp==='Yes' && !l.phone) return false;
-    if (fWhatsApp==='No' && l.phone) return false;
-    if (fPriority!=='All' && l.priority!==fPriority) return false;
-    if (fSize!=='All' && (l.businessSize||'Small')!==fSize) return false;
-    if (search && !l.businessName?.toLowerCase().includes(search.toLowerCase()) &&
-        !l.contactName?.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  const markContacted = l => log(l, `Contacted${l.nextAction ? `: ${l.nextAction}` : ''}`, {
+    status: l.status === 'New' ? 'Contacted' : l.status, lastContacted: todayStr, nextActionDate: addDays(todayStr, 3), nextAction: 'Follow up',
   });
-
-  const pageCount = Math.ceil(filtered.length / PER_PAGE);
-  const paged = filtered.slice(page * PER_PAGE, (page+1) * PER_PAGE);
-
-  // Build dial queue from all leads with phone numbers
-  const buildDialQueue = () => {
-    const nums = leads.filter(l=>l.phone).map(l=>({
-      id:l.id, name:l.businessName, phone:l.phone,
-      status:l.status, draft:l.outreachDraft||''
-    }));
-    setDialQueue(nums);
-    setDialIdx(0);
-    setShowDial(true);
+  const saveLead = d => {
+    const { id, createdAt, ...data } = d;
+    if (data.status === 'Paid' && !data.clientSince) Object.assign(data, { clientSince: todayStr, clientStatus: data.clientStatus || 'Active' });
+    if (id) onUpdate(id, data); else onAdd({ ...data, source: data.source || 'Manual', activity: [{ date: todayStr, text: 'Added to the pipeline' }] });
+    setForm(null);
   };
 
-  const activeFilters = [fStatus,fLocation,fSource,fWhatsApp,fPriority,fSize].filter(f=>f!=='All').length + (search?1:0);
+  const ql = q.trim().toLowerCase();
+  const shown = leads.filter(l => (src === 'all' || (src === 'jaxon') === (l.source === 'JAXON Agent'))
+    && (!ql || [l.businessName, l.contactName, l.location, l.businessType, l.notes].some(v => (v || '').toLowerCase().includes(ql))));
+  const open = shown.filter(l => STAGE_ODDS[l.status] !== undefined);
+  const won = shown.filter(l => l.status === 'Paid'), lost = shown.filter(l => ['Lost', 'Flaked'].includes(l.status));
+  const allOpen = leads.filter(l => STAGE_ODDS[l.status] !== undefined);
+  const openValue = allOpen.reduce((s, l) => s + (Number(l.value) || 0), 0);
+  const openMrr = allOpen.reduce((s, l) => s + (Number(l.retainerAmount) || 0), 0);
+  const weighted = allOpen.reduce((s, l) => s + (Number(l.value) || 0) * STAGE_ODDS[l.status], 0);
+  const wonN = leads.filter(l => l.status === 'Paid').length, lostN = leads.filter(l => ['Lost', 'Flaked'].includes(l.status)).length;
+  const winRate = wonN + lostN ? Math.round(wonN / (wonN + lostN) * 100) : null;
+  const due = allOpen.filter(l => l.nextActionDate && l.nextActionDate <= todayStr).sort((a, b) => a.nextActionDate.localeCompare(b.nextActionDate));
+  const noStep = allOpen.filter(l => !l.nextActionDate);
+  const daysTo = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5);
+  const docsOf = id => invoices.filter(i => i.leadId === id).map(inv => ({ inv, st: invoiceState(inv, finances, todayStr) }))
+    .sort((a, b) => (b.inv.issueDate || '').localeCompare(a.inv.issueDate || ''));
+  const taskOf = id => todos.find(t => t.leadId === id && !taskDone(t) && t.addedDate >= todayStr);
+  const current = leads.find(l => l.id === sel) || null;
 
-  // Unique locations from leads
-  const leadLocations = [...new Set(leads.map(l=>l.location||l.parish).filter(Boolean))];
-
-  // ── Follow-ups: every open lead should have a next step with a date ──────
-  const todayStr = localDateStr();
-  const openLeads = leads.filter(l => !['Paid','Flaked','Lost'].includes(l.status));
-  const openValue = openLeads.reduce((s, l) => s + (Number(l.value) || 0), 0);
-  const won = leads.filter(l => l.status === 'Paid').length;
-  const closedLost = leads.filter(l => ['Lost','Flaked'].includes(l.status)).length;
-  const winRate = won + closedLost ? Math.round((won / (won + closedLost)) * 100) : null;
-  const followUps = openLeads.filter(l => l.nextActionDate && l.nextActionDate <= todayStr).sort((a, b) => a.nextActionDate.localeCompare(b.nextActionDate));
-  const noNextStep = openLeads.filter(l => !l.nextActionDate);
-  const lateBy = l => Math.round((parseLocal(todayStr) - parseLocal(l.nextActionDate)) / 864e5);
-  const markContacted = l => onUpdate(l.id, {
-    status: l.status === 'New' ? 'Contacted' : l.status, lastContacted: todayStr,
-    nextActionDate: addDays(todayStr, 3), nextAction: l.nextAction || 'Follow up',
-  });
+  const Card = ({ l }) => {
+    const n = l.nextActionDate ? daysTo(l.nextActionDate) : null;
+    const doc = docsOf(l.id)[0];
+    const i = STAGES.findIndex(s => s.id === l.status);
+    return (
+      <div className={`pl-card ${sel === l.id ? 'on' : ''} pri-${l.priority || 'medium'}`} onClick={() => setSel(l.id)}>
+        <div className="pl-card-top">
+          <b>{l.businessName}</b>
+          {l.source === 'JAXON Agent' && <i className="pl-src">JAXON</i>}
+        </div>
+        <div className="pl-card-sub">{[realContact(l), l.businessType !== 'Other' && l.businessType, l.location].filter(Boolean).join(' · ')}</div>
+        <div className="pl-card-money">
+          <span className="mono">{Number(l.value) ? J(l.value) : '—'}</span>
+          {Number(l.retainerAmount) > 0 && <span className="mono pl-mrr">+{J(l.retainerAmount)}/mo</span>}
+        </div>
+        <div className={`pl-next ${n === null ? 'none' : n < 0 ? 'late' : n === 0 ? 'today' : ''}`}>
+          {n === null ? 'No next step' : <>{l.nextAction || 'Follow up'} · {n < 0 ? `${-n}d late` : n === 0 ? 'today' : n === 1 ? 'tomorrow' : fmtDate(l.nextActionDate, { month: 'short', day: 'numeric' })}</>}
+        </div>
+        {(doc || taskOf(l.id)) && (
+          <div className="pl-chips">
+            {doc && <span className="inv-state" style={{ '--st': INV_STATE_HEX[doc.st.id] }}>{INV_KINDS[doc.inv.kind].title} {doc.st.label.toLowerCase()}</span>}
+            {taskOf(l.id) && <span className="pl-chip">in tasks</span>}
+          </div>
+        )}
+        <div className="pl-move" onClick={e => e.stopPropagation()}>
+          <button className="icon-btn" disabled={i <= 0} title="Back a stage" onClick={() => setStage(l, STAGES[i - 1].id)}><Icons.chevLeft size={12}/></button>
+          <button className="icon-btn" disabled={i >= STAGES.length - 1} title="Forward a stage" onClick={() => setStage(l, STAGES[i + 1].id)}><Icons.chevRight size={12}/></button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="section pipeline">
       <div className="sched-bar">
         <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Pipeline</div></div>
-        <button className="btn-primary" onClick={()=>setForm({})}><Icons.plus size={14}/> Lead</button>
+        <input className="input pl-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search deals, needs, places…"/>
+        <div className="seg">{[['all', 'All'], ['mine', 'Mine'], ['jaxon', 'JAXON']].map(([id, l]) => <button key={id} className={src === id ? 'on' : ''} onClick={() => setSrc(id)}>{l}</button>)}</div>
+        <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Lead</button>
       </div>
 
-      <div className="grid-2">
-        <div className="fin-tile"><span>Open pipeline</span><b className="good">{J(openValue)}</b><span className="fin-delta">{openLeads.length} open lead{openLeads.length === 1 ? '' : 's'}</span></div>
-        <div className="fin-tile"><span>Win rate</span><b className={winRate !== null && winRate < 20 ? 'bad' : ''}>{winRate === null ? '—' : `${winRate}%`}</b><span className="fin-delta">{won} won · {closedLost} lost</span></div>
-        <div className="fin-tile"><span>Follow-ups due</span><b className={followUps.length ? 'bad' : 'good'}>{followUps.length}</b><span className="fin-delta">{followUps.length ? 'do them today' : 'all caught up'}</span></div>
-        <div className="fin-tile"><span>No next step</span><b className={noNextStep.length ? 'warn' : ''}>{noNextStep.length}</b><span className="fin-delta">leads without a date</span></div>
+      <div className="inv-kpis">
+        <div className="fin-tile"><span>Open pipeline</span><b>{J(openValue)}</b><span className="fin-delta">{allOpen.length} deal{allOpen.length === 1 ? '' : 's'}{openMrr ? ` · +${J(openMrr)}/mo retainers` : ''}</span></div>
+        <div className="fin-tile"><span>Likely to close</span><b className="good">{J(weighted)}</b><span className="fin-delta">each deal × its stage's odds</span></div>
+        <div className="fin-tile"><span>Follow-ups due</span><b className={due.length ? 'bad' : 'good'}>{due.length}</b><span className="fin-delta">{due.length ? 'do them today' : noStep.length ? `${noStep.length} without a next step` : 'all caught up'}</span></div>
+        <div className="fin-tile"><span>Win rate</span><b>{winRate === null ? '—' : `${winRate}%`}</b><span className="fin-delta">{wonN} won · {lostN} lost</span></div>
       </div>
 
-      {followUps.length > 0 && (
+      {due.length > 0 && (
         <div className="card pl-follow">
-          <div className="card-label">Follow-ups due</div>
-          {followUps.map(l => (
+          <div className="card-label">Due today</div>
+          {due.map(l => (
             <div key={l.id} className="pl-follow-row">
-              <div className="pl-follow-main">
+              <button className="pl-follow-main" onClick={() => setSel(l.id)}>
                 <span className="pl-follow-name">{l.businessName}</span>
-                <span className="pl-follow-meta">{l.status}{l.nextAction ? ` · ${l.nextAction}` : ''}{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' · today'}</span>
-              </div>
-              {l.phone && <a className="wa-btn" href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer"><Icons.whatsapp size={13}/> WhatsApp</a>}
-              <button className="btn-primary pl-done" onClick={() => markContacted(l)} title="Marks them contacted and books the next follow-up in 3 days">✓ Contacted</button>
+                <span className="pl-follow-meta">{l.nextAction || 'Follow up'}{daysTo(l.nextActionDate) < 0 ? ` · ${-daysTo(l.nextActionDate)}d late` : ' · today'}</span>
+              </button>
+              {l.phone && <a className="wa-btn" href={waHref(l.phone)} target="_blank" rel="noopener noreferrer"><Icons.whatsapp size={13}/> WhatsApp</a>}
+              <button className="btn-primary pl-done" onClick={() => markContacted(l)} title="Logs the contact and books a follow-up in 3 days">✓ Done</button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Search + controls */}
-      <div style={{display:'flex',gap:'0.5rem'}}>
-        <input
-          className="input" style={{flex:1}}
-          value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}}
-          placeholder="Search businesses..."/>
-        <button
-          className={`btn-ghost ${showFilters?'active':''}`}
-          style={{flexShrink:0,position:'relative',padding:'0.5rem 0.75rem'}}
-          onClick={()=>setShowFilters(v=>!v)} title="Filters">
-          <Icons.filter size={14}/>
-          {activeFilters>0 && (
-            <span style={{position:'absolute',top:-4,right:-4,background:'#1adb8a',color:'#fff',borderRadius:'50%',width:14,height:14,fontSize:9,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700}}>{activeFilters}</span>
-          )}
-        </button>
+      <div className="pl-board">
+        {STAGES.map(st => {
+          const col = open.filter(l => l.status === st.id).sort((a, b) => (a.nextActionDate || '9999').localeCompare(b.nextActionDate || '9999'));
+          return (
+            <div key={st.id} className="pl-col">
+              <div className="pl-col-head">
+                <span className="pl-col-jp" lang="ja" aria-hidden="true">{st.jp}</span>
+                <b>{st.label}</b><i>{col.length}</i>
+                <span className="mono pl-col-sum">{J(col.reduce((s, l) => s + (Number(l.value) || 0), 0))}</span>
+              </div>
+              {col.length === 0 ? <div className="pl-empty">—</div> : col.map(l => <Card key={l.id} l={l}/>)}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Filter panel */}
-      {showFilters && (
-        <div className="card fade-in" style={{padding:'0.875rem',display:'flex',flexDirection:'column',gap:'0.625rem'}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span className="card-label" style={{margin:0}}>Filters</span>
-            {activeFilters>0 && (
-              <button className="btn-ghost" style={{fontSize:'11px',padding:'0.2rem 0.5rem'}}
-                onClick={()=>{setFStatus('All');setFLocation('All');setFSource('All');setFWhatsApp('All');setFPriority('All');setFSize('All');setSearch('');setPage(0);}}>
-                Clear all
-              </button>
-            )}
-          </div>
-
-          {/* Status */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Status</div>
-            <div className="pill-row">
-              {['All',...LEAD_STATUSES].map(s=>(
-                <button key={s} className={`pill ${fStatus===s?'active':''}`} onClick={()=>{setFStatus(s);setPage(0);}}>{s}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Location */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Location / Parish</div>
-            <div className="pill-row">
-              {['All',...leadLocations,...JAMAICAN_PARISHES.filter(p=>!leadLocations.includes(p))].slice(0,12).map(loc=>(
-                <button key={loc} className={`pill ${fLocation===loc?'active':''}`} onClick={()=>{setFLocation(loc);setPage(0);}}>{loc}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* WhatsApp */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>WhatsApp Number</div>
-            <div className="pill-row">
-              {['All','Yes','No'].map(w=>(
-                <button key={w} className={`pill ${fWhatsApp===w?'active':''}`} onClick={()=>{setFWhatsApp(w);setPage(0);}}>{w==='Yes'?'✓ Has number':w==='No'?'✗ No number':'All'}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Source */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Source</div>
-            <div className="pill-row">
-              {['All','JAXON','Manual'].map(s=>(
-                <button key={s} className={`pill ${fSource===s?'active':''}`} onClick={()=>{setFSource(s);setPage(0);}}>{s}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Priority */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Priority</div>
-            <div className="pill-row">
-              {['All','high','medium','low'].map(p=>(
-                <button key={p} className={`pill ${fPriority===p?'active':''}`} onClick={()=>{setFPriority(p);setPage(0);}}>{p.charAt(0).toUpperCase()+p.slice(1)}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Business Size */}
-          <div>
-            <div style={{fontSize:'9.5px',fontFamily:'var(--fm)',color:'var(--mist-2)',letterSpacing:'0.1em',textTransform:'uppercase',marginBottom:'0.375rem'}}>Business Size</div>
-            <div className="pill-row">
-              {['All','Small','Medium','Large'].map(s=>(
-                <button key={s} className={`pill ${fSize===s?'active':''}`}
-                  onClick={()=>{setFSize(s);setPage(0);}}>
-                  {s==='Small'?'🏪 Small (1-10)':s==='Medium'?'🏢 Medium (10-50)':s==='Large'?'🏦 Large (50+)':'All Sizes'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Dial queue button */}
-          <button className="btn-primary" style={{width:'100%',justifyContent:'center',gap:'0.5rem'}}
-            onClick={buildDialQueue}>
-            <Icons.phone size={14}/>
-            Build Dial Queue ({leads.filter(l=>l.phone).length} numbers found)
+      {(won.length > 0 || lost.length > 0) && (
+        <div className="card pl-closed">
+          <button className="row-between pl-closed-head" onClick={() => setShowClosed(v => !v)}>
+            <span className="card-label" style={{ margin: 0 }}>Closed · {won.length} won · {lost.length} lost</span>
+            <span className="link-btn">{showClosed ? 'Hide' : 'Show'}</span>
           </button>
+          {showClosed && [...won, ...lost].map(l => (
+            <button key={l.id} className="pl-closed-row" onClick={() => (l.status === 'Paid' ? onNav('clients') : setSel(l.id))}>
+              <span className={`pl-dot ${l.status === 'Paid' ? 'won' : 'lost'}`}/>
+              <b>{l.businessName}</b>
+              <i>{l.status === 'Paid' ? `client since ${l.clientSince ? fmtDate(l.clientSince, { month: 'short', year: 'numeric' }) : '—'}` : `${l.status}${l.lostReason ? ` · ${l.lostReason}` : ''}`}</i>
+              <span className="mono">{Number(l.value) ? J(l.value) : ''}</span>
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Dial Queue Modal */}
-      {showDial && dialQueue.length > 0 && (
-        <div className="modal-overlay" onClick={()=>setShowDial(false)}>
-          <div className="modal" onClick={e=>e.stopPropagation()}>
-            <div className="modal-handle"/>
-            <div className="modal-head">
-              <div>
-                <div style={{fontWeight:800,fontSize:'15px'}}>📞 Dial Queue</div>
-                <div style={{fontFamily:'var(--fm)',fontSize:'10px',color:'var(--mist-2)'}}>{dialIdx+1} of {dialQueue.length}</div>
-              </div>
-              <button className="icon-btn" onClick={()=>setShowDial(false)}><Icons.close size={15}/></button>
-            </div>
-
-            {/* Progress bar */}
-            <div style={{height:'3px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-              <div style={{height:'100%',width:`${((dialIdx+1)/dialQueue.length)*100}%`,background:'#1adb8a',borderRadius:'99px',transition:'width 0.4s'}}/>
-            </div>
-
-            {/* Current contact */}
-            <div className="card" style={{textAlign:'center',padding:'1.5rem 1rem'}}>
-              <div style={{fontSize:'28px',marginBottom:'0.5rem'}}>📞</div>
-              <div style={{fontWeight:800,fontSize:'17px',marginBottom:'0.25rem'}}>{dialQueue[dialIdx].name}</div>
-              <div style={{fontFamily:'var(--fm)',fontSize:'14px',color:'#1adb8a',marginBottom:'1rem'}}>{dialQueue[dialIdx].phone}</div>
-              <div style={{display:'flex',gap:'0.5rem',justifyContent:'center',flexWrap:'wrap'}}>
-                <a href={`tel:${dialQueue[dialIdx].phone}`}
-                  className="btn-primary" style={{textDecoration:'none',gap:'0.5rem'}}>
-                  <Icons.phone size={15}/> Call Now
-                </a>
-                <a href={`https://wa.me/${dialQueue[dialIdx].phone.replace(/\D/g,'')}`}
-                  target="_blank" rel="noopener noreferrer"
-                  className="wa-btn" style={{padding:'0.5rem 1rem',borderRadius:'var(--r2)',fontSize:'13px'}}>
-                  <Icons.whatsapp size={15}/> WhatsApp
-                </a>
-              </div>
-            </div>
-
-            {/* Draft message */}
-            {dialQueue[dialIdx].draft && (
-              <div className="draft-box">
-                <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px'}}>SCRIPT / DRAFT</div>
-                <div style={{fontSize:'12px',color:'var(--mist-1)',lineHeight:'1.6'}}>{dialQueue[dialIdx].draft}</div>
-              </div>
-            )}
-
-            {/* Navigation */}
-            <div style={{display:'flex',gap:'0.5rem'}}>
-              <button className="btn-ghost" style={{flex:1,justifyContent:'center'}}
-                onClick={()=>setDialIdx(i=>Math.max(0,i-1))} disabled={dialIdx===0}>
-                ← Prev
-              </button>
-              <button className="btn-ghost" style={{flex:1,justifyContent:'center',color:'#ff5a36'}}
-                onClick={()=>setDialIdx(i=>Math.min(dialQueue.length-1,i+1))}>
-                Skip →
-              </button>
-              <button className="btn-primary" style={{flex:1,justifyContent:'center'}}
-                onClick={()=>{
-                  if(dialIdx < dialQueue.length-1) setDialIdx(i=>i+1);
-                  else setShowDial(false);
-                }}>
-                {dialIdx < dialQueue.length-1 ? 'Next →' : '✓ Done'}
-              </button>
-            </div>
-          </div>
-        </div>
+      {current && (
+        <DealPanel l={current} finances={finances} docs={docsOf(current.id)} task={taskOf(current.id)} todayStr={todayStr}
+          onClose={() => setSel(null)} onEdit={() => setForm(current)} onUpdate={d => onUpdate(current.id, d)} log={(t, x) => log(current, t, x)}
+          onStage={st => setStage(current, st)} onContacted={() => markContacted(current)} invoiceApi={invoiceApi}
+          onPayment={() => setPayForm(current)} onNav={onNav}
+          onTask={() => onAddTask({ title: `${current.businessName} · ${current.nextAction || 'Follow up'}`, note: '', leadId: current.id, addedDate: current.nextActionDate && current.nextActionDate > todayStr ? current.nextActionDate : todayStr })}
+          onLost={async () => {
+            const reason = window.prompt(`Why was ${current.businessName} lost? (optional)`, '');
+            if (reason === null) return;
+            log(current, `Lost${reason ? `: ${reason}` : ''}`, { status: 'Lost', lostReason: reason || '', nextAction: '', nextActionDate: '' });
+          }}
+          onDelete={async () => { if (await confirm({ message: `Delete ${current.businessName} for good? Payments and invoices stay, unlinked.`, label: 'Delete', danger: true })) { setSel(null); onDelete(current.id); } }}/>
       )}
-
-      {/* Results count */}
-      {filtered.length === 0 ? <Empty text="No leads match your filters."/> : (
-        <>
-          <div className="list">
-            {paged.map(l => {
-              const payments = getPayments(l.id);
-              const received = projectPaidOf(l, finances);
-              const total    = Number(l.value)||0;
-              const remaining = projectOwed(l, finances);
-              const pct = total>0 ? Math.min(100,((total-remaining)/total)*100) : 0;
-              const alert = getAlert(l);
-              const isOpen = expanded===l.id;
-              return (
-                <div key={l.id} className="card lead-card fade-in">
-                  <div className="lead-header" onClick={()=>setExpanded(isOpen?null:l.id)}>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{display:'flex',alignItems:'center',gap:'0.4rem',flexWrap:'wrap',marginBottom:'2px'}}>
-                        <span style={{fontWeight:700,fontSize:'14.5px',letterSpacing:'-0.02em'}}>{l.businessName}</span>
-                        <span className="badge" style={{background:`${STATUS_COLOR[l.status]}18`,color:STATUS_COLOR[l.status],border:`1px solid ${STATUS_COLOR[l.status]}28`}}>{l.status}</span>
-                        {l.source==='JAXON Agent' && <span className="badge badge-ai">🤖 AI</span>}
-                        {l.priority==='high' && <span className="badge" style={{background:'rgba(239,68,68,0.1)',color:'#ff5a36',border:'1px solid rgba(239,68,68,0.2)'}}>High</span>}
-                        {alert?.isOverdue && <span className="badge badge-danger">⚠ Overdue</span>}
-                        {!['Paid','Flaked','Lost'].includes(l.status) && l.nextActionDate && l.nextActionDate <= todayStr && <span className="badge badge-danger">Follow up{lateBy(l) > 0 ? ` · ${lateBy(l)}d late` : ' today'}</span>}
-                        {!['Paid','Flaked','Lost'].includes(l.status) && !l.nextActionDate && <span className="badge" style={{background:'rgba(230,196,124,0.1)',color:'var(--gold-300)',border:'1px solid rgba(230,196,124,0.3)'}}>No next step</span>}
-                      </div>
-                      <div style={{fontSize:'11px',color:'var(--mist-2)',fontFamily:'var(--fm)',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
-                        {l.location && <span>📍 {l.location}</span>}
-                        <span>{l.contactName||'No contact'}</span>
-                        <span style={{color:l.phone?'#25d366':'var(--mist-3)'}}>{l.phone||'No number'}</span>
-                      </div>
-                      {total>0 && (
-                        <div style={{marginTop:'5px',height:'2px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#f0c060':'#1adb8a',borderRadius:'99px',transition:'width 0.5s'}}/>
-                        </div>
-                      )}
-                    </div>
-                    <div style={{display:'flex',alignItems:'center',gap:'0.375rem',flexShrink:0}}>
-                      <span style={{fontFamily:'var(--fm)',fontWeight:700,fontSize:'12px',color:STATUS_COLOR[l.status]}}>
-                        {l.value ? `J$${Number(l.value).toLocaleString()}` : '—'}
-                      </span>
-                      <span style={{color:'var(--mist-2)',transform:isOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>
-                        <Icons.chevDown size={14}/>
-                      </span>
-                    </div>
-                  </div>
-
-                  {isOpen && (
-                    <div className="lead-drawer">
-                      <div style={{display:'flex',alignItems:'center',gap:'0.75rem',flexWrap:'wrap'}}>
-                        <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-1)'}}>👤 {l.contactName||'No contact'}</span>
-                        {l.phone ? (
-                          <div style={{display:'flex',alignItems:'center',gap:'0.375rem'}}>
-                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'#25d366'}}>📞 {l.phone}</span>
-                            <a href={`https://wa.me/${l.phone.replace(/\D/g,'')}`} target="_blank" rel="noopener noreferrer" className="wa-btn" onClick={e=>e.stopPropagation()}>
-                              <Icons.whatsapp size={13}/> WhatsApp
-                            </a>
-                            <a href={`tel:${l.phone}`} className="wa-btn" style={{background:'rgba(201,168,76,0.1)',borderColor:'rgba(201,168,76,0.25)',color:'#1adb8a'}} onClick={e=>e.stopPropagation()}>
-                              <Icons.phone size={13}/> Call
-                            </a>
-                          </div>
-                        ) : (
-                          <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-3)'}}>📞 No number found</span>
-                        )}
-                      </div>
-                      {l.location && <div style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>📍 {l.location} {l.country ? `· ${l.country}` : ''}</div>}
-                      {l.websiteUrl && <div style={{fontFamily:'var(--fm)',fontSize:'11px'}}><a href={l.websiteUrl} target="_blank" rel="noopener noreferrer" style={{color:'#1adb8a'}}>{l.websiteUrl}</a></div>}
-                      {l.notes && <div className="notes-box">{l.notes}</div>}
-                      {total>0 && (
-                        <div>
-                          <div style={{display:'flex',justifyContent:'space-between',marginBottom:'5px'}}>
-                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>J${received.toLocaleString()} received</span>
-                            <span style={{fontFamily:'var(--fm)',fontSize:'11px',fontWeight:700,color:remaining>0?'#f0c060':'#1adb8a'}}>
-                              {remaining>0?`J$${remaining.toLocaleString()} due`:l.settledBefore&&!received?'Settled before reset':'✓ Fully paid'}
-                            </span>
-                          </div>
-                          <div style={{height:'4px',background:'rgba(255,255,255,0.06)',borderRadius:'99px',overflow:'hidden'}}>
-                            <div style={{height:'100%',width:`${pct}%`,background:remaining>0?'#f0c060':'#1adb8a',borderRadius:'99px'}}/>
-                          </div>
-                        </div>
-                      )}
-                      {payments.length>0 && (
-                        <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
-                          {payments.map(p=>(
-                            <div key={p.id} style={{display:'flex',gap:'0.5rem',alignItems:'center'}}>
-                              <span style={{width:5,height:5,borderRadius:'50%',background:'#1adb8a',flexShrink:0,display:'inline-block'}}/>
-                              <span style={{fontFamily:'var(--fm)',fontSize:'11px',color:'var(--mist-2)'}}>{p.paymentStage} · J${Number(p.amount).toLocaleString()} · {p.date}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {l.outreachDraft && (
-                        <div className="draft-box">
-                          <div style={{fontFamily:'var(--fm)',fontSize:'9.5px',color:'#1adb8a',marginBottom:'4px',letterSpacing:'0.08em'}}>🤖 JAXON DRAFT</div>
-                          <div style={{fontSize:'12px',color:'var(--mist-1)',lineHeight:'1.6'}}>{l.outreachDraft}</div>
-                        </div>
-                      )}
-                      {alert && (
-                        <div className={`retainer-tag ${alert.isOverdue?'overdue':''}`}>
-                          <Icons.bell size={11}/>
-                          {alert.isOverdue?`Retainer overdue ${Math.abs(alert.daysUntil)}d — J$${Number(l.retainerAmount).toLocaleString()}`
-                            :alert.daysUntil===0?`Retainer due TODAY — J$${Number(l.retainerAmount).toLocaleString()}`
-                            :`Retainer in ${alert.daysUntil}d — J$${Number(l.retainerAmount).toLocaleString()}`}
-                        </div>
-                      )}
-                      <div style={{display:'flex',gap:'0.4rem',justifyContent:'flex-end',flexWrap:'wrap'}}>
-                        {!['Paid','Flaked','Lost'].includes(l.status) && (
-                          <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem'}} onClick={() => markContacted(l)} title="Next follow-up in 3 days">✓ Contacted</button>
-                        )}
-                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem'}}
-                          onClick={()=>{
-                            window._openInvoice && window._openInvoice({ leadId: l.id });
-                          }}>
-                          Invoice
-                        </button>
-                        <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem',borderColor:'rgba(var(--p3),0.25)',color:'var(--bolt)',background:'rgba(var(--p3),0.05)'}}
-                          onClick={async ()=>{
-                            const prompt = `LEAD ANALYSIS REQUEST\n\nBusiness: ${l.businessName}\nStatus: ${l.status}\nLocation: ${l.location||'Jamaica'}\nValue: J$${Number(l.value||0).toLocaleString()}\nPhone: ${l.phone||'Not found'}\nNotes: ${l.notes||'None'}\nLast action: ${l.nextAction||'None'} on ${l.nextActionDate||'N/A'}\nOutreach draft: ${l.outreachDraft||'None'}\n\nAs my business AI, analyse this lead and tell me:\n1. What is the best next move right now?\n2. What should I say to them?\n3. What is the probability of closing?\n4. Any red flags?`;
-                            window._openJaxonChat && window._openJaxonChat(prompt);
-                          }}>
-                          Ask JAXON
-                        </button>
-                        <button className="icon-btn mint-btn" onClick={()=>setPayForm(l)}><Icons.dollar size={13}/></button>
-                        <button className="icon-btn" onClick={()=>setForm(l)}><Icons.edit size={13}/></button>
-                        <button className="icon-btn danger-btn" onClick={()=>handleDeleteLead(l.id,l.businessName)}><Icons.trash size={13}/></button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          <Pager pg={{ page, pages: Math.max(1, pageCount), size: PER_PAGE, total: filtered.length, from: page * PER_PAGE, to: Math.min(filtered.length, (page + 1) * PER_PAGE), setPage }} noun="leads"/>
-        </>
-      )}
-
-      {form!==null && <LeadModal data={form} onSave={d=>{d.id?onUpdate(d.id,d):onAdd(d);setForm(null);}} onClose={()=>setForm(null)}/>}
-      {payForm!==null && <PaymentModal lead={payForm} existing={getPayments(payForm.id)} onLog={(s,a,d)=>onLogPayment(payForm,s,a,d)} onUpdateEntry={(s,a,d)=>onUpdatePayment(payForm,s,a,d)} onClose={()=>setPayForm(null)}/>}
-      {PipeConfirmUI}
+      {form !== null && <LeadModal data={form} onSave={saveLead} onClose={() => setForm(null)}/>}
+      {payForm && <PaymentModal lead={payForm} existing={finances.filter(f => f.pipelineLeadId === payForm.id)} onLog={(s, a, d) => onLogPayment(payForm, s, a, d)} onUpdateEntry={(s, a, d) => onUpdatePayment(payForm, s, a, d)} onClose={() => setPayForm(null)}/>}
+      {ConfirmUI}
     </div>
   );
 }
 
+function DealPanel({ l, finances, docs, task, todayStr, onClose, onEdit, onUpdate, log, onStage, onContacted, onTask, onLost, onDelete, onPayment, invoiceApi, onNav }) {
+  const [note, setNote] = useState('');
+  const [step, setStep] = useState({ nextAction: l.nextAction || '', nextActionDate: l.nextActionDate || '' });
+  useEffect(() => setStep({ nextAction: l.nextAction || '', nextActionDate: l.nextActionDate || '' }), [l.id, l.nextAction, l.nextActionDate]);
+  const paid = finances.filter(f => f.pipelineLeadId === l.id && isIncome(f)).reduce((s, f) => s + amountOf(f), 0);
+  const stepChanged = step.nextAction !== (l.nextAction || '') || step.nextActionDate !== (l.nextActionDate || '');
+  const closed = STAGE_ODDS[l.status] === undefined;
+  const first = realContact(l).split(' ')[0];
+  const opener = l.outreachDraft || `Hi${first ? ` ${first}` : ''}, Jadan from JCommerce & Tech here. `;
+  const activity = [...(l.activity || [])].reverse();
+  return (
+    <div className="modal-overlay pl-overlay" onClick={onClose}>
+      <aside className="pl-panel" onClick={e => e.stopPropagation()}>
+        <div className="pl-panel-head">
+          <div>
+            <div className="pl-panel-name">{l.businessName}</div>
+            <div className="pl-panel-sub">{[realContact(l), l.businessType !== 'Other' && l.businessType, l.businessSize, l.location].filter(Boolean).join(' · ')}</div>
+          </div>
+          <div className="pl-panel-tools">
+            <button className="icon-btn" title="Edit details" onClick={onEdit}><Icons.edit size={13}/></button>
+            <button className="icon-btn danger-btn" title="Delete this deal" onClick={onDelete}><Icons.trash size={13}/></button>
+            <button className="icon-btn" onClick={onClose}><Icons.close size={14}/></button>
+          </div>
+        </div>
 
-// ─── LEAD MODAL ────────────────────────────────────────────────────────────────
+        <div className="pl-contact">
+          {l.phone && <a className="wa-btn" href={waHref(l.phone, opener)} target="_blank" rel="noopener noreferrer"><Icons.whatsapp size={13}/> WhatsApp</a>}
+          {l.phone && <a className="wa-btn ghost" href={`tel:+${waDigits(l.phone)}`}><Icons.phone size={13}/> Call</a>}
+          {l.websiteUrl && /^https?:|\./.test(l.websiteUrl) && l.websiteUrl !== 'None' && <a className="wa-btn ghost" href={fullUrl(l.websiteUrl)} target="_blank" rel="noopener noreferrer">Website</a>}
+          {l.lastContacted && <span className="pl-last">last contact {fmtDate(l.lastContacted, { month: 'short', day: 'numeric' })}</span>}
+        </div>
+
+        {!closed && (
+          <div className="seg seg-full pl-stages">
+            {STAGES.map(s => <button key={s.id} className={l.status === s.id ? 'on' : ''} onClick={() => onStage(s.id)}>{s.label}</button>)}
+          </div>
+        )}
+
+        {!closed && (
+          <section className="pl-sec">
+            <div className="inv-sec">Next step</div>
+            <div className="pl-step">
+              <input className="input" value={step.nextAction} onChange={e => setStep(p => ({ ...p, nextAction: e.target.value }))} placeholder="What happens next"/>
+              <input className="input" type="date" value={step.nextActionDate} onChange={e => setStep(p => ({ ...p, nextActionDate: e.target.value }))}/>
+            </div>
+            <div className="pl-step-acts">
+              {stepChanged && <button className="btn-primary" onClick={() => onUpdate(step)}>Save step</button>}
+              <button className="btn-ghost" onClick={onContacted}>✓ Done, follow up in 3 days</button>
+              {task ? <button className="btn-ghost" onClick={() => onNav('todos')}>In tasks for {task.addedDate === todayStr ? 'today' : fmtDate(task.addedDate, { weekday: 'short' })} ›</button>
+                : <button className="btn-ghost" onClick={onTask} disabled={!l.nextAction}>Add to tasks</button>}
+            </div>
+          </section>
+        )}
+
+        {l.notes && (
+          <section className="pl-sec">
+            <div className="inv-sec">What they need</div>
+            <p className="pl-notes">{l.notes}</p>
+          </section>
+        )}
+
+        <section className="pl-sec">
+          <div className="inv-sec">Money</div>
+          <div className="inv-pay-sum">
+            <div><span>Project</span><b>{Number(l.value) ? J(l.value) : '—'}</b></div>
+            <div><span>Retainer</span><b>{Number(l.retainerAmount) ? `${J(l.retainerAmount)}` : '—'}</b></div>
+            <div><span>Received</span><b className={paid ? 'good' : ''}>{J(paid)}</b></div>
+          </div>
+          <div className="pl-docs">
+            {docs.length === 0 && <div className="goal-hint">No quote or invoice yet.</div>}
+            {docs.map(({ inv, st }) => (
+              <button key={inv.id} className="pl-doc" onClick={() => invoiceApi.open(inv)}>
+                <span className="mono inv-num">{inv.number}</span>
+                <span>{INV_KINDS[inv.kind].title}</span>
+                <span className="mono">{J(st.total)}</span>
+                <span className="inv-state" style={{ '--st': INV_STATE_HEX[st.id] }}>{st.label}</span>
+              </button>
+            ))}
+            <div className="pl-doc-acts">
+              <button className="btn-ghost" onClick={() => invoiceApi.open({ kind: 'quote', leadId: l.id })}>New quote</button>
+              <button className="btn-ghost" onClick={() => invoiceApi.open({ kind: 'invoice', leadId: l.id })}>New invoice</button>
+              <button className="btn-ghost" onClick={onPayment}>Log payment</button>
+            </div>
+          </div>
+        </section>
+
+        <section className="pl-sec">
+          <div className="inv-sec">Activity</div>
+          <div className="pl-note">
+            <input className="input" value={note} onChange={e => setNote(e.target.value)} placeholder="Log a call, a meeting, what they said…"
+              onKeyDown={e => { if (e.key === 'Enter' && note.trim()) { log(note.trim(), { lastContacted: todayStr }); setNote(''); } }}/>
+            <button className="btn-ghost" disabled={!note.trim()} onClick={() => { log(note.trim(), { lastContacted: todayStr }); setNote(''); }}>Log</button>
+          </div>
+          {activity.length === 0 ? <div className="goal-hint">Nothing logged yet. Every contact you log here builds the story of the deal.</div>
+            : <ol className="pl-log">{activity.map((a, i) => <li key={i}><time>{fmtDate(a.date, { month: 'short', day: 'numeric' })}</time><span>{a.text}</span></li>)}</ol>}
+        </section>
+
+        <div className="pl-close">
+          {!closed && <button className="btn-primary" onClick={() => { onStage('Paid'); onNav('clients'); }}>Won: make client</button>}
+          {!closed && <button className="btn-ghost" onClick={onLost}>Lost</button>}
+          {closed && l.status !== 'Paid' && <button className="btn-ghost" onClick={() => onStage('Contacted')}>Reopen</button>}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function LeadModal({data,onSave,onClose}) {
   const [f,setF] = useState({
     businessName:'', contactName:'', phone:'', websiteUrl:'',
@@ -5979,7 +5835,7 @@ function ClientManagement({ invoices = [], invoiceApi, leads, finances, ventures
     setDeleting(null); setSel(null);
   };
 
-  const waNumber = p => (p || '').replace(/\D/g, '');
+  const waNumber = waDigits;
   const counts = Object.fromEntries(CLIENT_STATES.map(s => [s.id, clients.filter(l => clientState(l) === s.id).length]));
 
   return (
@@ -6746,7 +6602,7 @@ function invoiceMessage(inv, finances, todayStr) {
   const when = st.late ? `It was due ${invDate(inv.dueDate)}.` : inv.dueDate && inv.dueDate !== inv.issueDate ? `Due ${invDate(inv.dueDate)}.` : 'Due on receipt.';
   return `Hi ${who}, here is ${owing} from ${p.company}. ${when}\n\n${p.payment}\nReference: ${inv.number}\n\nThank you!`;
 }
-const waLink = (phone, text) => `https://wa.me/${String(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
+const waLink = (phone, text) => waHref(phone, text);
 
 // ── Editor: the form on the left, the actual document on the right ───────────
 function InvoiceEditor({ data, invoices, leads, finances, profile, todayStr, onSave, onSaveProfile, onClose }) {
@@ -7023,7 +6879,7 @@ function InvoicesBoard({ invoices, finances, todayStr, api, leadId = null, compa
             </button>
             <div className="inv-row-acts">
               {inv.kind === 'invoice' && ['sent', 'part', 'overdue', 'draft'].includes(st.id) && <button className="btn-ghost" onClick={() => api.pay(inv)}>Record payment</button>}
-              {inv.kind === 'quote' && !inv.convertedTo && st.id !== 'void' && <button className="btn-ghost" onClick={() => api.convert(inv)}>Accepted → invoice</button>}
+              {inv.kind === 'quote' && !inv.convertedTo && st.id !== 'void' && <button className="btn-ghost" onClick={() => api.convert(inv)}>Accepted: invoice it</button>}
               {inv.client?.phone && st.id !== 'void' && (
                 <button className="icon-btn" title={st.id === 'overdue' ? 'Send a reminder on WhatsApp' : 'Send on WhatsApp'} onClick={() => api.send(inv)}><Icons.whatsapp size={13}/></button>
               )}
