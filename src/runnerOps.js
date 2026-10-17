@@ -55,6 +55,14 @@ export const CANCEL_WORDS = {
 };
 const cancelWord = r => (r ? CANCEL_WORDS[r] || `"${r}" (not understood)` : 'The student cancelled');
 const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review', 'failed'];
+// Google's API only says whether the billing account is open, not whether a
+// payment is past due: it closes the account (and stops the server) once a
+// declined payment has gone unpaid long enough. A known unpaid balance is
+// therefore kept here, red and at the top, until the owner marks it sorted.
+// To raise a new one, add its date here.
+const BILLING_DUE = [
+  { id: '2026-10-16', what: 'Google Cloud says Runner\'s bill is past due: the Visa ending 8378 was declined (US$4.10).' },
+];
 export const reviewWords = r => {
   const s = String(r || '');
   if (s.startsWith('amount_short_')) return `Fygaro reported less money than was due (it said ${s.slice(13)}).`;
@@ -105,6 +113,7 @@ export function periodKey(kind, t) {
 export const ROUTINES = [
   { kind: 'day', title: 'Every day (about 10 minutes)', items: [
     ['d-morning', 'Morning: the verdict is green, stores opened on time, enough runners booked for lunch.'],
+    ['d-billing', 'Google Cloud billing shows no "past due" or payment warning (the control room can\'t see this until Google closes the account).', 'billing'],
     ['d-verify', 'Verify or reject new runners.', '/verify-runners'],
     ['d-cards', 'Clear "Card payments to check" (once Fygaro is on).', '/dashboard'],
     ['d-cash', 'Match cash taken for coin top-ups against coins added (Money section lists them).'],
@@ -142,9 +151,9 @@ export function judgeRunner(data, local = {}) {
   const ticks = local.ticks || {}, resolved = local.resolved || {}, deletions = local.deletions || [];
   if (!data?.ok) {
     const fix = data?.fix === 'login'
-      ? 'Open Terminal, type firebase login and press Enter, then sign in with the Google account that owns Runner. Come back and press Refresh.'
+      ? 'Open Terminal, type firebase login --reauth and press Enter, then sign in with the Google account that owns Runner (plain "firebase login" only says you are already logged in). Come back and press Refresh.'
       : data?.fix === 'folder'
-        ? 'Press Edit at the top of this venture and set its folder to Runner\'s code folder (dorm-dash-web in Documents → Jcommerce). Then press Refresh.'
+        ? 'Press Edit at the top of this venture and set its folder to Runner\'s code folder (runner in Documents → Jcommerce; it was called dorm-dash-web before 15 Oct 2026). Then press Refresh.'
         : 'Check this Mac is online, then press Refresh. If it keeps happening, send this line to your developer.';
     return { verdict: 'act', headline: 'Act now', reason: `The control room can't see Runner. ${data?.error || ''}`.trim(), fatal: { what: data?.error || 'No answer from the Mac app.', next: fix },
       sections: [], counts: { act: 1, look: 0, unknown: 0 }, items: [] };
@@ -247,6 +256,12 @@ export function judgeRunner(data, local = {}) {
 
   // ── Money ──────────────────────────────────────────────────────────────────
   const money = [];
+  const billingLink = { label: 'Open Google Cloud billing payments', url: P.billing?.ok && P.billing.account ? `https://console.cloud.google.com/billing/${P.billing.account}/payment` : gc('/billing/linkedaccount') };
+  BILLING_DUE.filter(b => !resolved[`billingdue.${b.id}`]).forEach(b => money.push({ key: `money.billingDue.${b.id}`, lv: 'act', top: true, resolve: [`billingdue.${b.id}`], playbook: 'site-down',
+    what: b.what,
+    why: 'Until it is paid Google can close the billing account again at any time, and that stops Runner\'s server: no orders, payments, launch codes or referrals (on 16 Oct it did exactly that for a few hours). The website still loads, so it can look fine.',
+    next: 'Ask the bank to allow international online charges from "Google Cloud" (or use another card), then pay the balance on Google Cloud → Billing → Payments. When the warning banner there is gone, press "Sorted, hide it".',
+    link: billingLink }));
   const pays = [...new Map([...(P.paymentsOpen?.ok ? P.paymentsOpen.rows : []), ...(P.paymentsToday?.ok ? P.paymentsToday.rows : [])].map(p => [p.id, p])).values()];
   if (!usable(P.paymentsOpen)) money.push(cant('money.read', 'card payments waiting for a person', P.paymentsOpen));
   if (!usable(P.paymentsToday)) money.push(cant('money.today', 'today\'s card payments', P.paymentsToday));
@@ -296,7 +311,8 @@ export function judgeRunner(data, local = {}) {
   if (cardOff.length) money.push({ key: 'money.cardOff', lv: 'info',
     what: `${plural(cardOff.length, 'student')} tried to pay by card today while cards are switched off.`,
     why: 'Nobody was charged; they were told to use Runner coins. Each one may be a lost order.', next: 'A count of likely lost orders until Fygaro is set up.' });
-  if (P.walletToday?.ok && P.walletToday.rows.some(t => t.type && !['order_reserve', 'order_charge', 'order_payment', 'order_release', 'order_refund', 'order_refund_card', 'topup_card', 'late_payment_credit', 'admin_adjust'].includes(t.type)))
+  if (P.walletToday?.ok && P.walletToday.rows.some(t => t.type && !['order_reserve', 'order_charge', 'order_payment', 'order_release', 'order_refund', 'order_refund_card', 'topup_card', 'late_payment_credit', 'admin_adjust',
+    'launch_pack', 'referral_reward', 'free_delivery_used', 'free_delivery_returned'].includes(t.type)))
     money.push(notUnderstood('money.oddTx', 'a new kind of coin movement'));
   if (pays.some(p => p.status && !KNOWN_PAYMENT_DOCS.includes(p.status))) money.push(notUnderstood('money.oddPay', 'a new card payment state'));
   // Cash top-ups an admin made by hand today, so cash and coins can be matched
@@ -444,9 +460,38 @@ export function judgeRunner(data, local = {}) {
     next: cleanupNext, link: { label: 'Open Google Cloud billing', url: gc('/billing/linkedaccount') } });
   else if (job.failed) running.push({ key: 'run.cleanupFailed', lv: 'look', what: 'The server\'s last 5-minute clean-up reported an error.',
     why: 'One failed run is usually harmless; the next one catches up.', next: 'Press Refresh in ten minutes. If this is still here, tell the developer.', link: { label: 'Open the error log', url: gc('/logs/query') } });
-  if (P.billing?.ok && !P.billing.enabled) running.push({ key: 'run.billing', lv: 'act', playbook: 'site-down',
-    what: 'Google Cloud billing is switched off for Runner.', why: 'Without billing the server, the clean-up and payments stop.',
-    next: 'Open billing and fix the payment method, then tell the developer.', link: { label: 'Open Google Cloud billing', url: gc('/billing/linkedaccount') } });
+  const billingPage = P.billing?.ok && P.billing.account ? `https://console.cloud.google.com/billing/${P.billing.account}/payment` : gc('/billing/linkedaccount');
+  if (!P.billing?.ok) running.push(cant('run.billing', 'Google Cloud billing', P.billing));
+  else if (!P.billing.enabled || P.billing.open === false) running.push({ key: 'run.billing', lv: 'act', playbook: 'site-down',
+    what: P.billing.open === false ? 'Google has closed Runner\'s billing account, usually because a card payment was declined.' : 'Google Cloud billing is switched off for Runner.',
+    why: 'Without an open billing account Google stops the server: orders, payments, launch codes and the clean-up all fail, even though the website still loads.',
+    next: 'Open billing → Payments, pay the balance and fix the card. Jamaican banks often block international online charges: ask the bank to allow "Google Cloud", or add a second card as backup. Then press Refresh.',
+    link: { label: 'Open the billing account', url: billingPage } });
+  else if (P.billing.open === null) running.push(cant('run.billingOpen', 'whether Runner\'s billing account is open', { error: 'the billing account itself could not be read' }));
+  if (!P.server?.ok) running.push(cant('run.server', 'whether Runner\'s server answers', P.server));
+  else if (P.server.up === 0) running.push({ key: 'run.server', lv: 'act', playbook: 'site-down',
+    what: `Runner's server is not answering (${P.server.answers.map(a => `${a.name}: ${a.status || 'no reply'}`).join(', ')}).`,
+    why: 'Nobody can place or pay for an order, use a launch code or claim a referral while the server is down. The website still loads, so it can look fine.',
+    next: 'First check billing is open (a closed account stops the server). If billing is fine, check status.firebase.google.com, then tell the developer.',
+    link: { label: 'Open the billing account', url: billingPage } });
+  // The site's own domain (uwi-runner.online): connected, certificate, DNS straight to Firebase
+  if (!P.domains?.ok) running.push(cant('run.domain', 'the website\'s own domain', P.domains));
+  else P.domains.rows.forEach(d => {
+    const problem = !d.direct ? `its DNS does not point straight at Firebase (it points to ${d.ips.join(', ') || 'nothing'})`
+      : d.host !== 'HOST_ACTIVE' ? 'Firebase is not serving it yet'
+      : !['CERT_ACTIVE', 'CERT_PROPAGATING'].includes(d.cert) ? 'its security certificate is not ready' : null;
+    if (problem) running.push({ key: `run.domain.${d.name}`, lv: 'act', playbook: 'site-down',
+      what: `${d.name}: ${problem}.`,
+      why: 'This is the address on the flyers and QR codes. If it breaks, every scan fails.',
+      next: !d.direct ? 'Cloudflare → DNS → the A record for the domain: content 199.36.158.100, Proxy status DNS only (grey cloud). Then press Refresh.' : 'Firebase → Hosting → the domain: check what it asks for. A new certificate can take up to a day.',
+      link: { label: 'Open Firebase Hosting', url: fb('/hosting/sites') } });
+  });
+  if (!P.signInHosts?.ok) running.push(cant('run.signInHosts', 'whether every Runner address is allowed for sign-in and the bot check', P.signInHosts));
+  else if (P.signInHosts.missing.length) running.push({ key: 'run.signInHosts', lv: 'act',
+    what: P.signInHosts.missing.map(m => `${m.host} is missing from ${[m.signIn && 'Firebase sign-in\'s authorized domains', m.botCheck && 'the reCAPTCHA (bot check) key'].filter(Boolean).join(' and ')}`).join('; ') + '.',
+    why: 'On that address Google sign-in hangs on the loading screen, or the database refuses the app.',
+    next: 'Add the address in Firebase → Authentication → Settings → Authorized domains, and in Google Cloud → Security → reCAPTCHA → the website key → Domains. Also add https://<address>/__/auth/handler as a redirect URI on the OAuth web client.',
+    link: { label: 'Open authorized domains', url: fb('/authentication/settings') } });
   if (!P.errors?.ok) running.push(cant('run.errors', 'the server\'s errors in the last hour', P.errors));
   else if (P.errors.rows.length >= LIMITS.errorsLook) {
     const n = P.errors.rows.length, payErrs = P.errors.rows.filter(e => /pay|fygaro|refund|coin|token|wallet|float/i.test(`${e.text} ${e.where}`));
@@ -492,6 +537,17 @@ export function judgeRunner(data, local = {}) {
       next: 'Ask the developer to run node scripts/setup-alerts.mjs jcommerceandtech@gmail.com, then confirm Google\'s email.', link: { label: 'Open monitoring alerts', url: gc('/monitoring/alerting') } });
   } else running.push(cant('run.alerts', 'whether the phone alerts are on', P.policies));
 
+  // ── Launch codes and free deliveries ───────────────────────────────────────
+  const freeToday = todayOrders.filter(o => Number(o.deliveryDiscountJmd) > 0 && o.status !== 'cancelled');
+  const codes = usable(P.launchCodes) ? P.launchCodes.rows : null;
+  const launch = codes ? { made: codes.length, claimed: codes.filter(c => c.usedAt).length, claimedToday: codes.filter(c => c.usedAt >= data.today).length } : null;
+  const freeHeld = usable(P.freeDeliveries) ? { students: P.freeDeliveries.rows.length, deliveries: P.freeDeliveries.rows.reduce((t, w) => t + (Number(w.freeDeliveries) || 0), 0) } : null;
+  if (P.launchCodes && !usable(P.launchCodes)) money.push(cant('money.launchCodes', 'the launch codes', P.launchCodes));
+  if (P.freeDeliveries && !usable(P.freeDeliveries)) money.push(cant('money.freeHeld', 'the free deliveries students hold', P.freeDeliveries));
+  if (launch && launch.claimedToday) money.push({ key: 'money.launchToday', lv: 'info',
+    what: `${plural(launch.claimedToday, 'launch code')} claimed today (${launch.claimed} of ${launch.made} so far).`,
+    why: 'Each gives a student 3 free deliveries; Runner covers those delivery fees.', next: 'Nothing to do.' });
+
   // ── Today at a glance ──────────────────────────────────────────────────────
   const today = (() => {
     if (!usable(P.ordersToday)) return { ok: false, note: 'Couldn\'t check today\'s orders, so no numbers are shown rather than wrong ones.' };
@@ -516,6 +572,8 @@ export function judgeRunner(data, local = {}) {
       { label: 'Average delivery', value: a === null ? 'none yet' : `${a} min`, note: a === null ? 'no deliveries finished today' : ya === null ? 'no deliveries yesterday to compare' : a === ya ? 'the same as yesterday' : `${Math.abs(a - ya)} min ${a > ya ? 'slower' : 'faster'} than yesterday's ${ya} min` },
       { label: 'Cash top-ups by hand', value: J(cash.addedTotal), note: cash.added.length ? `${plural(cash.added.length, 'top-up')} an admin added` : 'none added today' },
       { label: 'Card attempts (cards off)', value: String(cardOff.length), note: cardOff.length ? 'each may be a lost order' : 'nobody tried a card today' },
+      { label: 'Free deliveries held', value: freeHeld ? String(freeHeld.deliveries) : '?', note: freeHeld ? `${plural(freeHeld.students, 'student')} holding them; ${launch ? `${launch.claimed} of ${launch.made} launch codes claimed` : 'launch codes couldn\'t be checked'}` : 'couldn\'t check' },
+      { label: 'Free deliveries used', value: String(freeToday.length), note: freeToday.length ? `${J(freeToday.reduce((t, o) => t + (Number(o.deliveryDiscountJmd) || 0), 0))} of delivery fees Runner covered` : 'none used today' },
     ] };
   })();
   const liveCounts = { orders: todayOrders.length, waiting: waiting.length, online, busy, delivered: todayOrders.filter(o => o.status === 'delivered').length, open: openNow.length, storesOpen: openStores.length, stores: stores.length };
@@ -587,7 +645,8 @@ export function judgeRunner(data, local = {}) {
       B('deploy', 'Put the latest version live', 'The developer runs npm run deploy:all and answers yes when asked to delete storeAlertsAdmin (the old ntfy alerts).', auto('deploy', deployed, deployed === null ? null : deployed ? 'The live server is up to date and the old ntfy alerts are gone.' : 'The live version is behind the newest code, or the old ntfy alerts are still there.')),
       B('apikeys', 'Lock the API keys', 'Google Cloud → APIs and services → Credentials: each key limited to the Runner website or the Android app, never "None".', { link: { label: 'Open API keys', url: gc('/apis/credentials') } }),
       B('sakeys', 'Delete old service-account keys', 'Google Cloud → IAM → Service accounts → each account → Keys: delete any not in use today.', { link: { label: 'Open service accounts', url: gc('/iam-admin/serviceaccounts') } }),
-      B('recaptcha', 'Check the bot-check key\'s websites', `Google Cloud → Security → reCAPTCHA → the website key → Domains: ${project}.web.app and ${project}.firebaseapp.com.`, { link: { label: 'Open reCAPTCHA', url: gc('/security/recaptcha') } }),
+      B('recaptcha', 'Every Runner address allowed for sign-in and the bot check', `Firebase → Authentication → Authorized domains, and Google Cloud → Security → reCAPTCHA → the website key → Domains: ${(P.signInHosts?.ok ? P.signInHosts.hosts : [`${project}.web.app`]).join(' and ')}.`, { link: { label: 'Open reCAPTCHA', url: gc('/security/recaptcha') }, ...auto('recaptcha', P.signInHosts?.ok ? P.signInHosts.missing.length === 0 : null, P.signInHosts?.ok ? (P.signInHosts.missing.length ? `Missing for: ${P.signInHosts.missing.map(m => m.host).join(', ')}.` : 'Every address is allowed.') : null) }),
+      B('billingcard', 'Billing account open, with a card the bank allows abroad', 'Google Cloud → Billing → Payments: no declined payment, and ideally a backup card. Ask the bank to allow international online charges from Google.', { link: { label: 'Open billing', url: billingPage }, ...auto('billingcard', P.billing?.ok && P.billing.open !== null ? P.billing.open && P.billing.enabled : null, P.billing?.ok && P.billing.open !== null ? (P.billing.open ? 'The billing account is open.' : 'The billing account is closed.') : null) }),
       B('debugtoken', 'Register the developer\'s test browser', 'Firebase → App Check → Apps → the web app → three dots → Manage debug tokens.', { link: { label: 'Open App Check apps', url: fb('/appcheck/apps') } }),
       B('budget', 'Set a budget alert', 'Google Cloud → Billing → Budgets: US$25 a month, emails to jcommerceandtech@gmail.com.', { link: { label: 'Open budgets', url: gc('/billing/budgets') }, ...auto('budget', budgets ? budgets.length > 0 : null, budgets ? (budgets.length ? `Found: ${budgets.map(b => `${b.name} ${b.currency} ${b.amount}`).join(', ')}.` : 'No budget is set.') : 'The control room can\'t see budgets until the Budget API is switched on (see Is it running).') }),
       B('alerts', 'Switch on monitoring emails', 'The developer runs node scripts/setup-alerts.mjs jcommerceandtech@gmail.com; confirm Google\'s email.', auto('alerts', alertsOn === null ? null : alertsOn >= 3, alertsOn === null ? null : `${alertsOn} of 3 alerts are on with an email.`)),
@@ -604,6 +663,11 @@ export function judgeRunner(data, local = {}) {
       B('firstrunners', 'The first runners are verified and in one WhatsApp group with the owner', 'Runner admin → Runner verification; then add each to the group.', { link: link('Open runner verification', '/verify-runners'), found: usable(P.runners) ? `${plural(verified, 'verified runner')} so far.` : null }),
       B('briefed', 'Each runner knows the rules', 'Orders arrive in waves, students pay after accepting, never buy food before "Payment received", and idle runners are switched off after 2 hours.'),
       B('runnerfloats', 'Runner floats topped up where runners buy the food', 'Runner admin → Users → the runner → "Adjust float".', { found: floats.ok ? `${plural(floats.runners.filter(f => f.float > 0).length, 'runner')} with a float above zero.` : null }),
+    ] },
+    { title: 'Launch', items: [
+      B('domain', 'Runner\'s own address works: uwi-runner.online', 'Bought on Cloudflare, connected in Firebase Hosting, A record DNS only (grey cloud).', { link: { label: 'Open Firebase Hosting', url: fb('/hosting/sites') }, ...auto('domain', P.domains?.ok ? P.domains.rows.length > 0 && P.domains.rows.every(d => d.direct && d.host === 'HOST_ACTIVE' && d.cert === 'CERT_ACTIVE') : null, P.domains?.ok ? (P.domains.rows.length ? P.domains.rows.map(d => `${d.name}: ${d.host === 'HOST_ACTIVE' && d.cert === 'CERT_ACTIVE' && d.direct ? 'live' : 'not ready'}`).join(', ') : 'No custom domain is connected.') : null) }),
+      B('launchcodes', 'Make the 100 launch codes and print their QR cards', 'Runner admin → Launch codes → Make codes, then Print QR cards (on a computer). Test-scan one card before handing them out.', { link: link('Open Runner admin: Launch codes', '/launch-codes'), ...auto('launchcodes', launch ? launch.made >= 100 : null, launch ? `${launch.made} of 100 made, ${launch.claimed} claimed.` : null) }),
+      B('flyer', 'Flyer printed after a test scan', 'Print one copy at 100% (actual size), scan the QR with an iPhone and an Android phone, then print the rest.'),
     ] },
     { title: 'Money while cards are off', items: [
       B('cashroutine', 'A cash top-up routine', 'The student pays cash; you add coins with "Adjust Runner coins" and a note such as "Cash J$2,000, receipt 014". Money below lists each day\'s manual top-ups so cash and coins can be matched.'),
@@ -624,6 +688,7 @@ export function judgeRunner(data, local = {}) {
     lists: P.lists?.ok ? { statuses: P.lists.orderStatus?.length || 0, reasons: P.lists.cancelReason?.length || 0 } : null,
     budgets, budgetError: P.budgets?.ok ? null : P.budgets?.error || null, budgetDisabled: !!P.budgets?.disabled,
     appCheck, backups: P.backups?.ok ? P.backups : null, policies: P.policies?.ok ? P.policies.rows : null, billing: P.billing?.ok ? P.billing : null,
+    serverUp: P.server?.ok ? P.server : null, domains: P.domains?.ok ? P.domains.rows : null,
   };
 
   const sections = [
@@ -640,11 +705,12 @@ export function judgeRunner(data, local = {}) {
   const counted = items.filter(i => i.lv !== 'info');
   const counts = { act: counted.filter(i => i.lv === 'act').length, look: counted.filter(i => i.lv === 'look').length, unknown: counted.filter(i => i.lv === 'unknown').length };
   const verdict = counts.act ? 'act' : counts.look + counts.unknown ? 'look' : 'good';
-  const first = counted.find(i => i.lv === 'act') || counted.find(i => i.lv === 'look') || counted.find(i => i.lv === 'unknown');
+  const first = counted.find(i => i.top && i.lv === 'act') || counted.find(i => i.lv === 'act') || counted.find(i => i.lv === 'look') || counted.find(i => i.lv === 'unknown');
   const reason = verdict === 'good' ? 'Nothing is stuck, no money needs a person, and the website and server are running.'
     : `${first.what}${counted.length > 1 ? ` And ${plural(counted.length - 1, 'more thing')} below.` : ''}`;
-  if (verdict === 'good') checklist[4].items[4].done = true;
+  const testing = checklist.find(c => c.title === 'Test it like a student');
+  if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L };
+    checklist, keeping, limits: L, launch, freeHeld };
 }

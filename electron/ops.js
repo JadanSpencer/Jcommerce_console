@@ -17,7 +17,14 @@
 const path = require('path');
 const fs = require('fs/promises');
 const { execFile } = require('child_process');
+const dns = require('dns').promises;
 
+// Firebase Hosting's address for custom domains: the domain's A record must
+// point here directly (Cloudflare's proxy, the orange cloud, breaks it).
+const FIREBASE_HOSTING_IP = '199.36.158.100';
+// Two callable functions, asked without signing in: a running server says
+// "sign in first" (4xx); a stopped one (billing closed, outage) says 5xx.
+const PROBE_FUNCTIONS = ['claimLaunchCode', 'myReferral'];
 const FAST_MS = 60 * 1000, MEDIUM_MS = 10 * 60 * 1000, SLOW_MS = 60 * 60 * 1000, MENU_MS = 6 * 60 * 60 * 1000;
 const SCHEDULER_REGION = 'us-central1'; // where Firebase puts scheduled jobs unless told otherwise
 const JAMAICA_OFFSET_MS = -5 * 60 * 60 * 1000; // no daylight saving
@@ -95,7 +102,7 @@ const part = async job => {
 
 const ORDER_FIELDS = ['status', 'paymentStatus', 'paymentMethod', 'fulfilment', 'storeId', 'storeName', 'totalAmount', 'deliveryFee', 'platformFeeJmd', 'dasherPayoutJmd',
   'createdAt', 'verifiedAt', 'acceptedAt', 'paidAt', 'deliveredAt', 'readyAt', 'cancelledAt', 'cancelReason', 'deliveryMins', 'payDeadline',
-  'storeAskedAt', 'storeAnswerBy', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId'];
+  'storeAskedAt', 'storeAnswerBy', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId', 'deliveryDiscountJmd'];
 // The order code is what everyone uses to talk about an order
 const tidyOrder = ({ receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase(), hasRunner: !!o.dasherId });
 
@@ -140,7 +147,7 @@ async function fast(project, token, ctx) {
   const q = spec => part(() => query(project, token, spec));
   const orders = spec => part(async () => { const r = await query(project, token, spec); return { rows: r.rows.map(tidyOrder), hitLimit: r.hitLimit }; });
   const PAY = ['status', 'purpose', 'amountJmd', 'createdAt', 'orderId', 'failReason', 'reviewReason', 'returnVerifiedAt'];
-  const [ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler] = await Promise.all([
+  const [ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler, server] = await Promise.all([
     // Anything still open, whatever day it was placed
     orders({ collectionId: 'orders', where: cmp('status', 'IN', oneOf(['pending', 'accepted', 'picking_up', 'on_the_way'])), fields: ORDER_FIELDS, limit: 150 }),
     orders({ collectionId: 'orders', where: cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(today)), orderBy: 'createdAt', fields: ORDER_FIELDS, limit: 800 }),
@@ -162,8 +169,22 @@ async function fast(project, token, ctx) {
       const j = await google(token, project, `https://cloudscheduler.googleapis.com/v1/projects/${project}/locations/${SCHEDULER_REGION}/jobs?pageSize=50`);
       return { jobs: (j.jobs || []).map(x => ({ name: x.name.split('/').pop(), state: x.state, lastRunAt: Date.parse(x.lastAttemptTime) || null, failed: !!(x.status && x.status.code) })) };
     }),
+    // Is the server answering at all? (On 16 Oct 2026 a declined card closed the
+    // billing account and every function returned 503 while billing still
+    // said "enabled".) No sign-in is sent, so nothing runs past the door.
+    part(async () => {
+      const ask = async name => {
+        const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 10000);
+        try {
+          const r = await fetch(`https://${SCHEDULER_REGION}-${project}.cloudfunctions.net/${name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"data":{}}', signal: ctl.signal });
+          return { name, status: r.status };
+        } catch { return { name, status: 0 }; } finally { clearTimeout(timer); }
+      };
+      const answers = await Promise.all(PROBE_FUNCTIONS.map(ask));
+      return { answers, up: answers.filter(a => a.status > 0 && a.status < 500).length, asked: answers.length };
+    }),
   ]);
-  return { ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler, at: now };
+  return { ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler, server, at: now };
 }
 
 async function medium(project, token, ctx, dir) {
@@ -173,7 +194,12 @@ async function medium(project, token, ctx, dir) {
   const hourAgo = new Date(now - 3600000).toISOString();
   const logs = filter => g('https://logging.googleapis.com/v2/entries:list', { resourceNames: [`projects/${project}`], filter: `${filter} AND timestamp>="${hourAgo}"`, orderBy: 'timestamp desc', pageSize: 100 });
   const firstLine = e => String(e.jsonPayload?.message || e.textPayload || '').split('\n')[0].slice(0, 160);
-  const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code] = await Promise.all([
+  // Runner's own address comes from its settings file, not from the last check
+  const address = await appUrl(dir, project).catch(() => null) || ctx.siteUrl;
+  const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
+  const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
+  const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
+    launchCodes, freeDeliveries, domains, signInHosts] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
@@ -192,7 +218,15 @@ async function medium(project, token, ctx, dir) {
       return { names: (j.functions || []).map(f => f.name.split('/').pop()), at: Math.max(0, ...(j.functions || []).map(f => Date.parse(f.updateTime) || 0)) || null }; }),
     part(async () => { const j = await g(`https://monitoring.googleapis.com/v3/projects/${project}/alertPolicies?pageSize=50`);
       return { rows: (j.alertPolicies || []).map(a => ({ name: a.displayName, on: a.enabled !== false, emails: (a.notificationChannels || []).length })) }; }),
-    part(async () => { const j = await g(`https://cloudbilling.googleapis.com/v1/projects/${project}/billingInfo`); return { enabled: !!j.billingEnabled, account: (j.billingAccountName || '').split('/').pop() }; }),
+    // "Enabled" only says a billing account is linked. The account itself can be
+    // closed (a declined card), which stops the server all the same.
+    part(async () => {
+      const j = await g(`https://cloudbilling.googleapis.com/v1/projects/${project}/billingInfo`);
+      const account = (j.billingAccountName || '').split('/').pop();
+      let open = null;
+      if (account) { try { open = (await g(`https://cloudbilling.googleapis.com/v1/billingAccounts/${account}`)).open !== false; } catch { open = null; } }
+      return { enabled: !!j.billingEnabled, account, open };
+    }),
     part(async () => {
       const [b, s] = await Promise.all([g(`https://firestore.googleapis.com/v1/projects/${project}/locations/-/backups`), g(`https://firestore.googleapis.com/v1/projects/${project}/databases/(default)/backupSchedules`)]);
       const ready = (b.backups || []).filter(x => x.state === 'READY').map(x => Date.parse(x.snapshotTime)).filter(Boolean);
@@ -201,8 +235,36 @@ async function medium(project, token, ctx, dir) {
     part(() => sharedLists(dir)),
     part(async () => ({ url: await appUrl(dir, project) })),
     part(() => newestCode(dir)),
+    // Launch codes: only when each was made and used. Who used it is not read.
+    q({ collectionId: 'launchCodes', fields: ['createdAt', 'usedAt'], limit: 200 }),
+    // Free deliveries students still hold (launch packs and referral rewards)
+    q({ collectionId: 'wallets', where: cmp('freeDeliveries', 'GREATER_THAN', num(0)), fields: ['freeDeliveries'], limit: 3000 }),
+    // The site's own domain: Firebase's view of it, and where its DNS really points
+    part(async () => {
+      const j = await g(`https://firebasehosting.googleapis.com/v1beta1/projects/${project}/sites/${project}/customDomains`);
+      const rows = await Promise.all((j.customDomains || []).map(async d => {
+        const name = d.name.split('/').pop();
+        const ips = await dns.resolve4(name).catch(() => []);
+        return { name, host: d.hostState || '', ownership: d.ownershipState || '', cert: d.cert?.state || '', ips, direct: ips.includes(FIREBASE_HOSTING_IP) };
+      }));
+      return { rows };
+    }),
+    // Every Runner address must be allowed for sign-in and for the bot check, or
+    // Google sign-in hangs and the database refuses the app on that address
+    part(async () => {
+      const [auth, keys] = await Promise.all([
+        g(`https://identitytoolkit.googleapis.com/admin/v2/projects/${project}/config`),
+        g(`https://recaptchaenterprise.googleapis.com/v1/projects/${project}/keys?pageSize=50`),
+      ]);
+      const web = (keys.keys || []).filter(k => k.webSettings);
+      return { hosts, missing: hosts.map(h => ({ host: h,
+        signIn: !(auth.authorizedDomains || []).includes(h),
+        botCheck: web.length > 0 && !web.some(k => k.webSettings.allowAllDomains || (k.webSettings.allowedDomains || []).includes(h)),
+      })).filter(m => m.signIn || m.botCheck) };
+    }),
   ]);
-  return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code, at: now };
+  return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
+    launchCodes, freeDeliveries, domains, signInHosts, at: now };
 }
 
 async function slow(project, token, ctx) {
@@ -267,7 +329,7 @@ async function snapshot(project, dir, token) {
   let read = stats.ok ? 1 : 0;
   const due = (key, ms) => !c[key] || macNow - c[`${key}At`] >= ms || c[`${key}Day`] !== today;
   if (due('medium', MEDIUM_MS)) { c.medium = await medium(project, token, ctx, dir); c.mediumAt = macNow; c.mediumDay = today;
-    read += ['stores', 'storeFloats', 'dashers', 'runners', 'storeLogins', 'admins'].reduce((t, k) => t + reads(c.medium[k]), 0);
+    read += ['stores', 'storeFloats', 'dashers', 'runners', 'storeLogins', 'admins', 'launchCodes', 'freeDeliveries'].reduce((t, k) => t + reads(c.medium[k]), 0);
     if (c.medium.url.ok && c.medium.url.url) ctx.siteUrl = `${c.medium.url.url}/`; }
   if (due('slow', SLOW_MS)) { c.slow = await slow(project, token, ctx); c.slowAt = macNow; c.slowDay = today; read += reads(c.slow.ordersWeek) + reads(c.slow.signups); }
   if (due('menus', MENU_MS)) { c.menus = await menus(project, token, ctx); c.menusAt = macNow; c.menusDay = today; read += reads(c.menus.items); }
@@ -290,7 +352,7 @@ async function ops(project, dir, cliToken) {
   inFlight = (async () => {
     try {
       let token = await cliToken(false);
-      if (!token) return { ok: false, fix: 'login', error: 'This Mac is signed out of Firebase.' };
+      if (!token) return { ok: false, fix: 'login', error: 'This Mac\'s Firebase sign-in has run out and Google would not renew it.' };
       let data;
       try { data = await snapshot(project, dir, token); }
       catch (e) { if (e.code !== 401) throw e; token = await cliToken(true); data = await snapshot(project, dir, token); }

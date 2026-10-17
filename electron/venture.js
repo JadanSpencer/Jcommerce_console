@@ -151,14 +151,36 @@ async function overview(dir) {
 
 // ── Firestore, read-only, through the Firebase CLI's login ──────────────────
 const CLI_CONFIG = path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json');
+// The CLI saves a one-hour access token and a long-lived refresh token. When
+// the access token runs out, renew it the way the CLI itself does (Google's
+// token endpoint with the CLI's public client id), and keep the new one in
+// memory only. If that fails, fall back to letting the CLI refresh its file.
+// Firebase CLI's public OAuth client (lib/api.js in firebase-tools); not a secret
+const CLI_CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
+const CLI_CLIENT_SECRET = 'j9iVZfS8kkCEFUPaAeJV0sAi';
+let fresh = null; // { token, until } measured on this Mac's own clock
+async function renew(refreshToken) {
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refreshToken, client_id: CLI_CLIENT_ID, client_secret: CLI_CLIENT_SECRET }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || !j.access_token) throw Object.assign(new Error(j.error_description || j.error || `HTTP ${r.status}`), { reauth: j.error === 'invalid_grant' });
+  fresh = { token: j.access_token, until: Date.now() + (Number(j.expires_in) || 3600) * 1000 - 5 * 60000 };
+  return fresh.token;
+}
 async function cliToken(forceRefresh) {
+  if (!forceRefresh && fresh && Date.now() < fresh.until) return fresh.token;
   let cfg = await readJson(CLI_CONFIG);
-  const stale = !cfg?.tokens?.access_token || (cfg.tokens.expires_at || 0) < Date.now() + 60000;
-  if (stale || forceRefresh) {
-    // Any CLI call refreshes the saved token
-    await new Promise(resolve => { const p = spawn(SHELL, ['-lc', 'firebase projects:list >/dev/null 2>&1']); p.on('close', resolve); p.on('error', resolve); });
-    cfg = await readJson(CLI_CONFIG);
+  const stale = !cfg?.tokens?.access_token || (cfg.tokens.expires_at || 0) < Date.now() + 5 * 60000;
+  if (!stale && !forceRefresh) return cfg.tokens.access_token;
+  if (cfg?.tokens?.refresh_token) {
+    try { return await renew(cfg.tokens.refresh_token); }
+    catch (e) { if (e.reauth) { fresh = null; return null; } }
   }
+  // Fallback: any CLI call refreshes the saved token
+  await new Promise(resolve => { const p = spawn(SHELL, ['-lc', 'firebase projects:list >/dev/null 2>&1']); p.on('close', resolve); p.on('error', resolve); });
+  cfg = await readJson(CLI_CONFIG);
   return cfg?.tokens?.access_token || null;
 }
 const fromValue = v => {

@@ -236,7 +236,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
     return () => { store.viewers -= 1; clearInterval(clock); schedule(); };
   }, [api, project, dir, notify]);
 
-  if (!project) return <div className="card span-12 rc-fatal"><b>This venture's folder has no Firebase project.</b><p>Press Edit at the top and set its folder to Runner's code folder (dorm-dash-web in Documents → Jcommerce).</p></div>;
+  if (!project) return <div className="card span-12 rc-fatal"><b>This venture's folder has no Firebase project.</b><p>Press Edit at the top and set its folder to Runner's code folder (runner in Documents → Jcommerce; it was called dorm-dash-web before 15 Oct 2026).</p></div>;
   if (!api?.ops) return <div className="card span-12 rc-fatal"><b>The control room needs the Mac app.</b><p>Quit JCommerce Console with ⌘Q and open it again.</p></div>;
   if (!s.view) return <div className="card span-12 rc-wait"><span className="rc-seal look" lang="ja" aria-hidden="true">待</span><div><b>Checking Runner…</b><p>Reading orders, money, runners, stores and Google's status pages.</p></div></div>;
 

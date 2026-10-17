@@ -1,7 +1,7 @@
 # Runner context for the console
 
 What the Runner control room (`src/RunnerControl.js`, `src/runnerOps.js`,
-`electron/ops.js`) needs to know about Runner as of 14 Oct 2026. Update this
+`electron/ops.js`) needs to know about Runner as of 16 Oct 2026. Update this
 file the same day anything in Runner changes what the control room reads.
 
 The full spec for what the control room should do, written for a
@@ -10,13 +10,21 @@ non-technical operator: "Runner Control Room: What It Must Do"
 
 ## Where Runner is
 
-- Code: `~/Documents/Jcommerce/dorm-dash-web`, GitHub `JadanSpencer/Runner`.
+- Code: `~/Documents/Jcommerce/runner` (was `dorm-dash-web` until 15 Oct;
+  the venture's folder must point at the new path), GitHub `JadanSpencer/Runner`.
   Read-only from here. Build record: `PWA_HANDOFF.md`; payments: `PAYMENTS_SETUP.md`.
 - Firebase project `dormdash-71035` (permanent ID; the app is now called
   Runner everywhere else). Firestore database `(default)`.
-- Site: `https://dormdash-71035.web.app` until a domain is bought. The server
-  reads the address from `APP_URL` in `functions/.env.dormdash-71035`; read it
-  from there, don't hard-code `${project}.web.app`.
+- Site: `https://uwi-runner.online` since 16 Oct 2026 (Cloudflare registrar
+  and DNS; the A record `199.36.158.100` must stay DNS only, grey cloud). The
+  old `https://dormdash-71035.web.app` keeps working. The server reads the
+  address from `APP_URL` in `functions/.env.dormdash-71035` (the web build from
+  `EXPO_PUBLIC_APP_URL`); read it from there, don't hard-code an address.
+- On the web the sign-in (auth) domain is whichever Runner address the page is
+  on (`services/firebase.ts` `RUNNER_HOSTS`). Every Runner address must be an
+  Authorized domain in Firebase Auth, an allowed domain on the reCAPTCHA
+  Enterprise key, and a redirect URI (`/__/auth/handler`) on the OAuth web
+  client. A missing one makes Google sign-in hang on the loading screen.
 - Launch order: the website (PWA) first, Android (`com.jcommerce.runner`) and
   iPhone later.
 
@@ -41,6 +49,14 @@ wave 3, `SOLD_OUT_MAX_MS` 14 h). Read these from the Runner folder through
 | `users` | `role` (student, dasher, store, admin), `dasherStatus` (pending, verified, rejected), `isActive`, `storeId` (store logins), `pushToken` (presence only) |
 | `dashers` | `isOnline`, `activeOrderId(s)`, `lastSeenAt`, `offlineReason` |
 | `publicStats/app` | `onlineDashers` |
+| `launchCodes/{code}` | `createdAt`, `usedAt` (also `usedBy`, `usedByName`: not read). 100 at most; each gives 3 free deliveries once |
+| `wallets/{uid}` | `freeDeliveries` (launch packs and referral rewards still held), `referralCount`, `launchPackAt` |
+| `orders` (new) | `deliveryDiscountJmd` (a free delivery covered this much of the fee), `freeDeliveryHeld` |
+| `walletTx` (new types) | `launch_pack`, `referral_reward` (+`freeDeliveries`), `free_delivery_used`, `free_delivery_returned` |
+
+Server-only, never read by the console: `referralCodes`, `referrals`,
+`launchCodeTries`. Private, never read: `orders/{id}/messages` (order chat
+between a student and their runner) and `users.whatsapp`.
 
 Fields that do NOT exist in Runner and are no longer checked (removed 14 Oct):
 `payments.flagged`, `payments.needsReview`, `payments.refundFallback`.
@@ -59,10 +75,38 @@ Fields that do NOT exist in Runner and are no longer checked (removed 14 Oct):
   separately, with a 300 s timeout.
 - Account deletion clears `receipt.customerName` on past orders.
 
+## What changed in Runner on 15–16 Oct 2026
+
+- Referrals: a student's link (`{APP_URL}/?ref=CODE`); a friend counts when
+  their first order is delivered (since 16 Oct; at sign-up before), and every
+  5 counted friends earn 1 free delivery. Chat notifications are limited to
+  one per sender per order every 10 s (`chatPushes/`, server-only). Launch codes: up to 100 one-time codes,
+  3 free deliveries each, made in admin and printed as QR cards
+  (`{APP_URL}/?launch=CODE`, claimed automatically after sign-in).
+- New functions: `myReferral`, `claimLaunchCode`, `adminCreateLaunchCodes`,
+  `onOrderMessage` (order chat notifications).
+- Order chat between a student and their runner while an order is open.
+- Store pages: the store's two metals blended; "Your last order here" reorder.
+- 16 Oct incident: the Visa on the billing account was declined (Jamaican bank
+  blocking an international online charge), Google **closed the billing
+  account**, and every function returned 500/503 for a few hours while
+  `billingInfo.billingEnabled` still said `true`. Fixed by paying the balance.
+  The control room now checks the billing account's own `open` flag and asks
+  two functions whether they answer.
+- The unpaid balance itself can't be read through Google's API (no "past due"
+  flag until the account closes), so `BILLING_DUE` in `src/runnerOps.js`
+  holds a known unpaid bill as a red item at the top until the owner presses
+  "Sorted"; the daily routine includes checking the billing page. The
+  16 Oct balance (US$4.10, Visa •••• 8378 declined) was still unpaid at the
+  end of that day.
+- Old function images (Artifact Registry `gcf-artifacts`, us-central1 and
+  us-east1) are now deleted after 1 day instead of 30, so repeated deploys
+  don't build up storage cost.
+
 ## Runner admin pages (for "open this page" buttons)
 
 `/dashboard` (tab "Board": metrics, "Card payments to check" with Paid / Not
-paid), `/stores`, `/manage-store/{id}`, `/users` (Deactivate, Adjust Runner
+paid), `/launch-codes` (make codes, Print QR cards), `/stores`, `/manage-store/{id}`, `/users` (Deactivate, Adjust Runner
 coins, Adjust float), `/verify-runners` (To verify / Verified / Rejected).
 Store tablet: `/counter` (Orders), `/store-kitchen`, `/store-menu`, `/store-today`.
 
@@ -76,10 +120,17 @@ admin yet. Don't tell the operator to cancel there.
   `floatTx`, the website, the scheduler; every 10 min: stores, `storeFloats`,
   `dashers`, runner and store-login and admin `users`, server errors and push
   failures (Cloud Logging), last Hosting release, Cloud Functions list,
-  monitoring alert policies, billing, Firestore backups, `shared.ts` lists,
-  `APP_URL`, newest local commit; every hour: last 7 days of orders, sign-ups,
+  monitoring alert policies, billing (project link **and** the billing
+  account's `open` flag), Firestore backups, `shared.ts` lists, `APP_URL`,
+  newest local commit, launch codes, wallets holding free deliveries, the
+  custom domain (Hosting status, certificate, and a DNS lookup that its A
+  record points straight at Firebase), and whether every Runner address is
+  allowed in Auth's authorized domains and on the reCAPTCHA key; every hour: last 7 days of orders, sign-ups,
   App Check share (Cloud Monitoring), budgets; every 6 h: all `menuItems`.
-  A first full check is about 90 reads; each check after that is a handful.
+  Every check also asks two callable functions (`claimLaunchCode`,
+  `myReferral`) without signing in: 4xx means the server is up, 5xx or no
+  answer means it is down. A first full check is about 90 reads; each check
+  after that is a handful.
 - Personal data read: runner `name` and `phone` (runner list, so the owner
   can call them) and admin `email` (admin list). Store logins' `pushToken` is
   reduced to yes/no in the main process. Student fields are never read
