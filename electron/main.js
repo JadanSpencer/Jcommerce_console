@@ -76,6 +76,8 @@ ipcMain.handle('invoice:save-pdf', async (_e, { html, filename }) => {
   const pdfWin = new BrowserWindow({ show: false, webPreferences: { javascript: false } });
   try {
     await pdfWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    // Web fonts finish after the load event; give them a moment so the PDF isn't set in fallbacks
+    await new Promise(r => setTimeout(r, 700));
     const pdf = await pdfWin.webContents.printToPDF({
       printBackground: true,
       pageSize: 'Letter',

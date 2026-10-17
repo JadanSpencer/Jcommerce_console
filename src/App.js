@@ -47,6 +47,8 @@ const Icons = {
   chevRight: () => <Icon d="M9 18l6-6-6-6" />,
   bell:      () => <Icon d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0" />,
   dollar:    () => <Icon d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />,
+  download:  () => <Icon d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4 M7 10l5 5 5-5 M12 15V3" />,
+  copy:      () => <Icon d="M20 9h-9a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-9a2 2 0 00-2-2z M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />,
   trend:     () => <Icon d="M23 6l-9.5 9.5-5-5L1 18M17 6h6v6" />,
   users:     () => <Icon d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />,
   target:    () => <Icon d="M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z" fill="currentColor" stroke="none" />,
@@ -1462,12 +1464,13 @@ function App() {
   const [error, setError]       = useState('');
   const systemHealth = useSystemHealth();
   const [briefingOpen, setBriefingOpen] = useState(false);
-  const [invoiceData, setInvoiceData] = useState(null);
-  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoices, setInvoices] = useState([]);
+  const [invEdit, setInvEdit] = useState(null);   // invoice being written
+  const [invPay, setInvPay] = useState(null);     // invoice taking a payment
   const weekDates = getWeekDates();
   const { permission: notifPerm, requestPermission, subbed: notifSubbed } = useNotifications();
   // Allow pipeline to trigger invoice from lead
-  useEffect(() => { window._openInvoice = (data) => { setInvoiceData(data); setInvoiceOpen(true); }; return () => { delete window._openInvoice; }; }, []);
+  useEffect(() => { window._openInvoice = data => setInvEdit({ kind: 'invoice', ...(data || {}) }); return () => { delete window._openInvoice; }; }, []);
   const todayStr  = localDateStr();  // Local date — avoids UTC flip at 7pm Jamaica time
 
   // ── O(1) LOOKUP MAPS — built once, used everywhere ──────────────────────────
@@ -1557,7 +1560,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['lead_searches',setLeadSearches],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],
+      ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],['invoices',setInvoices],
     ];
 
     // Track which collections have fired at least once
@@ -1652,7 +1655,8 @@ function App() {
   // Deleting a record also lets go of whatever pointed at it, so nothing is left dangling
   const removeLead = async id => {
     await Promise.all([...finances.filter(f => f.pipelineLeadId === id).map(f => update('finances', f.id, { pipelineLeadId: null })),
-      ...ventures.filter(v => v.clientId === id).map(v => update('ventures', v.id, { clientId: '' }))]);
+      ...ventures.filter(v => v.clientId === id).map(v => update('ventures', v.id, { clientId: '' })),
+      ...invoices.filter(i => i.leadId === id).map(i => update('invoices', i.id, { leadId: '' }))]);
     await remove('leads', id);
   };
   const removeCourse = async id => {
@@ -1663,7 +1667,7 @@ function App() {
   const [lastBackup, setLastBackup] = useState(() => { try { return localStorage.getItem('jc_last_backup') || ''; } catch { return ''; } });
   const backupData = async () => {
     if (!DESKTOP?.exportData) { toast('Backups only work in the Mac app', 'bad'); return; }
-    const collections = { leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds };
+    const collections = { invoices, leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds };
     const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), collections }, null, 1), `jcommerce-console-backup-${todayStr}.json`);
     if (!r?.ok) return;
     try { localStorage.setItem('jc_last_backup', todayStr); } catch {}
@@ -1774,14 +1778,52 @@ function App() {
     if (lead && lead.status !== 'Paid') await update('leads', lead.id, { status: 'Paid', clientStatus: lead.clientStatus || 'Active', clientSince: lead.clientSince || d.date || todayStr });
     return ref;
   };
+  // ── Invoices: saved records; payments on them are Finance entries with invoiceId
+  const invoiceProfile = settings.find(x => x.key === 'invoiceProfile');
+  const saveInvoice = async d => {
+    const { id, ...data } = d;
+    if (id) { await update('invoices', id, data); return id; }
+    const ref = await add('invoices', data);
+    if (ref?.id && data.convertedFrom) await update('invoices', data.convertedFrom, { convertedTo: ref.id, status: 'sent' });
+    return ref?.id || null;
+  };
+  const recordInvoicePayment = async (inv, f) => {
+    const pay = { type: 'income', scope: 'work', amount: Number(f.amount), date: f.date, category: f.stage,
+      description: `${inv.number} · ${inv.client?.name || ''}${f.method ? ` · ${f.method}` : ''}`, invoiceId: inv.id, invoiceNumber: inv.number };
+    if (PAYMENT_STAGES.includes(f.stage)) pay.paymentStage = f.stage;
+    if (inv.leadId) pay.pipelineLeadId = inv.leadId;
+    await addFinance(pay);
+    if (inv.status === 'draft') await update('invoices', inv.id, { status: 'sent', sentAt: todayStr });
+    toast(`${J(pay.amount)} recorded on ${inv.number}`);
+  };
+  const invoiceApi = {
+    open: d => setInvEdit(d || { kind: 'invoice' }),
+    pay: inv => setInvPay(inv),
+    update: (id, d) => update('invoices', id, d),
+    remove: id => remove('invoices', id),
+    duplicate: inv => {
+      const { id, createdAt, number, status, sentAt, convertedTo, convertedFrom, ...rest } = inv;
+      setInvEdit({ ...rest, issueDate: todayStr, dueDate: addDays(todayStr, inv.kind === 'quote' ? 30 : (inv.terms ?? 14)) });
+    },
+    convert: q => {
+      const { id, createdAt, number, status, sentAt, convertedTo, ...rest } = q;
+      setInvEdit({ ...rest, kind: 'invoice', convertedFrom: id, issueDate: todayStr, terms: 14, dueDate: addDays(todayStr, 14) });
+    },
+    send: async inv => {
+      const st = invoiceState(inv, finances, todayStr);
+      await exportInvoicePdf(inv, finances, st.id === 'paid' && inv.kind === 'invoice');
+      window.open(waLink(inv.client.phone, invoiceMessage(inv, finances, todayStr)), '_blank');
+      if (inv.status === 'draft') update('invoices', inv.id, { status: 'sent', sentAt: todayStr });
+    },
+  };
   // Wipe the books (after a backup) and close out what clients owed before today
   const startFinancesOver = async () => {
     if (!DESKTOP?.exportData) { toast('Start over only works in the Mac app, so a backup can be saved first', 'bad'); return; }
-    const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), note: 'Finances before start over', collections: { finances, debts, budgets, leads } }, null, 1), `jcommerce-finances-before-reset-${todayStr}.json`);
+    const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), note: 'Finances before start over', collections: { finances, debts, budgets, invoices, leads } }, null, 1), `jcommerce-finances-before-reset-${todayStr}.json`);
     if (!r?.ok) return;
-    await Promise.all([...finances.map(f => remove('finances', f.id)), ...debts.map(d => remove('debts', d.id)), ...budgets.map(b => remove('budgets', b.id)),
+    await Promise.all([...finances.map(f => remove('finances', f.id)), ...debts.map(d => remove('debts', d.id)), ...budgets.map(b => remove('budgets', b.id)), ...invoices.map(i => remove('invoices', i.id)),
       ...leads.filter(l => l.status === 'Paid').map(l => update('leads', l.id, { settledBefore: todayStr, retainerLog: {} }))]);
-    toast(`Finances cleared: ${finances.length + debts.length + budgets.length} records. Backup saved.`);
+    toast(`Finances cleared: ${finances.length + debts.length + budgets.length + invoices.length} records. Backup saved.`);
   };
   const logPayment = async (lead, stage, amount, date) => {
     // one entry per stage; retainers are one per month
@@ -1904,7 +1946,7 @@ function App() {
           <span>{currentNav.label}</span>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvoiceOpen(true)} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--ink-2)'}}><Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M8 13h8M8 17h5" /></button>
+          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvEdit({ kind: 'invoice' })} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--ink-2)'}}><Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M8 13h8M8 17h5" /></button>
           <button
             onClick={requestPermission}
             title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
@@ -2004,7 +2046,7 @@ function App() {
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={`mark-${tab}`}>{currentNav.jp}</div>
         <SectionBoundary key={`section-${tab}`}>
-        {tab==='dashboard' && <Dashboard lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
+        {tab==='dashboard' && <Dashboard invoices={invoices} lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
         })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
@@ -2016,7 +2058,7 @@ function App() {
           onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{addedDate:todayStr,...d,doneOn:{}})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
-        {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={addFinance} onStartOver={startFinancesOver} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
+        {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={addFinance} onStartOver={startFinancesOver} invoices={invoices} invoiceApi={invoiceApi} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
         {tab==='jaxon'    && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
@@ -2044,7 +2086,7 @@ function App() {
           onSaveItem={d => { const { id, createdAt, ...data } = d; id ? update('venture_items', id, data) : add('venture_items', data); }}
           onDeleteItem={id => remove('venture_items', id)}
           onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}/>}
-        {tab==='clients'  && <ClientManagement leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
+        {tab==='clients'  && <ClientManagement invoices={invoices} invoiceApi={invoiceApi} leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
         </SectionBoundary>
       </main>
 
@@ -2109,7 +2151,10 @@ function App() {
       )}
 
       {/* Invoice Generator */}
-      {invoiceOpen && <InvoiceGenerator leads={leads} finances={finances} initialData={invoiceData} onClose={()=>{setInvoiceOpen(false);setInvoiceData(null);}}/> }
+      {invEdit && <InvoiceEditor data={invEdit} invoices={invoices} leads={leads} finances={finances} profile={invoiceProfile?.profile} todayStr={todayStr}
+        onSave={saveInvoice} onClose={() => setInvEdit(null)}
+        onSaveProfile={async p => { await (invoiceProfile ? update('settings', invoiceProfile.id, { profile: p }) : add('settings', { key: 'invoiceProfile', profile: p })); toast('Saved: new invoices will use these details'); }}/>}
+      {invPay && <InvoicePayModal inv={invPay} finances={finances} todayStr={todayStr} onSave={f => { recordInvoicePayment(invPay, f); setInvPay(null); }} onClose={() => setInvPay(null)}/>}
 
       {/* Shortcut: invoice icon in header */}
 
@@ -2258,7 +2303,7 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], lastBackup = '', onBackup, todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], lastBackup = '', onBackup, todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
@@ -2317,6 +2362,10 @@ function Dashboard({ leads, habits, finances, todos, schedule, goals, timers, jo
     const late = Math.round((parseLocal(todayStr) - parseLocal(l.nextActionDate)) / 864e5);
     push(late > 0 ? 'danger' : 'warn', `Follow up with ${l.businessName}${l.nextAction ? `: ${l.nextAction}` : ''}${late > 0 ? ` (${late}d late)` : ''}.`, 'Pipeline', go('pipeline'));
   });
+  invoices.map(inv => ({ inv, st: invoiceState(inv, finances, todayStr) })).filter(x => x.st.id === 'overdue')
+    .sort((a, b) => b.st.late - a.st.late).slice(0, 2)
+    .forEach(({ inv, st }) => push('danger', `${inv.client?.name || 'A client'} is ${st.late} day${st.late === 1 ? '' : 's'} late on ${inv.number}: ${J(st.balance)} unpaid.`,
+      inv.client?.phone ? 'Remind' : 'Invoices', inv.client?.phone ? () => window.open(waLink(inv.client.phone, invoiceMessage(inv, finances, todayStr)), '_blank') : go('finance')));
   if (followUps.length > 3) push('warn', `${followUps.length - 3} more follow-ups are due.`, 'Pipeline', go('pipeline'));
   activeTimers.forEach(t => {
     const left = timerTargetSec(t) - timerElapsed(t, Date.now());
@@ -2980,13 +3029,7 @@ function Pipeline({leads,finances,onAdd,onUpdate,onDelete,onLogPayment,onUpdateP
                         )}
                         <button className="btn-ghost" style={{fontSize:'11px',padding:'0.3rem 0.6rem'}}
                           onClick={()=>{
-                            const inv = {
-                              clientName: l.businessName,
-                              clientLocation: l.location||'Jamaica',
-                              services:[{desc:'JCommerce Services',amount:Number(l.value)||45000}],
-                              pipelineLeadId: l.id,
-                            };
-                            window._openInvoice && window._openInvoice(inv);
+                            window._openInvoice && window._openInvoice({ leadId: l.id });
                           }}>
                           Invoice
                         </button>
@@ -4666,7 +4709,7 @@ function SectionGhost({ src }) {
   return <div className="ghost-art" aria-hidden="true"><img src={src} alt=""/></div>;
 }
 
-function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onStartOver,onUpdate,onDelete,onSetBudget}) {
+function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt, finances: allFinances,leads,budgets,level,onAdd,onStartOver,invoices = [],invoiceApi,onUpdate,onDelete,onSetBudget}) {
   // Work, personal, or both. `finances` below is always the chosen slice, so
   // every total, chart and list on the page agrees with the switch.
   const [scope, setScopeRaw] = useState(() => { try { return localStorage.getItem('jc_fin_scope') || 'all'; } catch { return 'all'; } });
@@ -4936,7 +4979,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
           {SCOPES.map(([id, label]) => <button key={id} className={scope === id ? 'on' : ''} onClick={() => setScope(id)}>{label}</button>)}
         </div>
         <div className="seg">
-          {[['overview','Overview'],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
+          {[['overview','Overview'],['invoices', <>Invoices{invoices.some(i => invoiceState(i, allFinances, todayStr).id === 'overdue') && <i className="tab-alert" title="An invoice is overdue"/>}</>],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
             <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
           ))}
         </div>
@@ -5216,6 +5259,8 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
           <div className="goal-hint">A debt is not income and paying it back is not spending, so none of this changes your profit. It does change your cash on hand when cash moved. Clearing a debt you owe is +10 XP; letting one run past its date is −10.</div>
         </>);
       })()}
+
+      {view === 'invoices' && invoiceApi && <InvoicesBoard invoices={invoices} finances={allFinances} todayStr={todayStr} api={invoiceApi}/>}
 
       {view === 'budgets' && (
         <BudgetsView month={month} cats={cur.cats} last3={last3} budgets={budgets} avgInc={avgInc} target={target}
@@ -5839,7 +5884,7 @@ const CLIENT_HEX = Object.fromEntries(CLIENT_STATES.map(c => [c.id, c.hex]));
 const clientState = l => l.clientStatus || 'Active';
 const BIZ_TYPES = ['Restaurant','Retail','Pharmacy','School','Salon','Mechanic','Wholesale','Real Estate','Bakery','Church','Hotel','Other'];
 
-function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onAdd, onUpdate, onRemove }) {
+function ClientManagement({ invoices = [], invoiceApi, leads, finances, ventures = [], onNav, todayStr, onAdd, onUpdate, onRemove }) {
   const { confirm, ConfirmUI } = useConfirm();
   const clients = leads.filter(l => l.status === 'Paid');
   const [sel, setSel]         = useState(null);
@@ -6023,7 +6068,7 @@ function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onA
             </div>
 
             <div className="seg seg-full">
-              {[['overview','Overview'],['payments',`Payments ${pays.length}`],['retainers','Retainers'],['notes',`Notes ${notes.length}`]].map(([id, label]) => (
+              {[['overview','Overview'],['invoices',`Invoices ${invoices.filter(i => i.leadId === client.id).length}`],['payments',`Payments ${pays.length}`],['retainers','Retainers'],['notes',`Notes ${notes.length}`]].map(([id, label]) => (
                 <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}</button>
               ))}
             </div>
@@ -6069,6 +6114,8 @@ function ClientManagement({ leads, finances, ventures = [], onNav, todayStr, onA
                 </div>
               </div>
             )}
+
+            {tab === 'invoices' && invoiceApi && <InvoicesBoard invoices={invoices} finances={finances} todayStr={todayStr} api={invoiceApi} leadId={client.id} compact/>}
 
             {tab === 'payments' && (
               <div className="card">
@@ -6493,218 +6540,510 @@ function JaxonFloat({leads,habits,finances,goals,todos,schedule,totalIncome,tota
 
 
 
-function InvoiceGenerator({leads,finances,onClose,initialData=null}) {
-  // Invoices aren't stored in Firestore, so remember the last number issued
-  // on this machine; otherwise every invoice would be JC-YYYY-001
-  const INV_KEY='jc_last_invoice_number';
-  const lastIssued=()=>{try{return localStorage.getItem(INV_KEY)||'';}catch{return '';}};
-  const nextNum=()=>{const yr=new Date().getFullYear();const ex=[...finances.map(f=>f.invoiceNumber),lastIssued()].filter(n=>n&&n.startsWith(`JC-${yr}-`)).map(n=>parseInt(n.split('-').pop())||0);const mx=ex.length>0?Math.max(...ex):0;return `JC-${yr}-${String(mx+1).padStart(3,'0')}`;};
-  const [inv,setInv]=useState({
-    invoiceNumber: nextNum(),
-    date: localDateStr(),
-    dueDate: '',
-    status: 'PAYMENT DUE',
-    currency: 'JMD',
-    // Provider (your details — pre-filled)
-    providerName:     'Jadan Spencer',
-    providerCompany:  'JCommerce & Tech',
-    providerLocation: 'Mandeville, Jamaica',
-    providerPhone:    '(876) 817-0095',
-    providerEmail:    'jcommerceandtech@gmail.com',
-    // Client
-    clientName:     initialData?.clientName     || '',
-    clientCompany:  '',
-    clientLocation: initialData?.clientLocation || 'Kingston, Jamaica',
-    clientPhone:    '',
-    clientEmail:    '',
-    // Services
-    services: initialData?.services || [{desc:'',qty:1,unit:'',amount:''}],
-    // Adjustments
-    discount:       '',
-    discountLabel:  'Discount',
-    taxRate:        '',
-    taxLabel:       'GCT (15%)',
-    depositPaid:    '',
-    depositLabel:   'Deposit Paid',
-    showDepositLine: false,
-    // Retainer
-    retainerDay:    '',
-    retainerPeriod: '',
-    // Notes & payment
-    notes: '',
-    paymentMethod: 'Bank Transfer\nName: Jadan Spencer\nAcc#: 504813584\nBank: NCB Perth Mandeville',
-    // Reference
-    referenceInvoice: '',
-    poNumber: '',
-    type: 'standard',
-    ...initialData,
-  });
-  const s=(k,v)=>setInv(p=>({...p,[k]:v}));
-  const total=inv.services.reduce((sum,sv)=>sum+(Number(sv.amount)||0),0);
-  const setService=(i,k,v)=>setInv(p=>{const svs=[...p.services];svs[i]={...svs[i],[k]:v};return{...p,services:svs};});
+// ─── INVOICES ─────────────────────────────────────────────────────────────────
+// Invoices, quotes and receipts are real records (the `invoices` collection).
+// Money is never typed onto an invoice: a payment is a Finance entry carrying
+// invoiceId, so the invoice, the client's balance and the books always agree.
+const INV_KINDS = {
+  invoice: { title: 'Invoice', prefix: 'JC', jp: '請求書' },
+  quote:   { title: 'Quote',   prefix: 'Q',  jp: '見積書' },
+  receipt: { title: 'Receipt', prefix: 'R',  jp: '領収書' },
+};
+const INV_TERMS = [[0, 'Due on receipt'], [7, '7 days'], [14, '14 days'], [30, '30 days']];
+const INV_PROFILE = {
+  name: 'Jadan Spencer', company: 'JCommerce & Tech', location: 'Mandeville, Jamaica',
+  phone: '(876) 817-0095', email: 'jcommerceandtech@gmail.com',
+  payment: 'Bank Transfer\nName: Jadan Spencer\nAcc#: 504813584\nBank: NCB Perth Mandeville',
+};
+const INV_STATE_HEX = { draft: '#9a8a80', sent: '#d3a855', part: '#ff9a4a', overdue: '#e8452c', paid: '#2fae7f', void: '#6b5a55', accepted: '#2fae7f', expired: '#9a8a80' };
 
-  // Financial calculations (used in PDF generation)
-  const subtotal    = inv.services.reduce((s,sv) => s + (Number(sv.amount)||0) * (Number(sv.qty)||1), 0);
-  const discountAmt = Number(inv.discount) || 0;
-  const afterDisc   = subtotal - discountAmt;
-  const taxAmt      = inv.taxRate ? Math.round((afterDisc * Number(inv.taxRate)) / 100) : 0;
-  const grandTotal  = afterDisc + taxAmt;
-  const displayTotal= inv.showDepositLine ? grandTotal - (Number(inv.depositPaid)||0) : grandTotal;
-  const cur         = (inv.currency === 'USD') ? 'USD $' : 'J$';
-  const fmt         = n => `${cur}${Number(n).toLocaleString()}`;
+const invoiceTotals = inv => {
+  const subtotal = (inv.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.rate) || 0), 0);
+  const discount = Math.min(subtotal, inv.discountType === '%' ? subtotal * (Number(inv.discount) || 0) / 100 : Number(inv.discount) || 0);
+  const tax = Math.round((subtotal - discount) * (Number(inv.taxRate) || 0) / 100);
+  return { subtotal, discount, tax, total: subtotal - discount + tax };
+};
+const invoicePayments = (inv, finances) => finances.filter(f => f.invoiceId && f.invoiceId === inv.id && isIncome(f))
+  .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+const invoicePaid = (inv, finances) => invoicePayments(inv, finances).reduce((s, f) => s + amountOf(f), 0);
 
-  const generatePDF = async () => {
-    const statusColor = {
-      'PAYMENT DUE':'#1a7f5a','DEPOSIT DUE':'#b45309','BALANCE DUE':'#7c3aed',
-      'PAID IN FULL':'#166534','QUOTE':'#1e40af','RETAINER DUE':'#0f766e',
-    }[inv.status] || '#1a7f5a';
+function invoiceState(inv, finances, todayStr) {
+  const { total } = invoiceTotals(inv);
+  const paid = invoicePaid(inv, finances);
+  const late = inv.dueDate && inv.dueDate < todayStr ? Math.round((parseLocal(todayStr) - parseLocal(inv.dueDate)) / 864e5) : 0;
+  const base = { total, paid, balance: Math.max(0, total - paid), late };
+  if (inv.status === 'void') return { ...base, id: 'void', label: 'Void', balance: 0 };
+  if (inv.kind === 'receipt') return { ...base, id: 'paid', label: 'Receipt', balance: 0 };
+  if (inv.kind === 'quote') {
+    if (inv.convertedTo) return { ...base, id: 'accepted', label: 'Accepted', balance: 0 };
+    if (inv.status === 'sent' && late) return { ...base, id: 'expired', label: 'Expired', balance: 0 };
+    return { ...base, id: inv.status === 'sent' ? 'sent' : 'draft', label: inv.status === 'sent' ? 'Sent' : 'Draft', balance: 0 };
+  }
+  if (total > 0 && paid >= total) return { ...base, id: 'paid', label: 'Paid' };
+  if (inv.status !== 'sent' && !paid) return { ...base, id: 'draft', label: 'Draft' };
+  if (late) return { ...base, id: 'overdue', label: `${late}d overdue` };
+  if (paid > 0) return { ...base, id: 'part', label: 'Part paid' };
+  return { ...base, id: 'sent', label: 'Sent' };
+}
 
-    const serviceRows = inv.services.map(sv => {
-      const qty = Number(sv.qty)||1;
-      const amt = Number(sv.amount)||0;
-      return `<tr>
-        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;font-size:13.5px;">${sv.desc||'—'}${sv.unit?`<br><span style="font-size:11px;color:#78716c;">${sv.unit}</span>`:''}</td>
-        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:center;color:#57534e;">${qty>1?qty:'—'}</td>
-        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:right;">${fmt(amt)}</td>
-        <td style="padding:12px 14px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:600;">${fmt(qty*amt)}</td>
-      </tr>`;
-    }).join('');
+function nextInvoiceNumber(invoices, kind, finances = []) {
+  const yr = new Date().getFullYear(), pre = `${INV_KINDS[kind].prefix}-${yr}-`;
+  let legacy = '';
+  try { legacy = kind === 'invoice' ? localStorage.getItem('jc_last_invoice_number') || '' : ''; } catch {}
+  const used = [...invoices.map(i => i.number), ...(kind === 'invoice' ? finances.map(f => f.invoiceNumber) : []), legacy]
+    .filter(n => n && n.startsWith(pre)).map(n => parseInt(n.split('-').pop(), 10) || 0);
+  return `${pre}${String((used.length ? Math.max(...used) : 0) + 1).padStart(3, '0')}`;
+}
 
-    const totalRows = `
-      <tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">Subtotal</td><td style="padding:8px 14px;text-align:right;">${fmt(subtotal)}</td></tr>
-      ${discountAmt>0?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.discountLabel}</td><td style="padding:8px 14px;text-align:right;color:#dc2626;">-${fmt(discountAmt)}</td></tr>`:''}
-      ${taxAmt>0?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.taxLabel}</td><td style="padding:8px 14px;text-align:right;">${fmt(taxAmt)}</td></tr>`:''}
-      ${inv.showDepositLine&&inv.depositPaid?`<tr><td colspan="3" style="padding:8px 14px;text-align:right;color:#57534e;">${inv.depositLabel}</td><td style="padding:8px 14px;text-align:right;color:#16a34a;">-${fmt(inv.depositPaid)}</td></tr>`:''}
-      <tr style="background:#f8fafc;">
-        <td colspan="3" style="padding:14px;text-align:right;font-weight:800;font-size:15px;border-top:2px solid #e2e8f0;">${inv.showDepositLine?'Balance Due':'Total Due'}</td>
-        <td style="padding:14px;text-align:right;font-weight:900;font-size:16px;color:${statusColor};border-top:2px solid #e2e8f0;">${fmt(displayTotal)}</td>
-      </tr>`;
+const escHtml = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const invMoney = (n, currency) => `${currency === 'USD' ? 'US$' : 'J$'}${(Math.round((Number(n) || 0) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const invPhone = v => { const d = String(v || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}` : v || ''; };
+const invDate = d => (d ? parseLocal(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
-    const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<title>${inv.invoiceNumber} — ${inv.clientName}</title>
+// The document itself: warm paper, Fraunces figures, a red seal. Used for the
+// live preview and the PDF, so what you see is what the client gets.
+function invoiceHtml(inv, { paid = 0, payments = [], asReceipt = false } = {}) {
+  const kind = asReceipt ? 'receipt' : inv.kind || 'invoice';
+  const K = INV_KINDS[kind], p = { ...INV_PROFILE, ...(inv.from || {}) }, c = inv.client || {};
+  const t = invoiceTotals(inv), m = n => invMoney(n, inv.currency);
+  const balance = Math.max(0, t.total - paid);
+  const isPaid = kind === 'receipt' || (kind === 'invoice' && t.total > 0 && paid >= t.total);
+  const rows = (inv.items || []).filter(it => it.desc || Number(it.rate)).map((it, i) => `
+    <tr>
+      <td class="n">${String(i + 1).padStart(2, '0')}</td>
+      <td><div class="desc">${escHtml(it.desc || 'Item')}</div>${it.detail ? `<div class="detail">${escHtml(it.detail)}</div>` : ''}</td>
+      <td class="r mono">${Number(it.qty) || 0}</td>
+      <td class="r mono">${m(it.rate)}</td>
+      <td class="r mono strong">${m((Number(it.qty) || 0) * (Number(it.rate) || 0))}</td>
+    </tr>`).join('');
+  const due = kind === 'quote' ? (inv.dueDate ? `Valid until ${invDate(inv.dueDate)}` : 'Valid for 30 days')
+    : kind === 'receipt' ? `Received ${invDate((payments[payments.length - 1] || {}).date || inv.issueDate)}`
+    : inv.dueDate && inv.dueDate !== inv.issueDate ? invDate(inv.dueDate) : 'On receipt';
+  const headline = kind === 'quote' ? ['Quoted total', t.total] : kind === 'receipt' ? ['Amount received', paid || t.total] : isPaid ? ['Paid in full', t.total] : ['Amount due', balance];
+  const payRows = payments.map(f => `<tr><td>${invDate(f.date)}</td><td>${escHtml(f.paymentStage || f.category || 'Payment')}</td><td class="r mono">${m(amountOf(f))}</td></tr>`).join('');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${escHtml(inv.number)} · ${escHtml(c.name || '')}</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
-  *{margin:0;padding:0;box-sizing:border-box;}
-  body{font-family:'Inter',Helvetica,Arial,sans-serif;color:#1C1917;background:#fff;padding:48px 56px;max-width:860px;margin:0 auto;}
-  @media print{body{padding:32px 40px;}}
-  .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:40px;padding-bottom:28px;border-bottom:1px solid #e2e8f0;}
-  .brand-block{display:flex;align-items:center;gap:16px;}
-  .brand-logo{width:72px;height:72px;object-fit:contain;border-radius:8px;}
-  .brand-name{font-size:20px;font-weight:800;color:#0F1F3D;}
-  .brand-sub{font-size:11px;color:#78716c;margin-top:3px;line-height:1.5;}
-  .inv-title{font-size:36px;font-weight:900;color:#0F1F3D;letter-spacing:-0.04em;text-align:right;}
-  .badge{display:inline-block;padding:5px 14px;border-radius:99px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;border:1px solid;margin-top:8px;}
-  .gold-line{height:3px;background:linear-gradient(90deg,#1a6b5a,#C89B3C,#1a6b5a);margin:0 0 32px;}
-  .meta{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin:28px 0;}
-  .meta-block h4{font-size:9px;text-transform:uppercase;letter-spacing:0.18em;color:#a8a29e;font-weight:600;margin-bottom:8px;}
-  .meta-block p{font-size:13.5px;line-height:1.7;}
-  .meta-block .strong{font-weight:700;font-size:15px;}
-  table{width:100%;border-collapse:collapse;margin:28px 0;}
-  thead{background:#0F1F3D;}
-  th{padding:11px 14px;text-align:left;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#fff;font-weight:600;}
-  th:last-child,th:nth-child(3){text-align:right;}th:nth-child(2){text-align:center;}
-  .payment-box{background:#f8fafc;border-radius:10px;padding:18px 20px;margin:24px 0;border:1px solid #e2e8f0;}
-  .payment-box h4{font-size:9px;text-transform:uppercase;letter-spacing:0.18em;color:#a8a29e;font-weight:600;margin-bottom:8px;}
-  .payment-box p{font-size:13px;line-height:1.7;white-space:pre-line;}
-  .footer{margin-top:40px;padding-top:24px;border-top:1px solid #f1f5f9;text-align:center;font-size:12px;color:#a8a29e;}
-  .notes{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;margin:16px 0;font-size:13px;color:#78350f;line-height:1.7;}
-</style>
-</head><body>
-
-<div class="header">
-  <div class="brand-block">
-    <img class="brand-logo" src="${LOGO_B64}" alt="JCommerce Logo"/>
-    <div>
-      <div class="brand-name">${inv.providerCompany}</div>
-      <div class="brand-sub">${inv.providerName}<br>${inv.providerLocation}<br>${inv.providerPhone} · ${inv.providerEmail}</div>
-    </div>
-  </div>
-  <div style="text-align:right;">
-    <div class="inv-title">${inv.type==='quote'?'QUOTE':inv.type==='receipt'?'RECEIPT':'INVOICE'}</div>
-    <span class="badge" style="color:${statusColor};border-color:${statusColor}20;background:${statusColor}10;">${inv.status}</span>
-  </div>
+  @page { size: Letter; margin: 0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { background: #fbf7f0; }
+  body { font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; color: #241816; background: #fbf7f0; font-size: 12.5px; line-height: 1.55;
+    width: 8.5in; min-height: 11in; margin: 0 auto; padding: 0.6in 0.75in 0.45in; position: relative; display: flex; flex-direction: column; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .serif { font-family: Fraunces, Georgia, serif; }
+  .mono { font-family: 'IBM Plex Mono', Menlo, monospace; }
+  .rail { position: absolute; left: 0; top: 0; bottom: 0; width: 0.28in; background: #a51b28; }
+  .rail::after { content: ''; position: absolute; right: -3px; top: 0; bottom: 0; width: 3px; background: #d3a855; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .brand { display: flex; gap: 14px; align-items: center; }
+  .brand img { width: 54px; height: 54px; object-fit: contain; border-radius: 10px; }
+  .brand .co { font-family: Fraunces, Georgia, serif; font-size: 21px; font-weight: 700; letter-spacing: -0.01em; }
+  .brand .who { font-size: 11px; color: #7a6560; margin-top: 2px; }
+  .title { display: flex; align-items: center; gap: 16px; text-align: right; }
+  .title h1 { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 500; font-size: 46px; line-height: 1; letter-spacing: -0.02em; color: #241816; }
+  .title .num { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 12px; letter-spacing: 0.08em; color: #a51b28; margin-top: 8px; }
+  .seal { width: 40px; height: 66px; flex-shrink: 0; border: 2.5px solid #c8202f; border-radius: 6px; color: #c8202f;
+    display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; font-size: 15px; font-weight: 700; letter-spacing: 3px; line-height: 1; transform: rotate(-4deg); opacity: 0.85;
+    font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; }
+  .rule { height: 1px; background: #241816; margin: 24px 0 0; }
+  .rule.thin { background: #e6dccf; margin: 0; }
+  .strip { display: grid; grid-template-columns: 1fr 1fr 1.3fr; border-bottom: 1px solid #e6dccf; }
+  .strip > div { padding: 14px 0; }
+  .strip > div + div { padding-left: 18px; border-left: 1px solid #e6dccf; }
+  .lbl { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #9a857d; margin-bottom: 4px; }
+  .val { font-size: 13px; font-weight: 500; }
+  .big { font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: ${isPaid ? '#1f7a58' : '#a51b28'}; line-height: 1.1; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin: 22px 0 4px; }
+  .parties .name { font-family: Fraunces, Georgia, serif; font-size: 17px; font-weight: 600; margin-bottom: 2px; }
+  .parties p { color: #4d3b37; }
+  table { width: 100%; border-collapse: collapse; }
+  .items { margin-top: 22px; }
+  .items th { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #9a857d; font-weight: 500;
+    text-align: left; padding: 0 0 9px; border-bottom: 1px solid #241816; }
+  .items td { padding: 11px 0; border-bottom: 1px solid #e6dccf; vertical-align: top; }
+  .items td + td, .items th + th { padding-left: 12px; }
+  .n { width: 30px; font-family: 'IBM Plex Mono', Menlo, monospace; color: #b4a39b; font-size: 11px; }
+  .desc { font-weight: 500; font-size: 13px; }
+  .detail { color: #7a6560; font-size: 11.5px; margin-top: 2px; }
+  .r { text-align: right !important; white-space: nowrap; }
+  .strong { font-weight: 500; color: #241816; }
+  .sum { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 20px; }
+  .sum table { width: 3.3in; }
+  .sum td { padding: 5px 0; color: #4d3b37; }
+  .sum .total td { border-top: 1px solid #241816; padding-top: 12px; color: #241816; }
+  .sum .total .amt { font-family: Fraunces, Georgia, serif; font-size: 22px; font-weight: 600; }
+  .sum .paid td { color: #1f7a58; }
+  .sum .bal td { font-weight: 600; color: #a51b28; }
+  .lower { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; margin-top: 26px; break-inside: avoid; }
+  .box { border-top: 2px solid #d3a855; padding-top: 10px; }
+  .box p { white-space: pre-line; color: #4d3b37; }
+  .history { margin-top: 20px; break-inside: avoid; }
+  .history td { padding: 6px 0; border-bottom: 1px solid #efe7dc; color: #4d3b37; }
+  footer { margin-top: auto; padding-top: 28px; display: flex; justify-content: space-between; align-items: flex-end;
+    font-size: 10.5px; color: #9a857d; }
+  footer > div:last-child { border-top: 1px solid #e6dccf; padding-top: 8px; }
+  footer .thanks { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 15px; color: #241816; }
+  .stamp { margin-left: 0.4in; transform: rotate(-10deg); border: 3px double ${kind === 'quote' ? '#9a857d' : '#1f7a58'}; color: ${kind === 'quote' ? '#9a857d' : '#1f7a58'};
+    padding: 8px 18px; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 30px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; border-radius: 6px; text-align: center; line-height: 1.05; }
+  .stamp small { display: block; font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 9px; letter-spacing: 0.12em; font-weight: 500; }
+  .void { color: #a51b28; border-color: #a51b28; }
+</style></head><body>
+<div class="rail"></div>
+<header>
+  <div class="brand"><img src="${LOGO_B64}" alt=""><div><div class="co">${escHtml(p.company)}</div><div class="who">${escHtml(p.name)} · ${escHtml(p.location)}</div></div></div>
+  <div class="title"><div class="seal">${K.jp}</div><div><h1>${K.title}</h1><div class="num">№ ${escHtml(inv.number)}</div></div></div>
+</header>
+<div class="rule"></div>
+<div class="strip">
+  <div><div class="lbl">Issued</div><div class="val">${invDate(inv.issueDate)}</div></div>
+  <div><div class="lbl">${kind === 'quote' ? 'Validity' : kind === 'receipt' ? 'Payment' : 'Due'}</div><div class="val">${due}</div></div>
+  <div><div class="lbl">${headline[0]}</div><div class="big">${m(headline[1])}</div></div>
 </div>
-
-<div class="gold-line"></div>
-
-<div class="meta">
-  <div class="meta-block">
-    <h4>Billed To</h4>
-    <p class="strong">${inv.clientName}${inv.clientCompany?`<br><span style="font-weight:400;font-size:13px;">${inv.clientCompany}</span>`:''}</p>
-    <p>${inv.clientLocation}${inv.clientEmail?`<br>${inv.clientEmail}`:''}${inv.clientPhone?`<br>${inv.clientPhone}`:''}</p>
-  </div>
-  <div class="meta-block" style="text-align:right;">
-    <h4>Invoice Details</h4>
-    <p><strong>${inv.invoiceNumber}</strong><br>
-    Date: ${inv.date}<br>
-    ${inv.dueDate?`Due: ${inv.dueDate}`:'Due: Upon Receipt'}
-    ${inv.poNumber?`<br>PO#: ${inv.poNumber}`:''}
-    ${inv.type==='retainer'&&inv.retainerPeriod?`<br>Period: ${inv.retainerPeriod}`:''}
-    </p>
-  </div>
+<div class="parties">
+  <div><div class="lbl">${kind === 'receipt' ? 'Received from' : kind === 'quote' ? 'Prepared for' : 'Billed to'}</div>
+    <div class="name">${escHtml(c.name || '—')}</div>
+    <p>${[c.contact, c.location, invPhone(c.phone), c.email].filter(Boolean).map(escHtml).join('<br>')}</p></div>
+  <div><div class="lbl">From</div>
+    <div class="name">${escHtml(p.company)}</div>
+    <p>${[p.name, p.location, p.phone, p.email].filter(Boolean).map(escHtml).join('<br>')}</p></div>
 </div>
-
-<table>
-  <thead><tr><th style="width:50%;">Description</th><th style="width:10%;text-align:center;">Qty</th><th style="width:20%;text-align:right;">Unit Price</th><th style="width:20%;text-align:right;">Total</th></tr></thead>
-  <tbody>${serviceRows}</tbody>
-  <tfoot>${totalRows}</tfoot>
+<table class="items">
+  <thead><tr><th>#</th><th>Description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead>
+  <tbody>${rows || '<tr><td></td><td class="detail">No items yet</td><td></td><td></td><td></td></tr>'}</tbody>
 </table>
-
-${inv.notes?`<div class="notes"><strong>Notes:</strong> ${inv.notes}</div>`:''}
-
-<div class="payment-box">
-  <h4>Payment Methods</h4>
-  <p>${inv.paymentMethod}</p>
+<div class="sum">${inv.status === 'void' ? '<div class="stamp void">Void</div>' : isPaid ? `<div class="stamp">Paid<small>${invDate((payments[payments.length - 1] || {}).date || inv.issueDate)}</small></div>` : '<div></div>'}<table>
+  <tr><td>Subtotal</td><td class="r mono">${m(t.subtotal)}</td></tr>
+  ${t.discount ? `<tr><td>Discount${inv.discountType === '%' ? ` (${Number(inv.discount)}%)` : ''}</td><td class="r mono">−${m(t.discount)}</td></tr>` : ''}
+  ${t.tax ? `<tr><td>GCT (${Number(inv.taxRate)}%)</td><td class="r mono">${m(t.tax)}</td></tr>` : ''}
+  <tr class="total"><td>Total</td><td class="r amt">${m(t.total)}</td></tr>
+  ${kind === 'invoice' && paid > 0 ? `<tr class="paid"><td>Paid to date</td><td class="r mono">−${m(paid)}</td></tr><tr class="bal"><td>Balance due</td><td class="r mono">${m(balance)}</td></tr>` : ''}
+</table></div>
+${payments.length && kind !== 'quote' ? `<table class="history"><tr><td colspan="3"><div class="lbl" style="margin:0">Payments received</div></td></tr>${payRows}</table>` : ''}
+<div class="lower">
+  <div class="box"><div class="lbl">${kind === 'quote' ? 'Next step' : kind === 'receipt' ? 'Received with thanks' : 'How to pay'}</div><p>${kind === 'quote' ? 'Reply to accept this quote and we will send the first invoice to begin.' : kind === 'receipt' ? 'Payment received. Please keep this receipt for your records.' : escHtml(p.payment)}${kind === 'invoice' ? `\nReference: ${escHtml(inv.number)}` : ''}</p></div>
+  ${inv.notes ? `<div class="box"><div class="lbl">Notes</div><p>${escHtml(inv.notes)}</p></div>` : '<div></div>'}
 </div>
-
-<div class="footer">Thank you for your business · JCommerce & Tech · ${inv.providerPhone}</div>
-
+<footer><div class="thanks">Thank you for your business.</div><div class="mono">${escHtml(p.company)} · ${escHtml(p.phone)} · ${escHtml(p.email)}</div></footer>
 </body></html>`;
+}
 
-    const baseName = `${inv.invoiceNumber}-${(inv.clientName||'invoice').replace(/\s+/g,'-')}`;
-    const markIssued = () => { try { localStorage.setItem(INV_KEY, inv.invoiceNumber); } catch {} };
+async function exportInvoicePdf(inv, finances, asReceipt = false) {
+  const payments = invoicePayments(inv, finances);
+  const html = invoiceHtml(inv, { paid: invoicePaid(inv, finances), payments, asReceipt });
+  const base = `${asReceipt ? `Receipt-${inv.number}` : inv.number}-${(inv.client?.name || 'client').replace(/[^\w]+/g, '-')}`;
+  if (DESKTOP?.saveInvoicePdf) return DESKTOP.saveInvoicePdf(html, `${base}.pdf`);
+  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+  const a = document.createElement('a'); a.href = url; a.download = `${base}.html`; a.click(); URL.revokeObjectURL(url);
+  return { ok: true };
+}
 
-    // Desktop app: render a real PDF and ask where to save it
-    if (DESKTOP?.saveInvoicePdf) {
-      const r = await DESKTOP.saveInvoicePdf(html, `${baseName}.pdf`);
-      if (r?.ok) markIssued();
-      return;
-    }
-    const blob = new Blob([html], {type:'text/html'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${baseName}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
-    markIssued();
+function invoiceMessage(inv, finances, todayStr) {
+  const st = invoiceState(inv, finances, todayStr), p = { ...INV_PROFILE, ...(inv.from || {}) };
+  const who = (inv.client?.contact && inv.client.contact !== 'To be found' ? inv.client.contact.split(' ')[0] : inv.client?.name) || 'there';
+  const m = n => invMoney(n, inv.currency).replace('.00', '');
+  if (inv.kind === 'quote') return `Hi ${who}, here is quote ${inv.number} from ${p.company} for ${m(st.total)}${inv.dueDate ? `, valid until ${invDate(inv.dueDate)}` : ''}. Happy to walk you through it. Just reply here to go ahead.`;
+  if (inv.kind === 'receipt' || st.id === 'paid') return `Hi ${who}, thank you! Payment of ${m(st.paid || st.total)} for ${inv.number} is received in full. Your receipt is attached.`;
+  const owing = st.paid ? `${m(st.balance)} remaining on ${inv.number} (${m(st.paid)} received, thank you)` : `invoice ${inv.number} for ${m(st.total)}`;
+  const when = st.late ? `It was due ${invDate(inv.dueDate)}.` : inv.dueDate && inv.dueDate !== inv.issueDate ? `Due ${invDate(inv.dueDate)}.` : 'Due on receipt.';
+  return `Hi ${who}, here is ${owing} from ${p.company}. ${when}\n\n${p.payment}\nReference: ${inv.number}\n\nThank you!`;
+}
+const waLink = (phone, text) => `https://wa.me/${String(phone || '').replace(/\D/g, '')}?text=${encodeURIComponent(text)}`;
+
+// ── Editor: the form on the left, the actual document on the right ───────────
+function InvoiceEditor({ data, invoices, leads, finances, profile, todayStr, onSave, onSaveProfile, onClose }) {
+  const isNew = !data.id;
+  const kind0 = data.kind || 'invoice';
+  const lead0 = data.leadId ? leads.find(l => l.id === data.leadId) : null;
+  const clientOf = l => ({ name: l.businessName || '', contact: l.contactName && l.contactName !== 'To be found' ? l.contactName : '', location: l.location || '', phone: l.phone || '', email: l.email || '' });
+  const [inv, setInv] = useState(() => ({
+    kind: kind0, status: 'draft', currency: 'JMD', issueDate: todayStr, terms: 14,
+    dueDate: addDays(todayStr, kind0 === 'quote' ? 30 : 14), discount: '', discountType: 'J$', taxRate: '', notes: '', stage: 'First Deposit',
+    number: nextInvoiceNumber(invoices, kind0, finances),
+    leadId: '', client: lead0 ? clientOf(lead0) : { name: '', contact: '', location: '', phone: '', email: '' },
+    items: lead0 && Number(lead0.value) ? [{ desc: 'Project fee', detail: '', qty: 1, rate: Number(lead0.value) }] : [{ desc: '', detail: '', qty: 1, rate: '' }],
+    from: { ...INV_PROFILE, ...(profile || {}) },
+    ...data,
+  }));
+  const [showFrom, setShowFrom] = useState(false);
+  const s = (k, v) => setInv(p => ({ ...p, [k]: v }));
+  const sc = (k, v) => setInv(p => ({ ...p, client: { ...p.client, [k]: v } }));
+  const setItem = (i, k, v) => setInv(p => ({ ...p, items: p.items.map((it, j) => (j === i ? { ...it, [k]: v } : it)) }));
+  const t = invoiceTotals(inv);
+  const lead = leads.find(l => l.id === inv.leadId);
+  const pickLead = id => {
+    const l = leads.find(x => x.id === id);
+    setInv(p => ({ ...p, leadId: id, client: l ? clientOf(l) : p.client }));
   };
-  return(
-    <Modal title="Invoice Generator" onClose={onClose}>
-      <>
-      <div className="grid-2"><Field label="Invoice #"><input className="input" value={inv.invoiceNumber} onChange={e=>s('invoiceNumber',e.target.value)}/></Field><Field label="Status"><select className="input" value={inv.status} onChange={e=>s('status',e.target.value)}><option>PAYMENT DUE</option><option>DEPOSIT DUE</option><option>PAID</option></select></Field></div>
-      <div className="grid-2"><Field label="Date"><input className="input" type="date" value={inv.date} onChange={e=>s('date',e.target.value)}/></Field><Field label="Due Date"><input className="input" type="date" value={inv.dueDate} onChange={e=>s('dueDate',e.target.value)}/></Field></div>
-      <Field label="Client Name"><input className="input" value={inv.clientName} onChange={e=>s('clientName',e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
-      <Field label="Client Location"><input className="input" value={inv.clientLocation} onChange={e=>s('clientLocation',e.target.value)}/></Field>
-      <div>
-        <div className="card-label">Services</div>
-        {inv.services.map((sv,idx)=>(
-          <div key={idx} style={{display:'flex',gap:'0.5rem',alignItems:'center',marginBottom:'0.5rem'}}>
-            <input className="input" style={{flex:2}} value={sv.desc} onChange={e=>setService(idx,'desc',e.target.value)} placeholder="Description"/>
-            <input className="input" style={{flex:1}} type="number" value={sv.amount} onChange={e=>setService(idx,'amount',e.target.value)} placeholder="Amount"/>
-            {inv.services.length>1&&<button className="icon-btn danger-btn" onClick={()=>setInv(p=>({...p,services:p.services.filter((_,k)=>k!==idx)}))}><Icons.close size={12}/></button>}
+  const setTerms = d => setInv(p => ({ ...p, terms: d, dueDate: addDays(p.issueDate, d) }));
+  // One-tap lines from what the client is already set up to pay
+  const presets = lead ? [
+    Number(lead.value) > 0 && ['Project fee', Number(lead.value), ''],
+    Number(lead.value) > 0 && ['50% deposit to begin', Math.round(Number(lead.value) / 2), 'Balance due on completion'],
+    Number(lead.retainerAmount) > 0 && ['Monthly retainer', Number(lead.retainerAmount), monthName(todayStr.slice(0, 7))],
+  ].filter(Boolean) : [];
+  const addPreset = ([desc, rate, detail]) => setInv(p => ({ ...p, items: [...p.items.filter(it => it.desc || Number(it.rate)), { desc, detail, qty: 1, rate }] }));
+  const valid = (inv.client.name || '').trim() && t.total > 0 && inv.number.trim();
+  const dupNumber = invoices.some(x => x.number === inv.number.trim() && x.id !== inv.id);
+  const save = async (extra = {}) => {
+    if (!valid || dupNumber) return null;
+    const { id, createdAt, ...rest } = inv;
+    const clean = { ...rest, ...extra, number: inv.number.trim(), items: inv.items.filter(it => it.desc || Number(it.rate)).map(it => ({ desc: it.desc || '', detail: it.detail || '', qty: Number(it.qty) || 0, rate: Number(it.rate) || 0 })), total: t.total };
+    return onSave(id ? { id, ...clean } : clean);
+  };
+  const clients = leads.filter(l => l.status === 'Paid'), open = leads.filter(l => l.status !== 'Paid' && !['Flaked', 'Lost'].includes(l.status));
+  const preview = invoiceHtml(inv, { paid: inv.id ? invoicePaid(inv, finances) : 0, payments: inv.id ? invoicePayments(inv, finances) : [] });
+
+  return (
+    <div className="modal-overlay inv-overlay" onClick={onClose}>
+      <div className="inv-editor" onClick={e => e.stopPropagation()}>
+        <div className="inv-form">
+          <div className="modal-head">
+            <div className="inv-head-title">{isNew ? `New ${INV_KINDS[inv.kind].title.toLowerCase()}` : `${INV_KINDS[inv.kind].title} ${inv.number}`}</div>
+            <button className="icon-btn" onClick={onClose}><Icons.close size={14}/></button>
           </div>
-        ))}
-        <button className="btn-ghost" style={{width:'100%',justifyContent:'center'}} onClick={()=>setInv(p=>({...p,services:[...p.services,{desc:'',amount:''}]}))}><Icons.plus size={13}/> Add Line</button>
+          {isNew && (
+            <div className="seg seg-full">
+              {Object.entries(INV_KINDS).map(([k, v]) => <button key={k} className={inv.kind === k ? 'on' : ''} onClick={() => setInv(p => ({ ...p, kind: k, number: nextInvoiceNumber(invoices, k, finances), dueDate: addDays(p.issueDate, k === 'quote' ? 30 : p.terms) }))}>{v.title}</button>)}
+            </div>
+          )}
+
+          <div className="inv-sec">Who it's for</div>
+          <Field label="Client or lead">
+            <select className="input" value={inv.leadId || ''} onChange={e => pickLead(e.target.value)}>
+              <option value="">Someone not in the console</option>
+              <optgroup label="Clients">{clients.map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}</optgroup>
+              <optgroup label="Pipeline">{open.map(l => <option key={l.id} value={l.id}>{l.businessName}</option>)}</optgroup>
+            </select>
+          </Field>
+          <div className="grid-2">
+            <Field label="Business"><input className="input" value={inv.client.name} onChange={e => sc('name', e.target.value)} placeholder="e.g. D&D Wholesale"/></Field>
+            <Field label="Contact person"><input className="input" value={inv.client.contact} onChange={e => sc('contact', e.target.value)}/></Field>
+          </div>
+          <div className="grid-2">
+            <Field label="WhatsApp / phone"><input className="input" value={inv.client.phone} onChange={e => sc('phone', e.target.value)} placeholder="18761234567"/></Field>
+            <Field label="Location"><input className="input" value={inv.client.location} onChange={e => sc('location', e.target.value)}/></Field>
+          </div>
+
+          <div className="inv-sec">The {INV_KINDS[inv.kind].title.toLowerCase()}</div>
+          <div className="grid-2">
+            <Field label="Number">
+              <input className={`input mono ${dupNumber ? 'input-bad' : ''}`} value={inv.number} onChange={e => s('number', e.target.value)}/>
+            </Field>
+            <Field label="Issued"><input className="input" type="date" value={inv.issueDate} onChange={e => setInv(p => ({ ...p, issueDate: e.target.value, dueDate: addDays(e.target.value, p.kind === 'quote' ? 30 : p.terms) }))}/></Field>
+          </div>
+          {inv.kind !== 'receipt' && (
+            <div className="grid-2">
+              {inv.kind === 'invoice' ? (
+                <Field label="Payment terms">
+                  <select className="input" value={INV_TERMS.some(([d]) => d === inv.terms) ? inv.terms : 'custom'} onChange={e => e.target.value !== 'custom' && setTerms(Number(e.target.value))}>
+                    {INV_TERMS.map(([d, l]) => <option key={d} value={d}>{l}</option>)}
+                    <option value="custom">Custom date</option>
+                  </select>
+                </Field>
+              ) : <div/>}
+              <Field label={inv.kind === 'quote' ? 'Valid until' : 'Due'}><input className="input" type="date" min={inv.issueDate} value={inv.dueDate} onChange={e => setInv(p => ({ ...p, dueDate: e.target.value, terms: null }))}/></Field>
+            </div>
+          )}
+
+          <div className="inv-sec">Lines</div>
+          {presets.length > 0 && (
+            <div className="inv-presets">
+              {presets.map(pr => <button key={pr[0]} className="pill" onClick={() => addPreset(pr)}>+ {pr[0]} · {J(pr[1])}</button>)}
+            </div>
+          )}
+          <div className="inv-items">
+            {inv.items.map((it, i) => (
+              <div key={i} className="inv-item">
+                <input className="input inv-desc" value={it.desc} onChange={e => setItem(i, 'desc', e.target.value)} placeholder="What you did"/>
+                <input className="input inv-detail" value={it.detail || ''} onChange={e => setItem(i, 'detail', e.target.value)} placeholder="Detail (optional)"/>
+                <input className="input mono inv-qty" type="number" min="0" value={it.qty} onChange={e => setItem(i, 'qty', e.target.value)} title="Quantity"/>
+                <input className="input mono inv-rate" type="number" min="0" value={it.rate} onChange={e => setItem(i, 'rate', e.target.value)} placeholder="Rate"/>
+                <button className="icon-btn danger-btn inv-del" disabled={inv.items.length === 1} onClick={() => setInv(p => ({ ...p, items: p.items.filter((_, j) => j !== i) }))}><Icons.close size={11}/></button>
+              </div>
+            ))}
+            <button className="btn-ghost inv-add" onClick={() => setInv(p => ({ ...p, items: [...p.items, { desc: '', detail: '', qty: 1, rate: '' }] }))}><Icons.plus size={13}/> Add line</button>
+          </div>
+          <div className="grid-2">
+            <Field label="Discount">
+              <div className="inv-disc">
+                <input className="input mono" type="number" min="0" value={inv.discount} onChange={e => s('discount', e.target.value)} placeholder="0"/>
+                <div className="seg">{['J$', '%'].map(k => <button key={k} className={inv.discountType === k ? 'on' : ''} onClick={() => s('discountType', k)}>{k}</button>)}</div>
+              </div>
+            </Field>
+            <Field label="GCT">
+              <div className="seg seg-full">{[['', 'None'], ['15', '15%']].map(([v, l]) => <button key={l} className={String(inv.taxRate || '') === v ? 'on' : ''} onClick={() => s('taxRate', v)}>{l}</button>)}</div>
+            </Field>
+          </div>
+          <div className="inv-total-bar">
+            <span>Total</span><b>{invMoney(t.total, inv.currency)}</b>
+          </div>
+          {inv.kind === 'invoice' && (
+            <Field label="Payments on this invoice count as">
+              <select className="input" value={inv.stage} onChange={e => s('stage', e.target.value)}>
+                {[...PAYMENT_STAGES, 'Setup Fee', 'Other'].map(x => <option key={x}>{x}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Notes on the document"><textarea className="input" style={{ minHeight: 56, resize: 'vertical' }} value={inv.notes} onChange={e => s('notes', e.target.value)} placeholder="Scope, timeline, anything the client should see"/></Field>
+
+          <button className="link-btn inv-from-toggle" onClick={() => setShowFrom(v => !v)}>{showFrom ? 'Hide' : 'Edit'} your details and payment instructions</button>
+          {showFrom && (<>
+            <div className="grid-2">
+              <Field label="Business"><input className="input" value={inv.from.company} onChange={e => s('from', { ...inv.from, company: e.target.value })}/></Field>
+              <Field label="Your name"><input className="input" value={inv.from.name} onChange={e => s('from', { ...inv.from, name: e.target.value })}/></Field>
+            </div>
+            <div className="grid-2">
+              <Field label="Phone"><input className="input" value={inv.from.phone} onChange={e => s('from', { ...inv.from, phone: e.target.value })}/></Field>
+              <Field label="Email"><input className="input" value={inv.from.email} onChange={e => s('from', { ...inv.from, email: e.target.value })}/></Field>
+            </div>
+            <Field label="Location"><input className="input" value={inv.from.location} onChange={e => s('from', { ...inv.from, location: e.target.value })}/></Field>
+            <Field label="How to pay"><textarea className="input" style={{ minHeight: 76, resize: 'vertical' }} value={inv.from.payment} onChange={e => s('from', { ...inv.from, payment: e.target.value })}/></Field>
+            <button className="btn-ghost" onClick={() => onSaveProfile(inv.from)}>Use these on every new invoice</button>
+          </>)}
+
+          <div className="inv-actions">
+            {!valid && <div className="goal-hint">Add who it's for and at least one priced line.</div>}
+            {dupNumber && <div className="goal-hint bad">That number is already used.</div>}
+            <div className="inv-actions-row">
+              <button className="btn-ghost" disabled={!valid || dupNumber} onClick={async () => { if (await save()) onClose(); }}>{inv.status === 'draft' ? 'Save draft' : 'Save'}</button>
+              <button className="btn-ghost" disabled={!valid || dupNumber} onClick={async () => { const id = await save(); if (id) exportInvoicePdf({ ...inv, id }, finances); }}>PDF</button>
+              {inv.client.phone && inv.kind !== 'receipt' && (
+                <button className="btn-primary" disabled={!valid || dupNumber} onClick={async () => {
+                  const id = await save({ status: 'sent', sentAt: inv.sentAt || todayStr });
+                  if (!id) return;
+                  const saved = { ...inv, id, status: 'sent' };
+                  exportInvoicePdf(saved, finances);
+                  window.open(waLink(inv.client.phone, invoiceMessage(saved, finances, todayStr)), '_blank');
+                  onClose();
+                }}><Icons.whatsapp size={14}/> Save PDF &amp; send</button>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="inv-preview">
+          <iframe title="Invoice preview" srcDoc={preview} sandbox=""/>
+        </div>
       </div>
-      <div style={{background:'rgba(var(--p3),0.06)',border:'1px solid rgba(var(--p3),0.15)',borderRadius:'var(--r2)',padding:'0.75rem',display:'flex',justifyContent:'space-between'}}><span style={{fontFamily:'var(--fm)',fontSize:'12px',fontWeight:700}}>TOTAL</span><span style={{fontFamily:'var(--fm)',fontSize:'14px',fontWeight:800,color:'var(--bolt)'}}>J${total.toLocaleString()}</span></div>
-      <Field label="Notes"><textarea className="input" style={{minHeight:'56px',resize:'vertical'}} value={inv.notes} onChange={e=>s('notes',e.target.value)}/></Field>
-      <button className="btn-primary" style={{width:'100%',justifyContent:'center'}} onClick={generatePDF}>{DESKTOP ? 'Save invoice PDF' : 'Download invoice'}</button>
-      <ModalFoot onClose={onClose}/>
-      </>
+    </div>
+  );
+}
+
+// ── Record a payment against an invoice: it lands in Finance, linked ─────────
+function InvoicePayModal({ inv, finances, todayStr, onSave, onClose }) {
+  const st = invoiceState(inv, finances, todayStr);
+  const [f, setF] = useState({ amount: st.balance || '', date: todayStr, stage: inv.stage || 'First Deposit', method: '' });
+  const s = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const amt = Number(f.amount) || 0;
+  return (
+    <Modal title={`Payment on ${inv.number}`} onClose={onClose}>
+      <div className="inv-pay-sum">
+        <div><span>Total</span><b>{J(st.total)}</b></div>
+        <div><span>Paid</span><b className="good">{J(st.paid)}</b></div>
+        <div><span>Balance</span><b className={st.balance ? 'bad' : 'good'}>{J(st.balance)}</b></div>
+      </div>
+      <div className="grid-2">
+        <Field label="Amount (J$)"><input className="input mono" type="number" autoFocus value={f.amount} onChange={e => s('amount', e.target.value)}/></Field>
+        <Field label="Received on"><input className="input" type="date" max={todayStr} value={f.date} onChange={e => s('date', e.target.value)}/></Field>
+      </div>
+      <Field label="Counts as">
+        <select className="input" value={f.stage} onChange={e => s('stage', e.target.value)}>
+          {[...PAYMENT_STAGES, 'Setup Fee', 'Other'].map(x => <option key={x}>{x}</option>)}
+        </select>
+      </Field>
+      <Field label="Method (optional)"><input className="input" value={f.method} onChange={e => s('method', e.target.value)} placeholder="Bank transfer, cash, card…"/></Field>
+      {amt > st.balance && st.balance > 0 && <div className="goal-hint">That's {J(amt - st.balance)} more than the balance.</div>}
+      <div className="goal-hint">Logged as income in Finance{inv.leadId ? ' and on the client' : ''}{inv.leadId && f.stage === 'Monthly Retainer' ? ', and marks this month\'s retainer collected' : ''}.</div>
+      <ModalFoot onClose={onClose} onSave={() => amt > 0 && onSave(f)}/>
     </Modal>
   );
+}
+
+// ── The list: Finance › Invoices, and a client's own tab ──────────────────────
+function InvoicesBoard({ invoices, finances, todayStr, api, leadId = null, compact = false }) {
+  const { confirm, ConfirmUI } = useConfirm();
+  const [filter, setFilter] = useState(compact ? 'all' : 'open');
+  const pager = usePager(10, filter);
+  const mine = leadId ? invoices.filter(i => i.leadId === leadId) : invoices;
+  const rows = mine.map(inv => ({ inv, st: invoiceState(inv, finances, todayStr) }))
+    .sort((a, b) => (b.inv.issueDate || '').localeCompare(a.inv.issueDate || '') || (b.inv.number || '').localeCompare(a.inv.number || ''));
+  const real = rows.filter(r => r.inv.kind === 'invoice' && r.st.id !== 'void');
+  const openRows = real.filter(r => ['sent', 'part', 'overdue'].includes(r.st.id));
+  const overdue = openRows.filter(r => r.st.id === 'overdue');
+  const thisMonth = todayStr.slice(0, 7);
+  const collected = finances.filter(f => f.invoiceId && isIncome(f) && monthOf(f.date) === thisMonth && mine.some(i => i.id === f.invoiceId)).reduce((s, f) => s + amountOf(f), 0);
+  // How long clients take: issue date to the payment that cleared it
+  const paidTimes = real.filter(r => r.st.id === 'paid').map(r => {
+    const last = invoicePayments(r.inv, finances).pop();
+    return last ? Math.max(0, Math.round((parseLocal(last.date) - parseLocal(r.inv.issueDate)) / 864e5)) : null;
+  }).filter(x => x !== null);
+  const avgDays = paidTimes.length ? Math.round(paidTimes.reduce((a, b) => a + b, 0) / paidTimes.length) : null;
+  const FILTERS = [['open', `Open ${openRows.length}`], ['overdue', `Overdue ${overdue.length}`], ['paid', 'Paid'], ['quote', 'Quotes'], ['draft', 'Drafts'], ['all', 'All']];
+  const shown = rows.filter(({ inv, st }) => filter === 'all' ? true
+    : filter === 'open' ? inv.kind === 'invoice' && ['sent', 'part', 'overdue'].includes(st.id)
+    : filter === 'quote' ? inv.kind === 'quote'
+    : filter === 'draft' ? st.id === 'draft'
+    : filter === 'paid' ? inv.kind !== 'quote' && st.id === 'paid'
+    : st.id === filter);
+  const pg = pager(shown.length);
+
+  return (<>
+    {!compact && (
+      <div className="grid-4 inv-kpis">
+        <div className="fin-tile"><span>Outstanding</span><b className={openRows.length ? '' : 'good'}>{J(openRows.reduce((s, r) => s + r.st.balance, 0))}</b><span className="fin-delta">{openRows.length} open invoice{openRows.length === 1 ? '' : 's'}</span></div>
+        <div className="fin-tile"><span>Overdue</span><b className={overdue.length ? 'bad' : 'good'}>{J(overdue.reduce((s, r) => s + r.st.balance, 0))}</b><span className="fin-delta">{overdue.length ? `oldest ${Math.max(...overdue.map(r => r.st.late))} days late` : 'nobody is late'}</span></div>
+        <div className="fin-tile"><span>Collected</span><b>{J(collected)}</b><span className="fin-delta">on invoices this month</span></div>
+        <div className="fin-tile"><span>Time to get paid</span><b>{avgDays === null ? '—' : `${avgDays}d`}</b><span className="fin-delta">{paidTimes.length ? `average over ${paidTimes.length} paid` : 'after your first paid invoice'}</span></div>
+      </div>
+    )}
+    <div className="card inv-board">
+      <div className="row-between inv-board-head">
+        <div className="seg inv-filters">{FILTERS.map(([id, l]) => <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{l}</button>)}</div>
+        <div className="inv-new">
+          <button className="btn-ghost" onClick={() => api.open({ kind: 'quote', leadId: leadId || '' })}>Quote</button>
+          <button className="btn-primary" onClick={() => api.open({ kind: 'invoice', leadId: leadId || '' })}><Icons.plus size={13}/> Invoice</button>
+        </div>
+      </div>
+      {shown.length === 0 ? (
+        <div className="agenda-empty small">{mine.length ? 'Nothing here.' : 'No invoices yet. Every invoice you send is tracked here until it is paid.'}</div>
+      ) : pageOf(shown, pg).map(({ inv, st }) => {
+        const pct = st.total ? Math.min(100, (st.paid / st.total) * 100) : 0;
+        return (
+          <div key={inv.id} className={`inv-row st-${st.id}`}>
+            <button className="inv-row-main" onClick={() => api.open(inv)}>
+              <span className="inv-num mono">{inv.number}</span>
+              <span className="inv-who">
+                <b>{inv.client?.name || '—'}</b>
+                <i>{INV_KINDS[inv.kind]?.title} · {fmtDate(inv.issueDate, { month: 'short', day: 'numeric' })}{inv.kind === 'invoice' && inv.dueDate ? ` → ${fmtDate(inv.dueDate, { month: 'short', day: 'numeric' })}` : ''}</i>
+              </span>
+              <span className="inv-amt">
+                <b className="mono">{J(st.total)}</b>
+                {inv.kind === 'invoice' && st.paid > 0 && st.id !== 'paid' && <i className="mono">{J(st.balance)} left</i>}
+                {inv.kind === 'invoice' && st.id !== 'draft' && st.id !== 'void' && <span className="inv-bar"><span style={{ width: `${pct}%` }}/></span>}
+              </span>
+              <span className="inv-state" style={{ '--st': INV_STATE_HEX[st.id] }}>{st.label}</span>
+            </button>
+            <div className="inv-row-acts">
+              {inv.kind === 'invoice' && ['sent', 'part', 'overdue', 'draft'].includes(st.id) && <button className="btn-ghost" onClick={() => api.pay(inv)}>Record payment</button>}
+              {inv.kind === 'quote' && !inv.convertedTo && st.id !== 'void' && <button className="btn-ghost" onClick={() => api.convert(inv)}>Accepted → invoice</button>}
+              {inv.client?.phone && st.id !== 'void' && (
+                <button className="icon-btn" title={st.id === 'overdue' ? 'Send a reminder on WhatsApp' : 'Send on WhatsApp'} onClick={() => api.send(inv)}><Icons.whatsapp size={13}/></button>
+              )}
+              <button className="icon-btn" title={st.id === 'paid' && inv.kind === 'invoice' ? 'Receipt PDF' : 'PDF'} onClick={() => exportInvoicePdf(inv, finances, st.id === 'paid' && inv.kind === 'invoice')}><Icons.download size={13}/></button>
+              <button className="icon-btn" title="Duplicate" onClick={() => api.duplicate(inv)}><Icons.copy size={13}/></button>
+              {st.id !== 'void' && st.id !== 'paid' && (
+                <button className="icon-btn danger-btn" title={st.paid || inv.status === 'sent' ? 'Void' : 'Delete'} onClick={async () => {
+                  const sentOrPaid = st.paid || inv.status === 'sent';
+                  if (await confirm({ message: sentOrPaid ? `Void ${inv.number}? It stays on record, marked void, and stops counting as owed.${st.paid ? ' Payments already logged stay in Finance.' : ''}` : `Delete draft ${inv.number}?`, label: sentOrPaid ? 'Void' : 'Delete', danger: true }))
+                    sentOrPaid ? api.update(inv.id, { status: 'void' }) : api.remove(inv.id);
+                }}><Icons.trash size={12}/></button>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      <Pager pg={pg} noun="invoices"/>
+    </div>
+    {ConfirmUI}
+  </>);
 }
 
 // ─── VENTURES ─────────────────────────────────────────────────────────────────
