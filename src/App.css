@@ -3312,7 +3312,7 @@ html[lang="ja"] body, html[lang="zh"] body { line-break: strict; }
 
 .inv-preview { position: relative; overflow-y: auto; overflow-x: hidden; display: flex; justify-content: center; padding: 2rem 1.5rem;
   background: radial-gradient(120% 80% at 50% 0%, rgba(211,168,85,0.10), transparent 60%), rgba(var(--b0),0.9); border-left: 1px solid rgba(255,255,255,0.06); }
-.inv-preview iframe { width: 816px; height: 1056px; border: 0; background: #fbf7f0; flex-shrink: 0; border-radius: 3px;
+.inv-preview iframe { width: 816px; height: 1056px; border: 0; background: #fbfaf6; flex-shrink: 0; border-radius: 2px;
   transform: scale(0.72); transform-origin: top center; margin: 0 -114px -296px;
   box-shadow: 0 2px 0 rgba(255,255,255,0.04), 0 30px 70px rgba(0,0,0,0.6), 0 0 0 1px rgba(211,168,85,0.15); }
 @media (max-width: 1180px) { .inv-preview iframe { transform: scale(0.58); margin: 0 -171px -444px; } }
@@ -3439,3 +3439,93 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
 .pl-log li::before { content: ''; position: absolute; left: calc(-0.9rem - 4px); top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--gold-400); }
 .pl-log time { font-family: var(--fm); font-size: 10.5px; color: var(--ink-3); padding-top: 2px; }
 .pl-close { display: flex; gap: 0.5rem; align-items: center; padding-top: 0.8rem; border-top: 1px solid rgba(255,255,255,0.07); margin-top: auto; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   LAYOUT SYSTEM
+   The frame the whole console sits in, written last so it is the one
+   source of truth: a quiet top bar, a grouped sidebar, one toolbar per
+   page, joined stat strips, row actions that appear on hover, and the
+   day's facts in a status bar along the bottom edge. Colour, type and
+   texture stay exactly as the theme above defines them.
+═══════════════════════════════════════════════════════════════════ */
+
+/* Top bar: title on the left, tools on the right, nothing else */
+.head-tools { display: flex; align-items: center; gap: 0.5rem; }
+.head-new { display: inline-flex; align-items: center; gap: 0.35rem; height: 32px; padding: 0 0.85rem; border-radius: 8px; cursor: pointer;
+  font: 600 12.5px var(--fs); color: var(--gold-200); background: rgba(211,168,85,0.08); border: 1px solid rgba(211,168,85,0.35); transition: background 0.15s, border-color 0.15s; }
+.head-new:hover, .head-new.on { background: rgba(211,168,85,0.16); border-color: rgba(211,168,85,0.6); }
+.head-me { position: relative; display: inline-flex; align-items: center; gap: 0.45rem; height: 32px; padding: 0 0.3rem 0 0.6rem; border-radius: 99px; cursor: pointer;
+  background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); color: var(--ink-1); }
+.head-me:hover, .head-me.on { border-color: rgba(var(--p4),0.45); }
+.head-me-lv { font: 600 10.5px var(--fm); color: var(--gold-300); }
+.head-me-init { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font: 700 10px var(--fs); letter-spacing: 0.04em;
+  color: #fff; background: linear-gradient(135deg, var(--teal-400), var(--teal-600)); }
+.head-me-dot { position: absolute; top: -2px; right: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--coral-400); border: 2px solid rgb(var(--b0)); }
+.hmenu { position: relative; }
+.hmenu-pop { position: absolute; top: calc(100% + 8px); z-index: 400; min-width: 268px; padding: 6px; border-radius: 12px; display: flex; flex-direction: column;
+  background: rgba(var(--b1),0.98); border: 1px solid rgba(255,255,255,0.09); box-shadow: 0 24px 60px rgba(0,0,0,0.6); animation: menuIn 0.14s ease-out; }
+.hmenu-pop.right { right: 0; } .hmenu-pop.left { left: 0; }
+@keyframes menuIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.hmenu-pop > button, .hmenu-lang { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; align-items: center; text-align: left;
+  padding: 0.5rem 0.65rem; border-radius: 8px; background: none; border: none; color: inherit; cursor: pointer; font: inherit; }
+.hmenu-pop > button:hover, .hmenu-lang:hover { background: rgba(255,255,255,0.05); }
+.hmenu-pop b { font: 500 13.5px var(--fs); color: var(--ink-0); }
+.hmenu-pop i { grid-column: 1; font: normal 11.5px var(--fs); color: var(--ink-3); margin-top: 1px; }
+.hmenu-pop kbd { grid-row: 1 / span 2; grid-column: 2; font: 10px var(--fm); color: var(--ink-3); border: 1px solid rgba(255,255,255,0.12); border-radius: 4px; padding: 1px 5px; }
+.hmenu-pop hr { border: none; border-top: 1px solid rgba(255,255,255,0.07); margin: 5px 4px; }
+.hmenu-pop .danger b { color: var(--coral-400); }
+.hmenu-id { padding: 0.55rem 0.65rem 0.4rem; display: flex; flex-direction: column; }
+.hmenu-lang select { grid-row: 1 / span 2; grid-column: 2; background: rgba(255,255,255,0.04); color: var(--ink-1); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 0.25rem 0.4rem; font: 12px var(--fs); }
+
+/* Sidebar: grouped, the way the work is actually split */
+.nav-group { display: none; }
+@media (min-width: 760px) {
+  .nav-group { display: block; font: 600 9.5px var(--fm); letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); opacity: 0.75;
+    padding: 1.1rem 0.95rem 0.35rem; }
+  .nav-min .nav-group { font-size: 0; padding: 0.6rem 0 0.2rem; margin: 0 0.6rem; border-top: 1px solid rgba(255,255,255,0.07); }
+}
+
+/* One toolbar per page: filters on the left, the main action on the right */
+.app .sched-bar { gap: 0.6rem 0.75rem; padding-bottom: 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.app .sched-range:empty { display: none; }
+.app .sched-bar > .btn-primary:last-child { margin-left: auto; }
+.page-sub { font: 500 14px var(--fs); color: var(--ink-2); letter-spacing: 0.01em; }
+.page-tabs { display: flex; gap: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.07); margin-top: -0.35rem; overflow-x: auto; scrollbar-width: none; }
+.page-tabs button { position: relative; background: none; border: none; cursor: pointer; padding: 0.7rem 0 0.75rem; font: 500 13.5px var(--fs); color: var(--ink-3); white-space: nowrap; }
+.page-tabs button:hover { color: var(--ink-1); }
+.page-tabs button.on { color: var(--ink-0); }
+.page-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--gold-400); border-radius: 2px; }
+
+/* Numbers that belong together sit in one strip, divided by hairlines */
+.app :is(div):has(> .fin-tile + .fin-tile) { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; background: rgba(var(--b2),0.6); overflow: hidden; }
+.app .fin-tile { border: none !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; padding: 0.95rem 1.15rem !important; gap: 3px; }
+.app .fin-tile + .fin-tile { border-left: 1px solid rgba(255,255,255,0.07) !important; }
+.app .fin-tile > span:first-child { font: 600 9.5px var(--fm) !important; font-style: normal !important; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-3) !important; }
+.app .fin-tile b { font-size: 24px; }
+.app .fin-tile .fin-delta { font-size: 11.5px; color: var(--ink-3); }
+@media (max-width: 760px) {
+  .app :is(div):has(> .fin-tile + .fin-tile) { grid-auto-flow: row; grid-template-columns: 1fr 1fr; }
+  .app .fin-tile:nth-child(odd) { border-left: none !important; }
+  .app .fin-tile:nth-child(n+3) { border-top: 1px solid rgba(255,255,255,0.07) !important; }
+}
+
+/* Row actions stay out of the way until the row is pointed at */
+@media (hover: hover) {
+  .app :is(.tk-row, .inv-row, .fin-tx-row, .habit-row) :is(.icon-btn, .danger-btn) { opacity: 0; transition: opacity 0.12s; }
+  .app :is(.tk-row, .inv-row, .fin-tx-row, .habit-row):hover :is(.icon-btn, .danger-btn),
+  .app :is(.tk-row, .inv-row, .fin-tx-row, .habit-row) :is(.icon-btn, .danger-btn):focus-visible { opacity: 1; }
+}
+
+/* The day's facts, still and readable, along the bottom edge */
+.statusbar { display: none; }
+@media (min-width: 760px) {
+  .statusbar { position: fixed; left: var(--sw); right: 0; bottom: 0; z-index: 150; height: 28px; display: flex; align-items: stretch; overflow: hidden;
+    background: rgba(var(--b0),0.96); border-top: 1px solid rgba(255,255,255,0.07); backdrop-filter: blur(8px); }
+  .statusbar button { flex: none; display: flex; align-items: center; padding: 0 0.9rem; background: none; border: none; border-right: 1px solid rgba(255,255,255,0.06);
+    font: 500 11px var(--fm); letter-spacing: 0.02em; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+  .statusbar button:hover { color: var(--ink-0); background: rgba(255,255,255,0.03); }
+  .statusbar .hot { color: var(--coral-400); } .statusbar .good { color: #2fae7f; }
+  .app .main { padding-bottom: calc(3rem + 28px); }
+}
+@media (min-width: 760px) { .app .bottom-nav .nav-btn { padding-top: 0.5rem; padding-bottom: 0.5rem; } }

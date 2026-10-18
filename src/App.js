@@ -1246,23 +1246,6 @@ class SectionBoundary extends React.Component {
 // the header turns all of it off.
 const two = n => String(n).padStart(2, '0');
 
-function LiveClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => { const iv = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(iv); }, []);
-  const h = now.getHours();
-  const gone = ((h * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400) * 100;
-  const part = h < 5 ? '夜' : h < 11 ? '朝' : h < 17 ? '昼' : h < 20 ? '夕' : '夜';   // night, morning, day, evening, night
-  const left = 24 * 60 - (h * 60 + now.getMinutes());
-  return (
-    <div className="live-clock" title={`${Math.floor(left / 60)}h ${left % 60}m of today left`}>
-      <b lang="ja" aria-hidden="true">{part}</b>
-      <span>{two(h)}:{two(now.getMinutes())}<i>:{two(now.getSeconds())}</i></span>
-      <u><em style={{ width: `${gone}%` }}/></u>
-    </div>
-  );
-}
-
-// Days, hours, minutes and seconds until the start of a date
 function LiveCountdown({ to }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const iv = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(iv); }, []);
@@ -1273,16 +1256,33 @@ function LiveCountdown({ to }) {
 }
 
 // A strip of what matters right now. Click an item to go there; hover to pause.
-function Ticker({ items, onNav }) {
+// The day's key facts, one line along the bottom edge, each a way into its section
+function StatusBar({ items, onNav }) {
   if (!items.length) return null;
-  // Repeat a short list so the tape is always longer than the window
-  const tape = items.length < 12 ? Array.from({ length: Math.ceil(12 / items.length) }, () => items).flat() : items;
-  const row = hidden => (
-    <div className="ticker-row" aria-hidden={hidden || undefined}>
-      {tape.map((it, i) => <button key={i} className={it.lv || ''} tabIndex={hidden ? -1 : 0} onClick={() => onNav(it.tab)}><i>◆</i>{it.t}</button>)}
+  return (
+    <footer className="statusbar">
+      {items.map((it, i) => <button key={i} className={it.lv || ''} onClick={() => onNav(it.tab)}>{it.t}</button>)}
+    </footer>
+  );
+}
+
+// A small dropdown for the top bar; closes on any outside click or choice
+function HeadMenu({ button, children, align = 'right' }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = e => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <div className="hmenu" ref={ref}>
+      {button(open, () => setOpen(v => !v))}
+      {open && <div className={`hmenu-pop ${align}`} onClick={e => { if (!e.target.closest('[data-keep-open]')) setOpen(false); }}>{children}</div>}
     </div>
   );
-  return <div className="ticker" style={{ '--dur': `${Math.max(40, tape.length * 7)}s` }}><div className="ticker-track">{row(false)}{row(true)}</div></div>;
 }
 
 function Petals() {
@@ -1864,17 +1864,17 @@ function App() {
 
   const navItems = [
     {id:'dashboard', label:'Home',     icon:Icons.home, jp:'本部'},
-    {id:'pipeline',  label:'Pipeline', icon:Icons.pipeline, jp:'営業'},
-    {id:'habits',    label:'Habits',   icon:Icons.habits, jp:'習慣'},
-    {id:'todos',     label:'Tasks',    icon:Icons.tasks, jp:'任務'},
-    {id:'focus',     label:'Focus',    icon:Icons.hourglass, jp:'集中'},
-    {id:'studies',   label:'Studies',  icon:Icons.book, jp:'学業'},
-    {id:'schedule',  label:'Schedule', icon:Icons.schedule, jp:'予定'},
-    {id:'finance',   label:'Finance',  icon:Icons.finance, jp:'財務'},
-    {id:'goals',     label:'Goals',    icon:Icons.goals, jp:'目標'},
-    {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon, jp:'参謀'},
-    {id:'clients',   label:'Clients',  icon:Icons.briefcase, jp:'顧客'},
-    {id:'ventures',  label:'Ventures', icon:Icons.rocket, jp:'事業'},
+    {id:'pipeline',  label:'Pipeline', icon:Icons.pipeline, jp:'営業', group:'Business'},
+    {id:'clients',   label:'Clients',  icon:Icons.briefcase, jp:'顧客', group:'Business'},
+    {id:'finance',   label:'Finance',  icon:Icons.finance, jp:'財務', group:'Business'},
+    {id:'ventures',  label:'Ventures', icon:Icons.rocket, jp:'事業', group:'Business'},
+    {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon, jp:'参謀', group:'Business'},
+    {id:'todos',     label:'Tasks',    icon:Icons.tasks, jp:'任務', group:'Personal'},
+    {id:'habits',    label:'Habits',   icon:Icons.habits, jp:'習慣', group:'Personal'},
+    {id:'focus',     label:'Focus',    icon:Icons.hourglass, jp:'集中', group:'Personal'},
+    {id:'studies',   label:'Studies',  icon:Icons.book, jp:'学業', group:'Personal'},
+    {id:'schedule',  label:'Schedule', icon:Icons.schedule, jp:'予定', group:'Personal'},
+    {id:'goals',     label:'Goals',    icon:Icons.goals, jp:'目標', group:'Personal'},
   ];
   const currentNav = navItems.find(n => n.id === tab) || navItems[0];
 
@@ -1950,43 +1950,7 @@ function App() {
           <span className="page-seal" lang="ja" aria-hidden="true">{currentNav.jp}</span>
           <span>{currentNav.label}</span>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:'0.5rem'}}>
-          <button className="icon-btn" title="Create Invoice" onClick={()=>setInvEdit({ kind: 'invoice' })} style={{width:28,height:28,borderColor:'rgba(var(--p3),0.2)',color:'var(--ink-2)'}}><Icon d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M8 13h8M8 17h5" /></button>
-          <button
-            onClick={requestPermission}
-            title={notifSubbed?'Push notifications active':notifPerm==='granted'?'Notifications on':'Click to enable notifications'}
-            style={{
-              position:'relative',background:'none',
-              border:`1px solid ${notifSubbed?'rgba(var(--p3),0.35)':'rgba(255,255,255,0.08)'}`,
-              cursor:'pointer',
-              display:'flex',alignItems:'center',justifyContent:'center',
-              width:32,height:32,
-              color:notifSubbed?'var(--bolt)':notifPerm==='granted'?'var(--bolt-3)':'var(--mist-3)',
-              borderRadius:'var(--r1)',
-              boxShadow:notifSubbed?'0 0 8px rgba(var(--p3),0.3)':'none',
-              flexShrink:0,
-            }}>
-            <Icons.bell size={15}/>
-            {alerts.length > 0 && (
-              <span style={{
-                position:'absolute',top:-3,right:-3,
-                background:'#ff5a36',color:'white',
-                borderRadius:'50%',width:15,height:15,
-                fontSize:'8px',fontWeight:700,lineHeight:1,
-                display:'flex',alignItems:'center',justifyContent:'center',
-                border:'1.5px solid var(--lake-1)',
-                boxShadow:'0 0 6px rgba(255,90,54,0.7)',
-              }}>{Math.min(9,alerts.length)}</span>
-            )}
-          </button>
-          <LiveClock/>
-          <button className={`icon-btn live-btn ${live ? 'on' : ''}`} title={live ? 'Live motion is on. Click to switch it off.' : 'Live motion is off. Click to switch it on.'} onClick={toggleLive} style={{ width: 28, height: 28 }}><i/></button>
-          <label className="lang-pick" title="Interface language">
-            <b lang="ja" aria-hidden="true">語</b>
-            <select value={lang} onChange={e => setLang(e.target.value)} aria-label="Interface language" data-no-i18n>
-              {LANGS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-          </label>
+        <div className="head-tools">
           <button className="cmdk-btn" onClick={() => setPaletteOpen(true)} title="Command bar (⌘K)">
             <Icons.search size={14}/><span>Log or find anything</span><kbd>⌘K</kbd>
           </button>
@@ -1997,17 +1961,41 @@ function App() {
               Briefing
             </button>
           )}
-          <button className="icon-btn" title="Sign out" onClick={() => { if (window.confirm('Sign out of the console? You will need your email and password to get back in.')) signOut(auth); }}><Icons.logout size={14}/></button>
-          <div className="xp-chip" key={xp}>
-            <span className="xp-chip-lv">L{level}</span>
-            <span className="xp-chip-sep">·</span>
-            <span className="xp-chip-xp">{xp} XP</span>
-          </div>
+          <HeadMenu button={(open, toggle) => (
+            <button className={`head-new ${open ? 'on' : ''}`} onClick={toggle}><Icons.plus size={13}/> New</button>
+          )}>
+            <button onClick={() => setInvEdit({ kind: 'invoice' })}><b>Invoice</b><i>Bill a client</i></button>
+            <button onClick={() => setInvEdit({ kind: 'quote' })}><b>Quote</b><i>Price a job before it starts</i></button>
+            <button onClick={() => setInvEdit({ kind: 'receipt' })}><b>Receipt</b><i>Confirm money received</i></button>
+            <hr/>
+            <button onClick={() => setPaletteOpen(true)}><b>Task, lead or expense</b><i>Type it in the command bar</i><kbd>⌘K</kbd></button>
+          </HeadMenu>
+          <HeadMenu button={(open, toggle) => (
+            <button className={`head-me ${open ? 'on' : ''}`} onClick={toggle} title="Account and settings">
+              <span className="head-me-lv">L{level}</span>
+              <span className="head-me-init">JS</span>
+              {alerts.length > 0 && <span className="head-me-dot"/>}
+            </button>
+          )}>
+            <div className="hmenu-id"><b>Jadan Spencer</b><i>Level {level} · {xp} XP</i></div>
+            <hr/>
+            <button onClick={requestPermission}><b>Notifications</b><i>{notifSubbed ? 'On, pushing to this device' : notifPerm === 'granted' ? 'Allowed' : 'Off. Click to turn on'}</i></button>
+            <button onClick={toggleLive}><b>Motion</b><i>{live ? 'On: petals and live tickers' : 'Off: everything still'}</i></button>
+            <label className="hmenu-lang" data-keep-open>
+              <b>Language</b>
+              <select value={lang} onChange={e => setLang(e.target.value)} aria-label="Interface language" data-no-i18n>
+                {LANGS.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+              </select>
+            </label>
+            <button onClick={backupData}><b>Back up data</b><i>{lastBackup ? `Last saved ${lastBackup}` : 'No backup yet'}</i></button>
+            <hr/>
+            <button className="danger" onClick={() => { if (window.confirm('Sign out of the console? You will need your email and password to get back in.')) signOut(auth); }}><b>Sign out</b></button>
+          </HeadMenu>
         </div>
       </header>
       {live && <Petals/>}
       {DESKTOP?.venture?.ops && <RunnerWatch api={DESKTOP.venture} notify={RUNNER_NOTIFY}/>}
-      <Ticker onNav={setTab} items={(() => {
+      <StatusBar onNav={setTab} items={(() => {
         const out = [], days = d => Math.round((parseLocal(d) - parseLocal(todayStr)) / 864e5), pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
         ventures.filter(v => v.launchDate && v.stage !== 'Paused').forEach(v => {
           const n = days(v.launchDate);
@@ -2105,14 +2093,15 @@ function App() {
             <div className="brand-sub">Founder Console</div>
           </div>
         </div>
-        {navItems.map((n,i) => (
-          <button key={n.id} className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={i < 10 ? `${n.label} (⌘${(i+1)%10})` : n.label}>
+        {navItems.map((n,i) => (<React.Fragment key={n.id}>
+          {n.group && n.group !== navItems[i - 1]?.group && <div className="nav-group">{n.group}</div>}
+          <button className={`nav-btn ${tab===n.id?'active':''}`} onClick={()=>setTab(n.id)} style={{'--i':i}} title={i < 10 ? `${n.label} (⌘${(i+1)%10})` : n.label}>
             <span className="nav-icon"><n.icon /></span>
             <span className="nav-lbl">{n.label}</span>
             <span className="nav-jp" lang="ja" aria-hidden="true">{n.jp}</span>
             {i < 10 && <span className="nav-key">⌘{(i+1)%10}</span>}
           </button>
-        ))}
+        </React.Fragment>))}
         {!navForced && (
           <button className="nav-toggle" onClick={toggleNav} title={navMin ? 'Show the sidebar (⌘B)' : 'Minimise the sidebar (⌘B)'}>
             <span className="nav-icon"><Icon d={navMin ? 'M9 6l6 6-6 6' : 'M15 6l-6 6 6 6'}/></span>
@@ -2120,10 +2109,6 @@ function App() {
             <span className="nav-key">⌘B</span>
           </button>
         )}
-        <button className="nav-toggle nav-backup" onClick={backupData} title={lastBackup ? `Last backup ${lastBackup}` : 'No backup saved yet'}>
-          <span className="nav-icon"><Icon d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></span>
-          <span className="nav-lbl">Back up data</span>
-        </button>
         <div className="nav-foot" title={`Level ${level} · ${xpInLevel} / 500 XP`}>
           <div className="nav-foot-lv">{navMin ? `L${level}` : `Level ${level}`}</div>
           <div className="nav-rank"><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</div>
@@ -2731,7 +2716,7 @@ function Pipeline({ leads, finances, invoices = [], todos = [], todayStr, onAdd,
   return (
     <div className="section pipeline">
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Pipeline</div></div>
+        <div className="sched-range"/>
         <input className="input pl-search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search deals, needs, places…"/>
         <div className="seg">{[['all', 'All'], ['mine', 'Mine'], ['jaxon', 'JAXON']].map(([id, l]) => <button key={id} className={src === id ? 'on' : ''} onClick={() => setSrc(id)}>{l}</button>)}</div>
         <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Lead</button>
@@ -3067,7 +3052,7 @@ function Habits({habits,weekDates,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   return (
     <div className="section habits">
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Habits</div></div>
+        <div className="sched-range"/>
         <div className="seg">
           <button className={!showArchived ? 'on' : ''} onClick={() => setShowArchived(false)}>Tracking {active.length}</button>
           <button className={showArchived ? 'on' : ''} onClick={() => setShowArchived(true)}>Archived {archived.length}</button>
@@ -3218,7 +3203,7 @@ function Todos({todos,todayStr,onAdd,onUpdate,onDelete,onToggle}) {
   return (
     <div className="section tasks">
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Tasks · {fmtDate(todayStr, { weekday:'long', month:'short', day:'numeric' })}</div></div>
+        <div className="sched-range"><div className="page-sub">{fmtDate(todayStr, { weekday:'long', month:'long', day:'numeric' })}</div></div>
       </div>
 
       <div className="grid-2">
@@ -3557,7 +3542,7 @@ function Focus({ ventures = [], timers, courses = [], todayStr, onAdd, onUpdate,
     <div className="section focus">
       <SectionGhost src={akazaArt}/>
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Focus</div></div>
+        <div className="sched-range"/>
         <div className="seg">
           {[['active', `Active ${counts.active}`], ['done', `Done ${counts.done}`], ['failed', `Missed ${counts.failed}`], ['all', 'All']].map(([id, label]) => (
             <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
@@ -3964,7 +3949,7 @@ function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, o
   return (
     <div className="section studies">
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Studies</div></div>
+        <div className="sched-range"/>
         <button className="btn-primary" onClick={() => setForm({})}><Icons.plus size={14}/> Course</button>
       </div>
 
@@ -4834,12 +4819,12 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
         <div className="seg" title="Which money every number and chart on this page counts">
           {SCOPES.map(([id, label]) => <button key={id} className={scope === id ? 'on' : ''} onClick={() => setScope(id)}>{label}</button>)}
         </div>
-        <div className="seg">
+        <button className="btn-primary" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}><Icons.plus size={14}/> Transaction</button>
+      </div>
+      <div className="page-tabs">
           {[['overview','Overview'],['invoices', <>Invoices{invoices.some(i => invoiceState(i, allFinances, todayStr).id === 'overdue') && <i className="tab-alert" title="An invoice is overdue"/>}</>],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
             <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
           ))}
-        </div>
-        <button className="btn-primary" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}><Icons.plus size={14}/> Transaction</button>
       </div>
 
       {view === 'overview' && (<>
@@ -5501,7 +5486,7 @@ function Goals({ goals, finances, leads, timers, todayStr, onAdd, onUpdate, onDe
   return (
     <div className="section goals">
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Goals</div></div>
+        <div className="sched-range"/>
         <div className="seg">
           {[['active', `Active ${counts.active}`], ['done', `Reached ${counts.done}`], ['failed', `Missed ${counts.failed}`], ['all', 'All']].map(([id, label]) => (
             <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
@@ -5842,7 +5827,7 @@ function ClientManagement({ invoices = [], invoiceApi, leads, finances, ventures
     <div className="section clients">
       <SectionGhost src={uchihaArt}/>
       <div className="sched-bar">
-        <div className="sched-range"><div className="sched-title" style={{ marginLeft: 0 }}>Clients</div></div>
+        <div className="sched-range"/>
         <div className="seg">
           {[...CLIENT_STATES.map(s => [s.id, `${s.id} ${counts[s.id]}`]), ['All', `All ${clients.length}`]].map(([id, label]) => (
             <button key={id} className={filter === id ? 'on' : ''} onClick={() => setFilter(id)}>{label}</button>
@@ -6456,129 +6441,162 @@ const invMoney = (n, currency) => `${currency === 'USD' ? 'US$' : 'J$'}${(Math.r
 const invPhone = v => { const d = String(v || '').replace(/\D/g, ''); return d.length === 11 && d[0] === '1' ? `(${d.slice(1, 4)}) ${d.slice(4, 7)}-${d.slice(7)}` : v || ''; };
 const invDate = d => (d ? parseLocal(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 
-// The document itself: warm paper, Fraunces figures, a red seal. Used for the
-// live preview and the PDF, so what you see is what the client gets.
+// The document itself: ivory paper, a double gold frame with engraved corners,
+// a guilloché crest, light serif figures and nothing loud. Used for the live
+// preview and the PDF, so what you see is what the client gets.
+const INV_GOLD = '#a8843f';
+// Engraved rosette: rotated ellipses, the pattern on banknotes and certificates
+const guilloche = (r, petals, rx, ry, w = 0.35) => Array.from({ length: petals }, (_, i) =>
+  `<ellipse cx="0" cy="0" rx="${rx}" ry="${ry}" transform="rotate(${(180 / petals) * i})" fill="none" stroke="url(#gold)" stroke-width="${w}"/>`).join('') +
+  `<circle r="${r}" fill="none" stroke="url(#gold)" stroke-width="0.6"/>`;
+const goldDefs = `<defs><linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+  <stop offset="0" stop-color="#8a6a2f"/><stop offset="0.45" stop-color="#d9bc78"/><stop offset="0.7" stop-color="#a8843f"/><stop offset="1" stop-color="#7a5c26"/></linearGradient></defs>`;
+const crestSvg = (size, label) => `<svg width="${size}" height="${size}" viewBox="-50 -50 100 100" aria-hidden="true">${goldDefs}
+  ${guilloche(46, 36, 44, 16)}<circle r="40" fill="none" stroke="url(#gold)" stroke-width="0.4"/>
+  <circle r="31" fill="#fbfaf6" stroke="url(#gold)" stroke-width="0.9"/><circle r="28" fill="none" stroke="url(#gold)" stroke-width="0.3"/>
+  <text x="0" y="7.5" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-size="21" font-weight="400" font-style="italic" fill="#1a1714" letter-spacing="0.5">${label}</text></svg>`;
+const sealSvg = (word, sub, tone = 'url(#gold)') => `<svg width="112" height="112" viewBox="-60 -60 120 120" aria-hidden="true">${goldDefs}
+  <g opacity="0.92">${guilloche(56, 48, 55, 20, 0.3).replace(/url\(#gold\)/g, tone)}
+  <circle r="47" fill="#fbfaf6" stroke="${tone}" stroke-width="1.2"/><circle r="43" fill="none" stroke="${tone}" stroke-width="0.4" stroke-dasharray="1 2.2"/>
+  <text y="6" text-anchor="middle" font-family="Fraunces, Georgia, serif" font-size="22" font-weight="500" letter-spacing="4" fill="${tone}">${word}</text>
+  <text y="22" text-anchor="middle" font-family="Inter, Helvetica, sans-serif" font-size="6.2" letter-spacing="1.6" fill="${tone}">${sub}</text></g></svg>`;
+// Fine rule with a diamond at its centre
+const flourish = w => `<svg width="${w}" height="10" viewBox="0 0 ${w} 10" aria-hidden="true">${goldDefs}
+  <line x1="0" y1="5" x2="${w / 2 - 9}" y2="5" stroke="url(#gold)" stroke-width="0.6"/><line x1="${w / 2 + 9}" y1="5" x2="${w}" y2="5" stroke="url(#gold)" stroke-width="0.6"/>
+  <path d="M${w / 2} 1 L${w / 2 + 4} 5 L${w / 2} 9 L${w / 2 - 4} 5Z" fill="none" stroke="url(#gold)" stroke-width="0.7"/>
+  <circle cx="${w / 2 - 7}" cy="5" r="0.9" fill="url(#gold)"/><circle cx="${w / 2 + 7}" cy="5" r="0.9" fill="url(#gold)"/></svg>`;
+// Double frame with an engraved device in each corner (Letter at 96dpi: 816 × 1056)
+const frameSvg = () => {
+  const W = 816, H = 1056, o = 26, i = 33;
+  const corner = (x, y, sx, sy) => `<g transform="translate(${x} ${y}) scale(${sx} ${sy})">
+    <path d="M0 22 L0 0 L22 0" fill="none" stroke="url(#gold)" stroke-width="0.9"/>
+    <path d="M6 30 C6 14 14 6 30 6" fill="none" stroke="url(#gold)" stroke-width="0.45"/>
+    <path d="M10 10 m-3.2 0 l3.2 -3.2 l3.2 3.2 l-3.2 3.2z" fill="none" stroke="url(#gold)" stroke-width="0.6"/>
+    <circle cx="10" cy="10" r="0.9" fill="url(#gold)"/></g>`;
+  return `<svg class="frame" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true">${goldDefs}
+    <rect x="${o}" y="${o}" width="${W - 2 * o}" height="${H - 2 * o}" fill="none" stroke="url(#gold)" stroke-width="0.8"/>
+    <rect x="${i}" y="${i}" width="${W - 2 * i}" height="${H - 2 * i}" fill="none" stroke="url(#gold)" stroke-width="0.3"/>
+    ${corner(i + 6, i + 6, 1, 1)}${corner(W - i - 6, i + 6, -1, 1)}${corner(i + 6, H - i - 6, 1, -1)}${corner(W - i - 6, H - i - 6, -1, -1)}</svg>`;
+};
+
 function invoiceHtml(inv, { paid = 0, payments = [], asReceipt = false } = {}) {
   const kind = asReceipt ? 'receipt' : inv.kind || 'invoice';
   const K = INV_KINDS[kind], p = { ...INV_PROFILE, ...(inv.from || {}) }, c = inv.client || {};
   const t = invoiceTotals(inv), m = n => invMoney(n, inv.currency);
   const balance = Math.max(0, t.total - paid);
   const isPaid = kind === 'receipt' || (kind === 'invoice' && t.total > 0 && paid >= t.total);
+  const lastPay = (payments[payments.length - 1] || {}).date || inv.issueDate;
+  // JCommerce → JC: the capitals of the first word, else the first letters of two words
+  const firstWord = (p.company || 'JC').split(/\s+/)[0], caps = firstWord.replace(/[^A-Z]/g, '');
+  const initials = (caps.length >= 2 ? caps.slice(0, 2) : (p.company || 'JC').replace(/&/g, ' ').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('')).toUpperCase();
   const rows = (inv.items || []).filter(it => it.desc || Number(it.rate)).map((it, i) => `
     <tr>
       <td class="n">${String(i + 1).padStart(2, '0')}</td>
       <td><div class="desc">${escHtml(it.desc || 'Item')}</div>${it.detail ? `<div class="detail">${escHtml(it.detail)}</div>` : ''}</td>
-      <td class="r mono">${Number(it.qty) || 0}</td>
-      <td class="r mono">${m(it.rate)}</td>
-      <td class="r mono strong">${m((Number(it.qty) || 0) * (Number(it.rate) || 0))}</td>
+      <td class="r fig">${Number(it.qty) || 0}</td>
+      <td class="r fig">${m(it.rate)}</td>
+      <td class="r fig">${m((Number(it.qty) || 0) * (Number(it.rate) || 0))}</td>
     </tr>`).join('');
-  const due = kind === 'quote' ? (inv.dueDate ? `Valid until ${invDate(inv.dueDate)}` : 'Valid for 30 days')
-    : kind === 'receipt' ? `Received ${invDate((payments[payments.length - 1] || {}).date || inv.issueDate)}`
-    : inv.dueDate && inv.dueDate !== inv.issueDate ? invDate(inv.dueDate) : 'On receipt';
+  const dueLine = kind === 'quote' ? ['Valid until', inv.dueDate ? invDate(inv.dueDate) : '30 days']
+    : kind === 'receipt' ? ['Received', invDate(lastPay)]
+    : ['Due', inv.dueDate && inv.dueDate !== inv.issueDate ? invDate(inv.dueDate) : 'On receipt'];
   const headline = kind === 'quote' ? ['Quoted total', t.total] : kind === 'receipt' ? ['Amount received', paid || t.total] : isPaid ? ['Paid in full', t.total] : ['Amount due', balance];
-  const payRows = payments.map(f => `<tr><td>${invDate(f.date)}</td><td>${escHtml(f.paymentStage || f.category || 'Payment')}</td><td class="r mono">${m(amountOf(f))}</td></tr>`).join('');
+  const payRows = payments.map(f => `<tr><td>${invDate(f.date)}</td><td>${escHtml(f.paymentStage || f.category || 'Payment')}</td><td class="r fig">${m(amountOf(f))}</td></tr>`).join('');
+  const seal = inv.status === 'void' ? sealSvg('VOID', 'NO LONGER PAYABLE', '#8a8178') : isPaid ? sealSvg('PAID', invDate(lastPay).toUpperCase()) : '';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${escHtml(inv.number)} · ${escHtml(c.name || '')}</title>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   @page { size: Letter; margin: 0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html { background: #fbf7f0; }
-  body { font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; color: #241816; background: #fbf7f0; font-size: 12.5px; line-height: 1.55;
-    width: 8.5in; min-height: 11in; margin: 0 auto; padding: 0.6in 0.75in 0.45in; position: relative; display: flex; flex-direction: column; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  .serif { font-family: Fraunces, Georgia, serif; }
-  .mono { font-family: 'IBM Plex Mono', Menlo, monospace; }
-  .rail { position: absolute; left: 0; top: 0; bottom: 0; width: 0.28in; background: #a51b28; }
-  .rail::after { content: ''; position: absolute; right: -3px; top: 0; bottom: 0; width: 3px; background: #d3a855; }
-  header { display: flex; justify-content: space-between; align-items: flex-start; }
-  .brand { display: flex; gap: 14px; align-items: center; }
-  .brand img { width: 54px; height: 54px; object-fit: contain; border-radius: 10px; }
-  .brand .co { font-family: Fraunces, Georgia, serif; font-size: 21px; font-weight: 700; letter-spacing: -0.01em; }
-  .brand .who { font-size: 11px; color: #7a6560; margin-top: 2px; }
-  .title { display: flex; align-items: center; gap: 16px; text-align: right; }
-  .title h1 { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 500; font-size: 46px; line-height: 1; letter-spacing: -0.02em; color: #241816; }
-  .title .num { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 12px; letter-spacing: 0.08em; color: #a51b28; margin-top: 8px; }
-  .seal { width: 40px; height: 66px; flex-shrink: 0; border: 2.5px solid #c8202f; border-radius: 6px; color: #c8202f;
-    display: flex; align-items: center; justify-content: center; writing-mode: vertical-rl; font-size: 15px; font-weight: 700; letter-spacing: 3px; line-height: 1; transform: rotate(-4deg); opacity: 0.85;
-    font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif; }
-  .rule { height: 1px; background: #241816; margin: 24px 0 0; }
-  .rule.thin { background: #e6dccf; margin: 0; }
-  .strip { display: grid; grid-template-columns: 1fr 1fr 1.3fr; border-bottom: 1px solid #e6dccf; }
-  .strip > div { padding: 14px 0; }
-  .strip > div + div { padding-left: 18px; border-left: 1px solid #e6dccf; }
-  .lbl { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #9a857d; margin-bottom: 4px; }
-  .val { font-size: 13px; font-weight: 500; }
-  .big { font-family: Fraunces, Georgia, serif; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; color: ${isPaid ? '#1f7a58' : '#a51b28'}; line-height: 1.1; }
-  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin: 22px 0 4px; }
-  .parties .name { font-family: Fraunces, Georgia, serif; font-size: 17px; font-weight: 600; margin-bottom: 2px; }
-  .parties p { color: #4d3b37; }
+  html, body { background: #fbfaf6; }
+  body { font-family: Inter, -apple-system, Helvetica, Arial, sans-serif; color: #1a1714; font-size: 11.5px; line-height: 1.6;
+    width: 8.5in; min-height: 11in; margin: 0 auto; padding: 0.6in 0.95in 0.55in; position: relative; display: flex; flex-direction: column;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; font-feature-settings: "kern", "liga"; }
+  .frame { position: fixed; inset: 0; pointer-events: none; }
+  .serif, .fig, h1, .name, .big, .amt { font-family: Fraunces, Georgia, serif; }
+  .fig { font-variant-numeric: lining-nums tabular-nums; }
+  .cap { font-size: 8px; font-weight: 600; letter-spacing: 0.26em; text-transform: uppercase; color: ${INV_GOLD}; }
+  .muted { color: #8a8178; }
+  .crest { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .crest .co { font-size: 9.5px; font-weight: 500; letter-spacing: 0.42em; text-transform: uppercase; color: #1a1714; margin-top: 2px; padding-left: 0.42em; }
+  .crest .where { font-size: 8.5px; letter-spacing: 0.24em; text-transform: uppercase; color: #8a8178; padding-left: 0.24em; }
+  .kanji { position: fixed; right: 0.52in; top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+    font-size: 10px; letter-spacing: 0.9em; color: ${INV_GOLD}; opacity: 0.55; }
+  .flour { display: flex; justify-content: center; margin: 6px 0 8px; }
+  .head { display: flex; justify-content: space-between; align-items: flex-end; }
+  h1 { font-weight: 300; font-style: italic; font-size: 44px; line-height: 0.95; letter-spacing: -0.015em; }
+  .num { margin-top: 10px; font-size: 10px; letter-spacing: 0.22em; color: ${INV_GOLD}; font-weight: 500; }
+  .meta { text-align: right; display: grid; grid-template-columns: auto auto; gap: 4px 18px; align-items: baseline; }
+  .meta .v { font-size: 12px; color: #1a1714; }
+  .meta .big { grid-column: 1 / -1; font-size: 28px; font-weight: 400; letter-spacing: -0.01em; line-height: 1.1; margin-top: 8px; color: ${isPaid ? '#1a1714' : '#1a1714'}; }
+  .hair { height: 1px; background: linear-gradient(90deg, transparent, ${INV_GOLD} 12%, #d9bc78 50%, ${INV_GOLD} 88%, transparent); opacity: 0.7; margin: 16px 0 0; }
+  .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 14px 0 0; }
+  .parties .name { font-size: 17px; font-weight: 400; margin: 7px 0 3px; }
+  .parties p { color: #5e5750; font-size: 11px; line-height: 1.55; }
   table { width: 100%; border-collapse: collapse; }
-  .items { margin-top: 22px; }
-  .items th { font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase; color: #9a857d; font-weight: 500;
-    text-align: left; padding: 0 0 9px; border-bottom: 1px solid #241816; }
-  .items td { padding: 11px 0; border-bottom: 1px solid #e6dccf; vertical-align: top; }
-  .items td + td, .items th + th { padding-left: 12px; }
-  .n { width: 30px; font-family: 'IBM Plex Mono', Menlo, monospace; color: #b4a39b; font-size: 11px; }
-  .desc { font-weight: 500; font-size: 13px; }
-  .detail { color: #7a6560; font-size: 11.5px; margin-top: 2px; }
+  .items { margin-top: 16px; }
+  .items th { text-align: left; padding: 0 0 10px; border-bottom: 0.75px solid ${INV_GOLD}; }
+  .items td { padding: 7px 0; border-bottom: 0.5px solid #ebe4d6; vertical-align: top; font-size: 12px; }
+  .items td + td, .items th + th { padding-left: 14px; }
+  .n { width: 26px; color: #b3a891; font-family: Fraunces, Georgia, serif; font-size: 11px; font-variant-numeric: lining-nums; }
+  .desc { font-weight: 500; }
+  .detail { color: #8a8178; font-size: 10.5px; margin-top: 2px; }
   .r { text-align: right !important; white-space: nowrap; }
-  .strong { font-weight: 500; color: #241816; }
-  .sum { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; gap: 20px; }
-  .sum table { width: 3.3in; }
-  .sum td { padding: 5px 0; color: #4d3b37; }
-  .sum .total td { border-top: 1px solid #241816; padding-top: 12px; color: #241816; }
-  .sum .total .amt { font-family: Fraunces, Georgia, serif; font-size: 22px; font-weight: 600; }
-  .sum .paid td { color: #1f7a58; }
-  .sum .bal td { font-weight: 600; color: #a51b28; }
-  .lower { display: grid; grid-template-columns: 1.1fr 1fr; gap: 28px; margin-top: 26px; break-inside: avoid; }
-  .box { border-top: 2px solid #d3a855; padding-top: 10px; }
-  .box p { white-space: pre-line; color: #4d3b37; }
-  .history { margin-top: 20px; break-inside: avoid; }
-  .history td { padding: 6px 0; border-bottom: 1px solid #efe7dc; color: #4d3b37; }
-  footer { margin-top: auto; padding-top: 28px; display: flex; justify-content: space-between; align-items: flex-end;
-    font-size: 10.5px; color: #9a857d; }
-  footer > div:last-child { border-top: 1px solid #e6dccf; padding-top: 8px; }
-  footer .thanks { font-family: Fraunces, Georgia, serif; font-style: italic; font-size: 15px; color: #241816; }
-  .stamp { margin-left: 0.4in; transform: rotate(-10deg); border: 3px double ${kind === 'quote' ? '#9a857d' : '#1f7a58'}; color: ${kind === 'quote' ? '#9a857d' : '#1f7a58'};
-    padding: 8px 18px; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 30px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.55; border-radius: 6px; text-align: center; line-height: 1.05; }
-  .stamp small { display: block; font-family: 'IBM Plex Mono', Menlo, monospace; font-size: 9px; letter-spacing: 0.12em; font-weight: 500; }
-  .void { color: #a51b28; border-color: #a51b28; }
+  .sum { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; gap: 24px; }
+  .sum table { width: 3.2in; }
+  .sum td { padding: 3px 0; color: #5e5750; font-size: 11.5px; }
+  .sum .total td { padding-top: 10px; color: #1a1714; border-top: 0.75px solid ${INV_GOLD}; }
+  .sum .total .amt { font-size: 24px; font-weight: 400; }
+  .sum .bal td { color: #1a1714; font-weight: 500; }
+  .seal { transform: rotate(-9deg); margin-left: 0.2in; }
+  .history { margin-top: 8px; break-inside: avoid; }
+  .history td { padding: 3px 0; border-bottom: 0.5px solid #ebe4d6; color: #5e5750; font-size: 11px; }
+  .lower { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 14px; break-inside: avoid; }
+  .lower p { white-space: pre-line; color: #3d3833; font-size: 11px; line-height: 1.75; margin-top: 7px; }
+  footer { margin-top: auto; padding-top: 10px; display: flex; flex-direction: column; align-items: center; gap: 9px; text-align: center; }
+  footer .thanks { font-family: Fraunces, Georgia, serif; font-style: italic; font-weight: 300; font-size: 17px; }
+  footer .contact { font-size: 8px; letter-spacing: 0.26em; text-transform: uppercase; color: #8a8178; padding-left: 0.26em; }
 </style></head><body>
-<div class="rail"></div>
-<header>
-  <div class="brand"><img src="${LOGO_B64}" alt=""><div><div class="co">${escHtml(p.company)}</div><div class="who">${escHtml(p.name)} · ${escHtml(p.location)}</div></div></div>
-  <div class="title"><div class="seal">${K.jp}</div><div><h1>${K.title}</h1><div class="num">№ ${escHtml(inv.number)}</div></div></div>
-</header>
-<div class="rule"></div>
-<div class="strip">
-  <div><div class="lbl">Issued</div><div class="val">${invDate(inv.issueDate)}</div></div>
-  <div><div class="lbl">${kind === 'quote' ? 'Validity' : kind === 'receipt' ? 'Payment' : 'Due'}</div><div class="val">${due}</div></div>
-  <div><div class="lbl">${headline[0]}</div><div class="big">${m(headline[1])}</div></div>
+${frameSvg()}
+<div class="kanji">${K.jp}</div>
+<div class="crest">${crestSvg(62, escHtml(initials))}<div class="co">${escHtml(p.company)}</div><div class="where">${escHtml(p.location)}</div></div>
+<div class="flour">${flourish(220)}</div>
+<div class="head">
+  <div><h1>${K.title}</h1><div class="num">№ ${escHtml(inv.number)}</div></div>
+  <div class="meta">
+    <span class="cap">Issued</span><span class="v">${invDate(inv.issueDate)}</span>
+    <span class="cap">${dueLine[0]}</span><span class="v">${dueLine[1]}</span>
+    <span class="cap" style="grid-column:1/-1;margin-top:12px">${headline[0]}</span>
+    <span class="big fig">${m(headline[1])}</span>
+  </div>
 </div>
+<div class="hair"></div>
 <div class="parties">
-  <div><div class="lbl">${kind === 'receipt' ? 'Received from' : kind === 'quote' ? 'Prepared for' : 'Billed to'}</div>
+  <div><div class="cap">${kind === 'receipt' ? 'Received from' : kind === 'quote' ? 'Prepared for' : 'Billed to'}</div>
     <div class="name">${escHtml(c.name || '—')}</div>
     <p>${[c.contact, c.location, invPhone(c.phone), c.email].filter(Boolean).map(escHtml).join('<br>')}</p></div>
-  <div><div class="lbl">From</div>
-    <div class="name">${escHtml(p.company)}</div>
-    <p>${[p.name, p.location, p.phone, p.email].filter(Boolean).map(escHtml).join('<br>')}</p></div>
+  <div><div class="cap">From</div>
+    <div class="name">${escHtml(p.name)}</div>
+    <p>${[p.company, p.phone, p.email].filter(Boolean).map(escHtml).join('<br>')}</p></div>
 </div>
 <table class="items">
-  <thead><tr><th>#</th><th>Description</th><th class="r">Qty</th><th class="r">Rate</th><th class="r">Amount</th></tr></thead>
+  <thead><tr><th class="cap">No.</th><th class="cap">Description</th><th class="cap r">Qty</th><th class="cap r">Rate</th><th class="cap r">Amount</th></tr></thead>
   <tbody>${rows || '<tr><td></td><td class="detail">No items yet</td><td></td><td></td><td></td></tr>'}</tbody>
 </table>
-<div class="sum">${inv.status === 'void' ? '<div class="stamp void">Void</div>' : isPaid ? `<div class="stamp">Paid<small>${invDate((payments[payments.length - 1] || {}).date || inv.issueDate)}</small></div>` : '<div></div>'}<table>
-  <tr><td>Subtotal</td><td class="r mono">${m(t.subtotal)}</td></tr>
-  ${t.discount ? `<tr><td>Discount${inv.discountType === '%' ? ` (${Number(inv.discount)}%)` : ''}</td><td class="r mono">−${m(t.discount)}</td></tr>` : ''}
-  ${t.tax ? `<tr><td>GCT (${Number(inv.taxRate)}%)</td><td class="r mono">${m(t.tax)}</td></tr>` : ''}
-  <tr class="total"><td>Total</td><td class="r amt">${m(t.total)}</td></tr>
-  ${kind === 'invoice' && paid > 0 ? `<tr class="paid"><td>Paid to date</td><td class="r mono">−${m(paid)}</td></tr><tr class="bal"><td>Balance due</td><td class="r mono">${m(balance)}</td></tr>` : ''}
+<div class="sum"><div class="seal">${seal}</div><table>
+  <tr><td>Subtotal</td><td class="r fig">${m(t.subtotal)}</td></tr>
+  ${t.discount ? `<tr><td>Discount${inv.discountType === '%' ? ` (${Number(inv.discount)}%)` : ''}</td><td class="r fig">−${m(t.discount)}</td></tr>` : ''}
+  ${t.tax ? `<tr><td>GCT (${Number(inv.taxRate)}%)</td><td class="r fig">${m(t.tax)}</td></tr>` : ''}
+  <tr class="total"><td>Total</td><td class="r amt fig">${m(t.total)}</td></tr>
+  ${kind === 'invoice' && paid > 0 && !isPaid ? `<tr><td>Paid to date</td><td class="r fig">−${m(paid)}</td></tr><tr class="bal"><td>Balance due</td><td class="r fig">${m(balance)}</td></tr>` : ''}
 </table></div>
-${payments.length && kind !== 'quote' ? `<table class="history"><tr><td colspan="3"><div class="lbl" style="margin:0">Payments received</div></td></tr>${payRows}</table>` : ''}
+${payments.length && kind !== 'quote' ? `<table class="history"><tr><td colspan="3" style="border:none;padding-bottom:4px"><span class="cap">Payments received</span></td></tr>${payRows}</table>` : ''}
 <div class="lower">
-  <div class="box"><div class="lbl">${kind === 'quote' ? 'Next step' : kind === 'receipt' ? 'Received with thanks' : 'How to pay'}</div><p>${kind === 'quote' ? 'Reply to accept this quote and we will send the first invoice to begin.' : kind === 'receipt' ? 'Payment received. Please keep this receipt for your records.' : escHtml(p.payment)}${kind === 'invoice' ? `\nReference: ${escHtml(inv.number)}` : ''}</p></div>
-  ${inv.notes ? `<div class="box"><div class="lbl">Notes</div><p>${escHtml(inv.notes)}</p></div>` : '<div></div>'}
+  <div><div class="cap">${kind === 'quote' ? 'Next step' : kind === 'receipt' ? 'Received with thanks' : 'Payment'}</div>
+    <p>${kind === 'quote' ? 'Reply to accept this quote and the first invoice will follow so work can begin.' : kind === 'receipt' ? 'Payment received in full. Please keep this receipt for your records.' : `${escHtml(p.payment)}${kind === 'invoice' ? `\nReference: ${escHtml(inv.number)}` : ''}`}</p></div>
+  ${inv.notes ? `<div><div class="cap">Notes</div><p>${escHtml(inv.notes)}</p></div>` : '<div></div>'}
 </div>
-<footer><div class="thanks">Thank you for your business.</div><div class="mono">${escHtml(p.company)} · ${escHtml(p.phone)} · ${escHtml(p.email)}</div></footer>
+<footer>${flourish(140)}<div class="thanks">With thanks</div><div class="contact">${[p.phone, p.email].filter(Boolean).map(escHtml).join('  ·  ')}</div></footer>
 </body></html>`;
 }
 
