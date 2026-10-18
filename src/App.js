@@ -7,7 +7,7 @@ import {
   sendPasswordResetEmail, signOut,
 } from 'firebase/auth';
 import {
-  collection, addDoc, updateDoc, deleteDoc,
+  collection, addDoc, updateDoc, deleteDoc, setDoc,
   doc, onSnapshot, query, orderBy, where, limit, serverTimestamp
 } from 'firebase/firestore';
 import {
@@ -222,6 +222,7 @@ function addDays(dateStr, n) {
   return localDateStr(d);
 }
 
+const daysBetween = (from, to) => Math.round((parseLocal(to) - parseLocal(from)) / 864e5);
 function mondayOf(dateStr) {
   const d = parseLocal(dateStr);
   const dow = d.getDay();
@@ -279,7 +280,7 @@ const XP_PER_MOVE = 10;
 // never reach back before that day, and nothing is ever taken for today:
 // penalties only land once a day, week or month is over.
 const XP_STRICT_FROM = '2026-10-09';
-function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [] }) {
+function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {} }) {
   const rows = [];
   const row = (k, tab, plus, minus, how) => rows.push({ k, tab, plus: Math.round(plus), minus: Math.round(minus), net: Math.round(plus - minus), how });
   const net = (k, tab, n, how) => row(k, tab, Math.max(0, n), Math.max(0, -n), how);
@@ -310,17 +311,19 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
   // Tide Log: +15 an entry, −5 for a day with none
   row('Tide Log', 'dashboard', journal.length * 15, strictDays.filter(d => !journal.some(j => j.date === d)).length * 5, '+15 an entry, −5 for a day with none');
 
-  // Studies: +5 a topic backed by study time, −20 for a full week under two hours of study
+  // Studies: +5 a topic backed by study time. Before the stricter rules: −20 for a week under two
+  // hours. Since then: each course owes its credit hours every week, and coursework costs extra
   let sm = 0;
   if (courses.length) {
     let m = mondayOf(XP_STRICT_FROM); if (m < XP_STRICT_FROM) m = addDays(m, 7);
-    for (; addDays(m, 6) < todayStr; m = addDays(m, 7)) {
+    for (; addDays(m, 6) < todayStr && m < STUDY_FIRST_MONDAY; m = addDays(m, 7)) {
       const end = addDays(m, 6);
       const sec = timers.filter(t => t.category === 'Study').reduce((t, x) => t + (x.sessions || []).reduce((u, ss) => { const d = localDateStr(new Date(ss.end)); return u + (d >= m && d <= end ? Number(ss.sec) || 0 : 0); }, 0), 0);
       if (sec < 7200) sm += 20;
     }
   }
-  row('Studies', 'studies', studyXP(courses, timers, todayStr), sm, '+5 a topic backed by study time, −20 for a week under two hours of study');
+  sm += studyPenalty(courses, timers, todos, todayStr);
+  row('Studies', 'studies', studyXP(courses, timers, todayStr), sm, '+5 a topic backed by study time; −25 a course under its credit hours in a week, −15 a tutorial and −40 a deadline not done on its day');
 
   // Pipeline: +200 a client won, −5 for each follow-up left past its date
   const liveLead = l => !['Flaked', 'Lost'].includes(l.status);
@@ -363,9 +366,14 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
     else if (m.done && m.doneAt && m.doneAt > m.due) vm += 5;
   });
   row('Ventures', 'ventures', checked.size * 10 + moves.filter(m => m.done).length * XP_PER_MOVE, vm, '+10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late');
+
+  // In the red: every day the total sits below zero costs 100 more, whatever else happens
+  const red = Object.keys(debtDays).filter(d => debtDays[d]).length;
+  if (red) row('In the red', 'dashboard', 0, red * 100, '−100 XP for every day your total is below zero');
   return rows;
 }
-const calcXP = data => Math.max(0, xpLedger(data).reduce((t, r) => t + r.net, 0));
+// No floor: XP can go below zero, and the levels follow it down
+const calcXP = data => xpLedger(data).reduce((t, r) => t + r.net, 0);
 
 // ─── GOALS ────────────────────────────────────────────────────────────────────
 // A goal is not always a number. Three shapes:
@@ -425,14 +433,20 @@ function goalStatus(g, todayStr) {
 // Wins logged after the fact are on the record but earn nothing.
 const goalXP = (g, todayStr) => { const st = goalStatus(g, todayStr); return st === 'done' ? (g.logged ? 0 : 100) : st === 'failed' ? -50 : 0; };
 
+// Level 1 starts at 0 XP. Below zero there is no Level 0: 1 to 500 under is Level −1,
+// 501 to 1,000 under is Level −2, and so on. progress then measures how deep in that level.
 function xpToLevel(xp) {
-  return { level: Math.floor(xp/500)+1, progress: (xp%500)/500, xpInLevel: xp%500 };
+  if (xp >= 0) return { level: Math.floor(xp / 500) + 1, progress: (xp % 500) / 500, xpInLevel: xp % 500, inRed: false };
+  const debt = -xp;
+  return { level: -Math.ceil(debt / 500), progress: (debt % 500 || 500) / 500, xpInLevel: xp, inRed: true };
 }
+// A plain hyphen: the display font has no true minus sign
+const levelName = level => (level < 0 ? `Level -${-level}` : `Level ${level}`);
 
 // Min monthly profit required at each level: J$5,000 × 2^(level-1)
 // Level 1 = J$5k, Level 2 = J$10k, Level 3 = J$20k, Level 4 = J$40k ...
 function minProfitForLevel(level) {
-  return 5000 * Math.pow(2, level - 1);
+  return 5000 * Math.pow(2, Math.max(1, level) - 1);
 }
 
 // ─── USEANIMATION HOOK ────────────────────────────────────────────────────────
@@ -1168,6 +1182,7 @@ const RANKS = [
   { from: 15, jp: '影',     en: 'Kage' },
 ];
 const rankOf = level => {
+  if (level < 1) return { from: level, jp: '赤字', en: 'In the red', next: RANKS[0] };
   const i = RANKS.reduce((at, r, k) => (level >= r.from ? k : at), 0);
   return { ...RANKS[i], next: RANKS[i + 1] || null };
 };
@@ -1846,10 +1861,24 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts };
+  const debtDoc = settings.find(x => x.key === 'xpDebt');
+  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {} };
   const ledger = xpLedger(xpData);
   const xp = calcXP(xpData);
-  const { level, progress, xpInLevel } = xpToLevel(xp);
+  const { level, progress, xpInLevel, inRed } = xpToLevel(xp);
+  // Every day the total is below zero is charged once. If it was below zero when the
+  // console was last open, the days in between were too. Only runs on fully loaded data.
+  useEffect(() => {
+    if (loading) return;
+    const days = { ...(debtDoc?.days || {}) }, last = debtDoc?.lastSeen, wasRed = !!debtDoc?.lastNegative;
+    let added = false;
+    if (xp < 0) {
+      if (wasRed && last) for (let d = addDays(last, 1); d < todayStr; d = addDays(d, 1)) if (!days[d]) { days[d] = true; added = true; }
+      if (!days[todayStr]) { days[todayStr] = true; added = true; }
+    }
+    if (added || last !== todayStr || wasRed !== (xp < 0))
+      setDoc(doc(db, 'settings', 'xpDebt'), { key: 'xpDebt', days, lastSeen: todayStr, lastNegative: xp < 0, createdAt: debtDoc?.createdAt || serverTimestamp() }, { merge: true }).catch(() => {});
+  }, [loading, xp < 0, todayStr, debtDoc?.lastSeen, debtDoc?.lastNegative]); // eslint-disable-line react-hooks/exhaustive-deps
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
   useEffect(() => {
@@ -1972,12 +2001,12 @@ function App() {
           </HeadMenu>
           <HeadMenu button={(open, toggle) => (
             <button className={`head-me ${open ? 'on' : ''}`} onClick={toggle} title="Account and settings">
-              <span className="head-me-lv">L{level}</span>
+              <span className={`head-me-lv ${level < 0 ? 'red' : ''}`}>L{level}</span>
               <span className="head-me-init">JS</span>
               {alerts.length > 0 && <span className="head-me-dot"/>}
             </button>
           )}>
-            <div className="hmenu-id"><b>Jadan Spencer</b><i>Level {level} · {xp} XP</i></div>
+            <div className="hmenu-id"><b>Jadan Spencer</b><i>{levelName(level)} · {xp} XP</i></div>
             <hr/>
             <button onClick={requestPermission}><b>Notifications</b><i>{notifSubbed ? 'On, pushing to this device' : notifPerm === 'granted' ? 'Allowed' : 'Off. Click to turn on'}</i></button>
             <button onClick={toggleLive}><b>Motion</b><i>{live ? 'On: petals and live tickers' : 'Off: everything still'}</i></button>
@@ -2020,7 +2049,7 @@ function App() {
         const oweNow = debts.filter(d => d.direction === 'owe').reduce((t, d) => t + debtLeft(d), 0), owedNow = debts.filter(d => d.direction === 'owed').reduce((t, d) => t + debtLeft(d), 0);
         if (oweNow) out.push({ t: `You owe ${J(oweNow)}`, tab: 'finance', lv: debts.some(d => d.direction === 'owe' && debtLeft(d) > 0 && d.dueDate && d.dueDate < todayStr) ? 'hot' : '' });
         if (owedNow) out.push({ t: `${J(owedNow)} owed to you`, tab: 'finance' });
-        out.push({ t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
+        out.push(inRed ? { t: `In the red: ${-xp} XP to climb out, −100 a day until then`, tab: 'dashboard', lv: 'hot' } : { t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
         return out;
       })()}/>
 
@@ -2048,7 +2077,7 @@ function App() {
           onAdd={d=>add('leads',d)} onUpdate={(id,d)=>update('leads',id,d)} onDelete={removeLead} onLogPayment={logPayment} onUpdatePayment={updateLinkedPayment}/>}
         {tab==='habits'   && <Habits habits={habits} weekDates={weekDates} todayStr={todayStr} onAdd={d=>add('habits',{...d,completions:{}})} onUpdate={(id,d)=>update('habits',id,d)} onDelete={id=>remove('habits',id)} onToggle={toggleHabit}/>}
         {tab==='focus'    && <Focus ventures={ventures} timers={timers} todayStr={todayStr} onAdd={d=>add('timers',d)} onUpdate={(id,d)=>update('timers',id,d)} onDelete={id=>remove('timers',id)} onStart={startTimer} onPause={pauseTimer} courses={courses}/>}
-        {tab==='studies'  && <Studies courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
+        {tab==='studies'  && <Studies todos={todos} onToggleTodo={toggleTodo} onAddTask={d => add('todos', { addedDate: todayStr, ...d, doneOn: {} })} courses={courses} timers={timers} schedule={schedule} todayStr={todayStr} balance={balanceDoc?.targets} onSetBalance={setBalance}
           onAdd={d=>add('courses',d)} onUpdate={(id,d)=>update('courses',id,d)} onDelete={removeCourse}
           onAddTimer={d=>add('timers',d)} onStartTimer={startTimer} onPauseTimer={pauseTimer}/>}
         {tab==='todos'    && <Todos todos={todos} todayStr={todayStr} onAdd={d=>add('todos',{addedDate:todayStr,...d,doneOn:{}})} onUpdate={(id,d)=>update('todos',id,d)} onDelete={id=>remove('todos',id)} onToggle={toggleTodo}/>}
@@ -2109,11 +2138,11 @@ function App() {
             <span className="nav-key">⌘B</span>
           </button>
         )}
-        <div className="nav-foot" title={`Level ${level} · ${xpInLevel} / 500 XP`}>
-          <div className="nav-foot-lv">{navMin ? `L${level}` : `Level ${level}`}</div>
+        <div className={`nav-foot ${inRed ? 'red' : ''}`} title={inRed ? `${levelName(level)} · ${xp} XP · −100 XP every day below zero` : `Level ${level} · ${xpInLevel} / 500 XP`}>
+          <div className="nav-foot-lv">{navMin ? `L${level}` : levelName(level)}</div>
           <div className="nav-rank"><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</div>
           <div className="xp-track"><div className="xp-fill" style={{width:`${progress*100}%`}}/></div>
-          <div className="nav-foot-xp">{xpInLevel} / 500 XP</div>
+          <div className="nav-foot-xp">{inRed ? `${xp} XP · −100/day` : `${xpInLevel} / 500 XP`}</div>
         </div>
       </nav>
 
@@ -2433,10 +2462,10 @@ function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, go
           <div><b className={dangerCount ? 'bad' : 'good'}>{dangerCount}</b><span>urgent</span></div>
         </div>
         <div className="home-level">
-          <span className="home-lv">Level {level}</span>
+          <span className={`home-lv ${level < 0 ? 'red' : ''}`}>{levelName(level)}</span>
           <span className="home-rank" title={rankOf(level).next ? `${rankOf(level).next.en} at Level ${rankOf(level).next.from}` : 'Top rank'}><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</span>
           <div className="xp-track home-xp"><div className="xp-fill" style={{ width: `${progress * 100}%` }}/></div>
-          <span className="home-xpn">{xpInLevel} / 500 XP</span>
+          <span className={`home-xpn ${xp < 0 ? 'red' : ''}`}>{xp < 0 ? `${xp} XP · in the red, −100 a day` : `${xpInLevel} / 500 XP`}</span>
         </div>
       </div>
 
@@ -3729,6 +3758,34 @@ function TimerModal({ data, todayStr, courses = [], ventures = [], onSave, onGiv
 // is what backs the ticks: nobody is watching, so the timer is the witness.
 const MIN_PER_TOPIC = 20;   // focus minutes that back one ticked topic
 const XP_PER_TOPIC = 5;
+// ── Coursework: tutorials and deadlines are tasks that belong to a course ───
+// Stricter rules start here. Each course owes its credit hours of linked study
+// every week (Monday to Sunday), and coursework not done on its day costs on top
+// of the task's own −10: −15 a tutorial, −40 a deadline.
+const STUDY_STRICT_FROM = '2026-10-18';
+const STUDY_FIRST_MONDAY = '2026-10-19';
+const COURSEWORK_DUE = /exam|midterm|assignment|project|quiz|lab\b|check-in|test\b/i;
+const codeKey = v => String(v || '').toUpperCase().replace(/\s/g, '');
+const courseOfTask = (t, courses) => courses.find(c => c.id === t.courseId) || courses.find(c => c.code && codeKey(t.title).startsWith(codeKey(c.code)));
+const courseworkKind = t => t.kind || (/tutorial/i.test(t.title) ? 'tutorial' : COURSEWORK_DUE.test(t.title) ? 'assessment' : 'study');
+const weeklyTargetSec = c => (Number(c.credits) || 3) * 3600;
+const weekStudySec = (course, timers, monday) => {
+  const end = addDays(monday, 6);
+  return timers.filter(t => t.courseId === course.id).reduce((s, t) => s + (t.sessions || []).reduce((u, ss) => {
+    const d = localDateStr(new Date(ss.end)); return u + (d >= monday && d <= end ? Number(ss.sec) || 0 : 0);
+  }, 0), 0);
+};
+function studyPenalty(courses, timers, todos, todayStr) {
+  let m = 0;
+  for (let mon = STUDY_FIRST_MONDAY; addDays(mon, 6) < todayStr; mon = addDays(mon, 7))
+    courses.forEach(c => { if (weekStudySec(c, timers, mon) < weeklyTargetSec(c)) m += 25; });
+  todos.forEach(t => {
+    if (!t.addedDate || t.addedDate < STUDY_STRICT_FROM || t.addedDate >= todayStr || t.doneOn?.[t.addedDate] || !courseOfTask(t, courses)) return;
+    const k = courseworkKind(t);
+    m += k === 'assessment' ? 40 : k === 'tutorial' ? 15 : 0;
+  });
+  return m;
+}
 const COURSE_HEX = ['#e6c47c', '#ff9a4a', '#e63946', '#3ab88e', '#7fb4ff', '#c58bd6'];
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const leavesOf = nodes => (nodes || []).flatMap(n => (n.children?.length ? leavesOf(n.children) : [n]));
@@ -3860,7 +3917,7 @@ function BalanceCard({ schedule, timers, todayStr, targets, onSetTargets }) {
   );
 }
 
-function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, onAdd, onUpdate, onDelete, onAddTimer, onStartTimer, onPauseTimer }) {
+function Studies({ todos = [], onToggleTodo, onAddTask, courses, timers, schedule, todayStr, balance, onSetBalance, onAdd, onUpdate, onDelete, onAddTimer, onStartTimer, onPauseTimer }) {
   const { confirm, ConfirmUI } = useConfirm();
   const [sel, setSel] = useState(null);
   const [form, setForm] = useState(null);
@@ -3883,6 +3940,16 @@ function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, o
   const totalDone = courses.reduce((s, c) => s + stats[c.id].done, 0);
   const weekSec = timers.filter(t => t.category === 'Study').reduce((s, t) => s + (t.sessions || []).filter(x => localDateStr(new Date(x.end)) >= mondayOf(todayStr)).reduce((a, x) => a + (Number(x.sec) || 0), 0) + timerRunSec(t, Date.now()), 0);
   const nextExam = list.find(c => c.examDate && stats[c.id].daysToExam >= 0);
+  // Coursework: tasks that belong to a course (linked, or named with its code)
+  const thisMonday = mondayOf(todayStr);
+  const work = todos.filter(t => !t.movedTo || taskDone(t)).map(t => ({ t, c: courseOfTask(t, courses), kind: courseworkKind(t), done: taskDone(t) })).filter(x => x.c);
+  const workOf = id => work.filter(x => x.c.id === id);
+  const missed = work.filter(x => !x.done && x.t.addedDate < todayStr && x.kind !== 'study');
+  const dueWeek = work.filter(x => !x.done && x.t.addedDate >= todayStr && x.t.addedDate <= addDays(todayStr, 6));
+  const nextDeadline = work.filter(x => !x.done && x.kind === 'assessment' && x.t.addedDate >= todayStr).sort((a, b) => a.t.addedDate.localeCompare(b.t.addedDate))[0];
+  const weekOf = c => weekStudySec(c, timers, thisMonday);
+  const [cwDraft, setCwDraft] = useState({ title: '', date: '', kind: 'tutorial' });
+  const [showDone, setShowDone] = useState(false);
 
   // Courses seen in the School schedule that have no syllabus yet
   const codes = [...new Set(schedule.filter(b => calOf(b) === 'School').map(b => (b.title.match(/[A-Za-z]{3,4}\s?\d{4}/) || [])[0]).filter(Boolean).map(c => c.toUpperCase().replace(/\s/g, '').replace(/^([A-Z]+)(\d+)$/, '$1 $2')))];
@@ -3955,9 +4022,9 @@ function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, o
 
       <div className="grid-2">
         <div className="fin-tile"><span>Topics covered</span><b className="good">{totalDone}</b><span className="fin-delta">{totalLeft} still to go</span></div>
-        <div className="fin-tile"><span>Studied this week</span><b>{fmtHM(weekSec)}</b><span className="fin-delta">on focus timers</span></div>
-        <div className="fin-tile"><span>Next exam</span><b className={nextExam && stats[nextExam.id].daysToExam <= 14 ? 'bad' : ''}>{nextExam ? `${stats[nextExam.id].daysToExam}d` : '—'}</b><span className="fin-delta">{nextExam ? `${nextExam.code} · ${fmtDate(nextExam.examDate, { month:'short', day:'numeric' })}` : 'no exam dates set'}</span></div>
-        <div className="fin-tile"><span>Behind pace</span><b className={courses.some(c => stats[c.id].behind) ? 'bad' : 'good'}>{courses.filter(c => stats[c.id].behind).length}</b><span className="fin-delta">of {courses.length} course{courses.length === 1 ? '' : 's'}</span></div>
+        <div className="fin-tile"><span>Studied this week</span><b className={courses.some(c => weekOf(c) < weeklyTargetSec(c)) ? 'warn' : 'good'}>{fmtHM(courses.reduce((t, c) => t + weekOf(c), 0))}</b><span className="fin-delta">of {fmtHM(courses.reduce((t, c) => t + weeklyTargetSec(c), 0))} owed this week</span></div>
+        <div className="fin-tile"><span>Next deadline</span><b className={nextDeadline && daysBetween(todayStr, nextDeadline.t.addedDate) <= 3 ? 'bad' : ''}>{nextDeadline ? (nextDeadline.t.addedDate === todayStr ? 'Today' : `${daysBetween(todayStr, nextDeadline.t.addedDate)}d`) : '—'}</b><span className="fin-delta">{nextDeadline ? nextDeadline.t.title : 'nothing dated'}</span></div>
+        <div className="fin-tile"><span>Coursework</span><b className={missed.length ? 'bad' : 'good'}>{missed.length ? `${missed.length} missed` : dueWeek.length}</b><span className="fin-delta">{missed.length ? 'each cost you; carry them forward' : 'due in the next 7 days'}</span></div>
       </div>
 
       {missing.length > 0 && (
@@ -3976,9 +4043,9 @@ function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, o
                 <span className="cl-avatar" style={{ fontSize: 11, fontFamily: 'var(--fm)' }}>{Math.round(s.pct * 100)}%</span>
                 <span className="cl-row-main">
                   <span className="cl-row-name">{c.code}</span>
-                  <span className="cl-row-meta">{s.done}/{s.total} topics{s.daysToExam !== null && s.daysToExam >= 0 ? ` · exam in ${s.daysToExam}d` : ''}</span>
+                  <span className="cl-row-meta">{s.done}/{s.total} topics · {fmtHM(weekOf(c))} of {fmtHM(weeklyTargetSec(c))} this week</span>
                 </span>
-                {s.behind && <span className="cl-owed">behind</span>}
+                {workOf(c.id).some(x => missed.includes(x)) ? <span className="cl-owed">missed</span> : s.behind && <span className="cl-owed">behind</span>}
               </button>
             );
           })}
@@ -4018,8 +4085,51 @@ function Studies({ courses, timers, schedule, todayStr, balance, onSetBalance, o
             <div className="fin-tile"><span>Time studied</span><b>{fmtHM(st.focusSec)}</b><span className="fin-delta">on linked timers</span></div>
             <div className="fin-tile"><span>Backed ticks</span><b className={st.unbacked ? 'warn' : 'good'}>{st.backed}/{st.done}</b><span className="fin-delta">{MIN_PER_TOPIC} min of focus backs one</span></div>
             <div className="fin-tile"><span>XP from this course</span><b className="good">+{st.backed * XP_PER_TOPIC}</b><span className="fin-delta">{st.unbacked ? `${st.unbacked} tick${st.unbacked === 1 ? '' : 's'} waiting on study time` : `+${XP_PER_TOPIC} per backed topic`}</span></div>
-            <div className="fin-tile"><span>Per topic so far</span><b>{st.done ? fmtHM(st.focusSec / st.done) : '—'}</b><span className="fin-delta">average study time</span></div>
+            <div className="fin-tile"><span>This week</span><b className={weekOf(course) >= weeklyTargetSec(course) ? 'good' : 'warn'}>{fmtHM(weekOf(course))}</b><span className="fin-delta">of {fmtHM(weeklyTargetSec(course))} owed · −25 XP if short</span></div>
           </div>
+
+          {(() => {
+            const mine = workOf(course.id).filter(x => x.kind !== 'study' || !x.done);
+            const late = mine.filter(x => !x.done && x.t.addedDate < todayStr).sort((a, b) => a.t.addedDate.localeCompare(b.t.addedDate));
+            const next = mine.filter(x => !x.done && x.t.addedDate >= todayStr).sort((a, b) => a.t.addedDate.localeCompare(b.t.addedDate));
+            const done = mine.filter(x => x.done).sort((a, b) => b.t.addedDate.localeCompare(a.t.addedDate));
+            const label = t => t.title.replace(new RegExp(`^${course.code.replace(/\s/g, '\\s?')}\\s*·\\s*`, 'i'), '');
+            const Row = ({ x }) => {
+              const n = daysBetween(todayStr, x.t.addedDate);
+              return (
+                <div className={`cw-row ${x.done ? 'done' : n < 0 ? 'late' : ''}`}>
+                  <button className="check-btn" disabled={x.t.addedDate !== todayStr} title={x.t.addedDate === todayStr ? 'Done' : 'Can only be ticked on its day; carry it forward from Tasks'} onClick={() => onToggleTodo(x.t)}>
+                    {x.done ? <Icons.check size={18}/> : <Icons.circle size={18}/>}
+                  </button>
+                  <span className="cw-title">{label(x.t)}</span>
+                  <span className={`cw-kind ${x.kind}`}>{x.kind === 'assessment' ? 'Deadline' : x.kind === 'tutorial' ? 'Tutorial' : 'Study'}</span>
+                  <span className="cw-date">{x.done ? fmtDate(x.t.addedDate, { month: 'short', day: 'numeric' }) : n === 0 ? 'today' : n === 1 ? 'tomorrow' : n < 0 ? `${-n}d late` : fmtDate(x.t.addedDate, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                </div>
+              );
+            };
+            const addWork = () => {
+              if (!cwDraft.title.trim()) return;
+              onAddTask({ title: `${course.code} · ${cwDraft.title.trim()}`, note: '', courseId: course.id, kind: cwDraft.kind, addedDate: cwDraft.date && cwDraft.date > todayStr ? cwDraft.date : todayStr });
+              setCwDraft(d => ({ ...d, title: '' }));
+            };
+            return (
+              <div className="card cw-card">
+                <div className="row-between" style={{ marginBottom: '0.5rem' }}>
+                  <span className="card-label" style={{ margin: 0 }}>Coursework · {next.length} ahead{late.length ? ` · ${late.length} missed` : ''}</span>
+                  {done.length > 0 && <button className="link-btn" onClick={() => setShowDone(v => !v)}>{showDone ? 'Hide' : 'Show'} {done.length} done</button>}
+                </div>
+                {late.length > 0 && <div className="cw-group late"><div className="cw-head">Missed: −15 a tutorial, −40 a deadline</div>{late.map(x => <Row key={x.t.id} x={x}/>)}</div>}
+                {next.length > 0 ? <div className="cw-group">{next.slice(0, 12).map(x => <Row key={x.t.id} x={x}/>)}</div> : <div className="agenda-empty small">Nothing scheduled for {course.code}.</div>}
+                {showDone && <div className="cw-group done">{done.map(x => <Row key={x.t.id} x={x}/>)}</div>}
+                <div className="cw-add">
+                  <input className="input" value={cwDraft.title} onChange={e => setCwDraft(d => ({ ...d, title: e.target.value }))} onKeyDown={e => e.key === 'Enter' && addWork()} placeholder="Tutorial 9, Lab 4, Midterm…"/>
+                  <div className="seg">{[['tutorial', 'Tutorial'], ['assessment', 'Deadline']].map(([k, l]) => <button key={k} className={cwDraft.kind === k ? 'on' : ''} onClick={() => setCwDraft(d => ({ ...d, kind: k }))}>{l}</button>)}</div>
+                  <input className="input" type="date" min={todayStr} value={cwDraft.date} onChange={e => setCwDraft(d => ({ ...d, date: e.target.value }))}/>
+                  <button className="btn-primary icon-only" onClick={addWork}><Icons.plus size={14}/></button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="card">
             <div className="row-between" style={{ marginBottom: '0.6rem' }}>
