@@ -103,6 +103,19 @@ Fields that do NOT exist in Runner and are no longer checked (removed 14 Oct):
   us-east1) are now deleted after 1 day instead of 30, so repeated deploys
   don't build up storage cost.
 
+## What changed in Runner on 19 Oct 2026
+
+- **1 Runner coin = J$1** (was J$100). Balances were always stored in J$
+  (`wallets.balanceJmd`), so no stored amount changed; only coin counts shown.
+  Card packs are 500 / 1,000 / 2,000 / 5,000 coins.
+- **Top-up cards** (`functions/src/topups.ts`): printed one-time codes worth
+  J$100 / 250 / 500 / 750 / 1,000, sold for cash by named sellers.
+  `topupBatches/{id}` (valueJmd, count, holder, redeemedCount, redeemedJmd,
+  voidedCount) and `topupCards/{code}` (admin-readable); redeeming writes
+  walletTx type `topup_redeemed`. Unredeemed value is capped at J$150,000
+  (`TOPUP_OUTSTANDING_MAX_JMD`). Admin page: `/topup-cards`. Cash owed by a
+  seller = that batch's `redeemedJmd`.
+
 ## Runner admin pages (for "open this page" buttons)
 
 `/dashboard` (tab "Board": metrics, "Card payments to check" with Paid / Not
@@ -144,3 +157,12 @@ admin yet. Don't tell the operator to cancel there.
 - Kept on the Mac only (localStorage `jc_runner_local`): ticks, routines,
   "I'm handling this", "Sorted", expected admins, deletion requests, the
   alert log. Payouts are recorded in the console's own Finance.
+
+## Speed on real phones (added 2026-10-20)
+- Runner's website sends one anonymous speed report per visit to `perfReports` (Runner: `services/perf.web.ts` → `/api/perf` → `functions/src/perf.ts`). Reports are deleted after about 30 days by a Firestore TTL policy.
+- `electron/ops.js` → `speed()`: last 7 days, newest 3,000, read every 6 hours (`SPEED_MS`), so it stays inside the free daily reads.
+- `src/runnerOps.js` → `speed` in the result:
+  - 75th-percentile figures per group (all, first or returning visit, Android, iPhone, computers, weak phones, slow connection, home-screen app, in-app browser), by page and by app version.
+  - Alerts `run.speedReady` (first screen over 8 s) and `run.speedTaps` (taps over 500 ms) once there are `LIMITS.speedMin` (20) or more reports.
+- `src/RunnerControl.js`: the "Speed on real phones" fold under "Is it running", coloured green, amber or red against Google's thresholds (LCP 2.5 s / 4 s, INP 200 ms / 500 ms, CLS 0.1 / 0.25; first screen 5 s / 8 s).
+- Fields per report: release, page, role, firstVisit, installed, intro, os, browser, memoryGb, cores, net, saveData, lowPower, ttfb, fcp, lcp, inp, cls, ready, load, at, day. No personal data.

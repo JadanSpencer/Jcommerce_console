@@ -12,6 +12,8 @@
 //   fast    every refresh (kept at least a minute): open orders, today's orders and money
 //   medium  every 10 minutes: stores, runners, floats, admins, Google's status pages
 //   slow    every hour: the last 7 days of orders, sign-ups and menus
+//   speed   every 6 hours: the last 7 days of anonymous speed reports from
+//           real phones (at most 3,000, newest first)
 // Finished days are therefore read about once an hour, not on every refresh.
 
 const path = require('path');
@@ -25,7 +27,7 @@ const FIREBASE_HOSTING_IP = '199.36.158.100';
 // Two callable functions, asked without signing in: a running server says
 // "sign in first" (4xx); a stopped one (billing closed, outage) says 5xx.
 const PROBE_FUNCTIONS = ['claimLaunchCode', 'myReferral'];
-const FAST_MS = 60 * 1000, MEDIUM_MS = 10 * 60 * 1000, SLOW_MS = 60 * 60 * 1000, MENU_MS = 6 * 60 * 60 * 1000;
+const FAST_MS = 60 * 1000, MEDIUM_MS = 10 * 60 * 1000, SLOW_MS = 60 * 60 * 1000, MENU_MS = 6 * 60 * 60 * 1000, SPEED_MS = 6 * 60 * 60 * 1000;
 const SCHEDULER_REGION = 'us-central1'; // where Firebase puts scheduled jobs unless told otherwise
 const JAMAICA_OFFSET_MS = -5 * 60 * 60 * 1000; // no daylight saving
 const dayStart = now => Math.floor((now + JAMAICA_OFFSET_MS) / 86400000) * 86400000 - JAMAICA_OFFSET_MS;
@@ -313,6 +315,17 @@ async function menus(project, token, ctx) {
   return { items, at: ctx.now };
 }
 
+// Speed reports: one per website visit, anonymous (Runner's functions/src/perf.ts).
+const SPEED_FIELDS = ['at', 'release', 'page', 'role', 'firstVisit', 'installed', 'intro', 'os', 'browser', 'memoryGb', 'net', 'saveData', 'lowPower',
+  'ttfb', 'fcp', 'lcp', 'inp', 'cls', 'ready', 'load'];
+async function speed(project, token, ctx) {
+  const reports = await part(async () => {
+    const r = await query(project, token, { collectionId: 'perfReports', where: cmp('at', 'GREATER_THAN_OR_EQUAL', num(ctx.now - 7 * 86400000)), orderBy: 'at', fields: SPEED_FIELDS, limit: 3000 });
+    return { rows: r.rows.map(({ movedAt, parent, ...x }) => x), hitLimit: r.hitLimit };
+  });
+  return { reports, at: ctx.now };
+}
+
 // ── Putting it together ───────────────────────────────────────────────────
 const cache = {}; // per project: { fast, medium, slow, menus, ...when }
 let inFlight = null;
@@ -333,12 +346,13 @@ async function snapshot(project, dir, token) {
     if (c.medium.url.ok && c.medium.url.url) ctx.siteUrl = `${c.medium.url.url}/`; }
   if (due('slow', SLOW_MS)) { c.slow = await slow(project, token, ctx); c.slowAt = macNow; c.slowDay = today; read += reads(c.slow.ordersWeek) + reads(c.slow.signups); }
   if (due('menus', MENU_MS)) { c.menus = await menus(project, token, ctx); c.menusAt = macNow; c.menusDay = today; read += reads(c.menus.items); }
+  if (due('speed', SPEED_MS)) { c.speed = await speed(project, token, ctx); c.speedAt = macNow; c.speedDay = today; read += reads(c.speed.reports); }
   const f = await fast(project, token, ctx);
   read += ['ordersActive', 'ordersToday', 'paymentsOpen', 'paymentsToday', 'walletToday', 'floatToday'].reduce((t, k) => t + reads(f[k]), 0);
   return {
     ok: true, project, dir, fetchedAt: now, clockOffMs: macNow - now, today, adminUrl: ctx.siteUrl.replace(/\/$/, ''), reads: read,
-    ages: { medium: Math.round((macNow - c.mediumAt) / 1000), slow: Math.round((macNow - c.slowAt) / 1000), menus: Math.round((macNow - c.menusAt) / 1000) },
-    parts: (({ at, ...p }) => p)({ stats, ...f, ...c.medium, ...c.slow, menuItems: c.menus.items }),
+    ages: { medium: Math.round((macNow - c.mediumAt) / 1000), slow: Math.round((macNow - c.slowAt) / 1000), menus: Math.round((macNow - c.menusAt) / 1000), speed: Math.round((macNow - c.speedAt) / 1000) },
+    parts: (({ at, ...p }) => p)({ stats, ...f, ...c.medium, ...c.slow, menuItems: c.menus.items, speedReports: c.speed.reports }),
   };
 }
 

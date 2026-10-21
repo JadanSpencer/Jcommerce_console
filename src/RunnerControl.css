@@ -150,3 +150,7 @@
   .rc-switch { flex-wrap: wrap; } .rc-switch em { flex-basis: 100%; padding-left: 1.6rem; }
   .rc-name { flex-wrap: wrap; } .rc-name .input { width: 100%; }
 }
+
+/* Speed on real phones: good / so-so / slow figures, and slow rows */
+.rc-table .rc-good { color: var(--rc-good); } .rc-table .rc-meh { color: var(--rc-look); } .rc-table .rc-bad { color: var(--rc-act); }
+.rc-table tr.warn td:first-child { color: var(--rc-look); font-weight: 600; }

@@ -6,6 +6,10 @@
 // handling what) stays on this Mac and never goes to Runner.
 import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS } from './runnerOps';
+
+// Speed panel: seconds with one decimal, and a colour for good / so-so / slow
+const secs = ms => (ms === null || ms === undefined ? '–' : `${(ms / 1000).toFixed(1)} s`);
+const tone = (v, good, poor) => (v === null || v === undefined ? '' : v <= good ? 'rc-good' : v > poor ? 'rc-bad' : 'rc-meh');
 import './RunnerControl.css';
 
 const MIN = 60000;
@@ -404,6 +408,23 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <table className="rc-table"><thead><tr><th>Item</th><th>Monthly</th></tr></thead><tbody>
             {[['Server copy kept awake for orders', 'about US$10'], ['The 5-minute clean-up', 'US$0 to 2'], ['Stored server images', 'under US$1'], ['Hosting, database, file storage, secrets, monitoring', 'US$0 within free limits'], ['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, once bought', 'about US$1']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>
           <p className="rc-small">Everything else grows with use: maps, the bot check above 10,000 checks a month, hosting traffic and database reads. Spend so far this month is only in Google's {ext('billing reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}; the console can't read it without a billing export. A budget alert is what stops a runaway bug costing hundreds.</p>
+        </Fold>
+        <Fold id="rc-speed" title="Speed on real phones" note={!r.speed.ok ? "couldn't check" : r.speed.n ? `${plural(r.speed.n, 'visit')} this week` : 'no reports yet'}>
+          {!r.speed.ok ? <p className="rc-item unknown rc-plain">Couldn't read the speed reports this time{r.speed.error ? ` (${r.speed.error})` : ''}.</p>
+            : !r.speed.n ? <p className="rc-small">No speed reports yet. Each visit to the website sends one, anonymously, once the latest version is live (npm run deploy:all).</p>
+            : <>
+              <table className="rc-table"><thead><tr><th>Visits</th><th>How many</th><th>First screen (half / 3 in 4)</th><th>Largest picture or text</th><th>Slowest tap answered</th><th>Layout jumps</th></tr></thead>
+                <tbody>{r.speed.groups.map(g => <tr key={g.label} className={g.ready > 8000 ? 'warn' : ''}><td>{g.label}</td><td>{g.n}</td>
+                  <td>{secs(g.ready50)} / <b className={tone(g.ready, 5000, 8000)}>{secs(g.ready)}</b></td><td className={tone(g.lcp, 2500, 4000)}>{secs(g.lcp)}</td>
+                  <td className={tone(g.inp, 200, 500)}>{g.inp === null ? '–' : `${Math.round(g.inp)} ms`}</td><td className={tone(g.cls, 0.1, 0.25)}>{g.cls === null ? '–' : g.cls.toFixed(2)}</td></tr>)}</tbody></table>
+              <h4>By the page people opened first</h4>
+              <table className="rc-table"><thead><tr><th>Page</th><th>Visits</th><th>First screen, 3 in 4</th></tr></thead>
+                <tbody>{r.speed.pages.map(g => <tr key={g.label}><td>{g.label}</td><td>{g.n}</td><td className={tone(g.ready, 5000, 8000)}>{secs(g.ready)}</td></tr>)}</tbody></table>
+              <h4>By app version (newest first)</h4>
+              <table className="rc-table"><thead><tr><th>Version</th><th>Seen</th><th>Visits</th><th>First screen, 3 in 4</th><th>Slowest tap, 3 in 4</th></tr></thead>
+                <tbody>{r.speed.releases.map(g => <tr key={g.label}><td>{g.label}</td><td>{jmDate(g.from)} to {jmDate(g.to)}</td><td>{g.n}</td><td className={tone(g.ready, 5000, 8000)}>{secs(g.ready)}</td><td className={tone(g.inp, 200, 500)}>{g.inp === null ? '–' : `${Math.round(g.inp)} ms`}</td></tr>)}</tbody></table>
+            </>}
+          <p className="rc-small">Each visit to the Runner website sends one anonymous report: no name, account or location (Runner's privacy policy, "Speed measurements"). Reports are deleted after 30 days. "3 in 4" means three quarters of visits were this fast or faster. Targets: first screen under 5 s is good, over 8 s is slow; largest picture or text under 2.5 s; taps answered under 200 ms; layout jumps under 0.1. Compare versions after each deploy to see whether a change helped.{r.speed.hitLimit ? ' Only the newest 3,000 reports are counted.' : ''}</p>
         </Fold>
       </Section>
 

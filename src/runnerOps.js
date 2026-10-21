@@ -38,6 +38,7 @@ export const LIMITS = {
   runnerWaitLook: 120, runnerWaitAct: 1440,  // new runner waiting to be verified
   perRunnerLook: 1, perRunnerAct: 3,         // waiting orders per online runner
   siteSlowMs: 3000, cleanupLate: 12,
+  speedMin: 20, speedReadyLook: 8000, speedInpLook: 500, // real-phone speed: reports needed, first screen (ms, 3 in 4 visits), tap response (ms)
   errorsLook: 1, errorsAct: 5, deadTokensLook: 20, pushFailAct: 20,
   appCheckLook: 98, appCheckAct: 90, backupDays: 2, codeAheadDays: 1,
   floatOrders: 5,                            // a float should cover about this many orders
@@ -60,9 +61,8 @@ const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review',
 // declined payment has gone unpaid long enough. A known unpaid balance is
 // therefore kept here, red and at the top, until the owner marks it sorted.
 // To raise a new one, add its date here.
-const BILLING_DUE = [
-  { id: '2026-10-16', what: 'Google Cloud says Runner\'s bill is past due: the Visa ending 8378 was declined (US$4.10).' },
-];
+// Past-due Google bills to pin at the top ({ id, what }). The 16 Oct one was paid on 19 Oct.
+const BILLING_DUE = [];
 export const reviewWords = r => {
   const s = String(r || '');
   if (s.startsWith('amount_short_')) return `Fygaro reported less money than was due (it said ${s.slice(13)}).`;
@@ -312,7 +312,7 @@ export function judgeRunner(data, local = {}) {
     what: `${plural(cardOff.length, 'student')} tried to pay by card today while cards are switched off.`,
     why: 'Nobody was charged; they were told to use Runner coins. Each one may be a lost order.', next: 'A count of likely lost orders until Fygaro is set up.' });
   if (P.walletToday?.ok && P.walletToday.rows.some(t => t.type && !['order_reserve', 'order_charge', 'order_payment', 'order_release', 'order_refund', 'order_refund_card', 'topup_card', 'late_payment_credit', 'admin_adjust',
-    'launch_pack', 'referral_reward', 'free_delivery_used', 'free_delivery_returned'].includes(t.type)))
+    'launch_pack', 'referral_reward', 'free_delivery_used', 'free_delivery_returned', 'topup_redeemed'].includes(t.type)))
     money.push(notUnderstood('money.oddTx', 'a new kind of coin movement'));
   if (pays.some(p => p.status && !KNOWN_PAYMENT_DOCS.includes(p.status))) money.push(notUnderstood('money.oddPay', 'a new card payment state'));
   // Cash top-ups an admin made by hand today, so cash and coins can be matched
@@ -682,6 +682,40 @@ export function judgeRunner(data, local = {}) {
     ] },
   ];
 
+  // ── Speed on real phones (anonymous reports, last 7 days) ───────────────────
+  // Each figure is the 75th percentile: 3 in 4 visits were this fast or faster,
+  // the yardstick Google uses. "First screen" is when Runner's first real screen
+  // was on show; the rest are the browser's standard measures.
+  const speedRows = P.speedReports?.ok ? P.speedReports.rows : [];
+  const pct = (list, key, p = 0.75) => {
+    const v = list.map(x => x[key]).filter(x => typeof x === 'number').sort((a, b) => a - b);
+    return v.length ? v[Math.min(v.length - 1, Math.ceil(p * v.length) - 1)] : null;
+  };
+  const sum = (label, list) => ({ label, n: list.length, ready50: pct(list, 'ready', 0.5), ready: pct(list, 'ready'), lcp: pct(list, 'lcp'), inp: pct(list, 'inp'), cls: pct(list, 'cls') });
+  const slowNet = x => x.saveData || ['slow-2g', '2g', '3g'].includes(x.net);
+  const groups = [
+    ['All visits', () => true], ['First visits', x => x.firstVisit], ['Returning visits', x => !x.firstVisit],
+    ['Android', x => x.os === 'android'], ['iPhone', x => x.os === 'ios'], ['Computers', x => x.os === 'desktop'],
+    ['Weak phones', x => x.lowPower || (x.memoryGb && x.memoryGb <= 2)], ['Slow connection or Data Saver', slowNet],
+    ['Opened from the home screen', x => x.installed], ['Inside another app (Instagram, TikTok…)', x => x.browser === 'inapp'],
+  ].map(([label, f]) => sum(label, speedRows.filter(f))).filter(g => g.n > 0);
+  const byKey = (key, n = 6) => Object.entries(speedRows.reduce((m, x) => { const k = x[key] || '(unknown)'; (m[k] = m[k] || []).push(x); return m; }, {}))
+    .map(([k, list]) => ({ ...sum(k, list), from: Math.min(...list.map(x => x.at)), to: Math.max(...list.map(x => x.at)) }))
+    .sort((a, b) => (key === 'release' ? b.to - a.to : b.n - a.n)).slice(0, n);
+  const speed = { ok: !!P.speedReports?.ok, error: P.speedReports?.ok ? null : P.speedReports?.error || null, hitLimit: !!P.speedReports?.hitLimit,
+    n: speedRows.length, groups, pages: byKey('page'), releases: byKey('release', 4), enough: speedRows.length >= LIMITS.speedMin };
+  if (speed.enough) {
+    const all = groups[0];
+    if (all.ready !== null && all.ready > LIMITS.speedReadyLook) running.push({ key: 'run.speedReady', lv: 'look',
+      what: `Runner is slow to open on real phones: 3 in 4 visits this week showed the first screen within ${(all.ready / 1000).toFixed(1)} s (target: under ${LIMITS.speedReadyLook / 1000} s).`,
+      why: 'People give up on an app that takes this long to open, especially on their first visit.',
+      next: 'Open "Speed on real phones" below to see which phones, connections or pages are slowest, then tell the developer.' });
+    if (all.inp !== null && all.inp > LIMITS.speedInpLook) running.push({ key: 'run.speedTaps', lv: 'look',
+      what: `Runner answers taps slowly on real phones: 3 in 4 visits had their slowest tap answered within ${Math.round(all.inp)} ms (target: under ${LIMITS.speedInpLook} ms).`,
+      why: 'A tap that takes half a second to respond feels broken, and people tap twice.',
+      next: 'Open "Speed on real phones" below to see where, then tell the developer.' });
+  }
+
   // ── Keeping the control room in step with Runner ───────────────────────────
   const keeping = {
     release: P.release?.ok ? P.release : null, server: P.functions?.ok ? P.functions.at : null, code: P.code?.ok ? P.code : null,
@@ -712,5 +746,5 @@ export function judgeRunner(data, local = {}) {
   if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L, launch, freeHeld };
+    checklist, keeping, limits: L, launch, freeHeld, speed };
 }
