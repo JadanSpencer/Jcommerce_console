@@ -201,7 +201,7 @@ async function medium(project, token, ctx, dir) {
   const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
   const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
   const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, freeDeliveries, domains, signInHosts] = await Promise.all([
+    launchCodes, problems, freeDeliveries, domains, signInHosts] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
@@ -239,6 +239,10 @@ async function medium(project, token, ctx, dir) {
     part(() => newestCode(dir)),
     // Launch codes: only when each was made and used. Who used it is not read.
     q({ collectionId: 'launchCodes', fields: ['createdAt', 'usedAt'], limit: 200 }),
+    // Students' reports of a delivered order gone wrong, last 14 days (Runner's functions/src/problems.ts)
+    part(async () => { const r = await query(project, token, { collectionId: 'orders', where: cmp('problem.at', 'GREATER_THAN_OR_EQUAL', num(now - 14 * 86400000)), orderBy: 'problem.at',
+      fields: ['problem', 'receipt.code', 'storeName', 'dasherId', 'deliveredAt', 'totalAmount', 'fulfilment', 'dasherPayoutJmd'], limit: 100 });
+      return { rows: r.rows.map(tidyOrder), hitLimit: r.hitLimit }; }),
     // Free deliveries students still hold (launch packs and referral rewards)
     q({ collectionId: 'wallets', where: cmp('freeDeliveries', 'GREATER_THAN', num(0)), fields: ['freeDeliveries'], limit: 3000 }),
     // The site's own domain: Firebase's view of it, and where its DNS really points
@@ -266,7 +270,7 @@ async function medium(project, token, ctx, dir) {
     }),
   ]);
   return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, freeDeliveries, domains, signInHosts, at: now };
+    launchCodes, problems, freeDeliveries, domains, signInHosts, at: now };
 }
 
 async function slow(project, token, ctx) {
@@ -342,7 +346,7 @@ async function snapshot(project, dir, token) {
   let read = stats.ok ? 1 : 0;
   const due = (key, ms) => !c[key] || macNow - c[`${key}At`] >= ms || c[`${key}Day`] !== today;
   if (due('medium', MEDIUM_MS)) { c.medium = await medium(project, token, ctx, dir); c.mediumAt = macNow; c.mediumDay = today;
-    read += ['stores', 'storeFloats', 'dashers', 'runners', 'storeLogins', 'admins', 'launchCodes', 'freeDeliveries'].reduce((t, k) => t + reads(c.medium[k]), 0);
+    read += ['stores', 'storeFloats', 'dashers', 'runners', 'storeLogins', 'admins', 'launchCodes', 'problems', 'freeDeliveries'].reduce((t, k) => t + reads(c.medium[k]), 0);
     if (c.medium.url.ok && c.medium.url.url) ctx.siteUrl = `${c.medium.url.url}/`; }
   if (due('slow', SLOW_MS)) { c.slow = await slow(project, token, ctx); c.slowAt = macNow; c.slowDay = today; read += reads(c.slow.ordersWeek) + reads(c.slow.signups); }
   if (due('menus', MENU_MS)) { c.menus = await menus(project, token, ctx); c.menusAt = macNow; c.menusDay = today; read += reads(c.menus.items); }

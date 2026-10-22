@@ -5,7 +5,7 @@
 // by runnerOps.js. What is kept here (ticks, notes, the alert log, who is
 // handling what) stays on this Mac and never goes to Runner.
 import React, { useState, useEffect, useRef } from 'react';
-import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS } from './runnerOps';
+import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
 const secs = ms => (ms === null || ms === undefined ? '–' : `${(ms / 1000).toFixed(1)} s`);
@@ -22,7 +22,7 @@ const INBOX = 'https://mail.google.com/mail/u/?authuser=jcommerceandtech@gmail.c
 
 // ── What is kept on this Mac ────────────────────────────────────────────────
 const load = () => { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; } };
-const local = { ticks: {}, routines: {}, resolved: {}, handling: {}, deletions: [], log: [], expectedAdmins: null, launch: false, watch: false, name: '', ...load() };
+const local = { ticks: {}, routines: {}, resolved: {}, handling: {}, deletions: [], log: [], expectedAdmins: null, launch: false, watch: false, name: '', closedTestStart: '', ...load() };
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify({ ...local, log: local.log.slice(-600) })); } catch {} };
 
 // ── One watcher for the whole app ───────────────────────────────────────────
@@ -150,6 +150,43 @@ function Section({ s, children, extra }) {
       {extra}
       {children}
     </section>
+  );
+}
+
+// ── App stores: Android and iPhone steps, with the closed-test day counter ──
+function StoreSteps() {
+  const all = STORE_STEPS.flatMap(p => p.groups.flatMap(g => g.items));
+  const left = all.filter(([id]) => !local.ticks[id]).length;
+  const DAY = 86400000;
+  const start = local.closedTestStart ? Date.parse(`${local.closedTestStart}T00:00:00-05:00`) : null;
+  const day = start ? Math.floor((Date.now() - start) / DAY) + 1 : null;
+  const applyOn = start ? jmDate(start + CLOSED_TEST_DAYS * DAY) : null;
+  return (
+    <Fold id="rc-stores" title="App stores: Android and iPhone" note={left ? `${left} of ${all.length} steps left` : 'all done'}>
+      <p className="rc-small">Runner launches on the website (uwi-runner.online), which students add to their home screen. The store apps follow. On a personal Google Play account every new app, simple or not, must first run a closed test with at least {CLOSED_TEST_TESTERS} testers for {CLOSED_TEST_DAYS} days in a row; start it the day you launch, using your first real users as testers. An organisation account (Jcommerce & Tech, with a D-U-N-S number) skips the test. Never use fake testers: Google can ban the whole developer account.</p>
+      {STORE_STEPS.map(p => (
+        <div key={p.platform} className="rc-group"><h4>{p.platform}</h4>
+          {p.groups.map(g => (
+            <div key={g.title}><p className="rc-what" style={{ marginTop: 8 }}>{g.title}</p>
+              {g.items.map(([id, title, how, url]) => (
+                <label key={id} className={`rc-check ${local.ticks[id] ? 'done' : ''}`}>
+                  <input type="checkbox" checked={!!local.ticks[id]} onChange={() => setLocal(l => ({ ticks: { ...l.ticks, [id]: !l.ticks[id] } }))}/>
+                  <div><p className="rc-what">{title}</p>{how && <p className="rc-why">{how}</p>}{url && !local.ticks[id] && <Go link={{ label: 'Open', url }}/>}</div>
+                </label>))}
+              {g.tracker && (
+                <div className="rc-row" style={{ alignItems: 'center', marginTop: 6 }}>
+                  <span className="rc-small">Closed test started on</span>
+                  <input className="input" type="date" value={local.closedTestStart} onChange={e => setLocal({ closedTestStart: e.target.value })} style={{ maxWidth: 180 }}/>
+                  <span className={`rc-found ${day > CLOSED_TEST_DAYS ? 'ok' : ''}`}>
+                    {!start ? 'Not started yet.' : day < 1 ? `Starts ${local.closedTestStart}.` : day > CLOSED_TEST_DAYS
+                      ? `Done: ${CLOSED_TEST_DAYS} days passed ${applyOn ? `on ${applyOn}` : ''}. Apply for production, if at least ${CLOSED_TEST_TESTERS} testers stayed opted in.`
+                      : `Day ${day} of ${CLOSED_TEST_DAYS}. You can apply on ${applyOn}, if at least ${CLOSED_TEST_TESTERS} testers stay opted in until then.`}
+                  </span>
+                </div>
+              )}
+            </div>))}
+        </div>))}
+    </Fold>
   );
 }
 
@@ -340,7 +377,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <h4>Runners</h4>
           <table className="rc-table"><thead><tr><th>Runner</th><th>Delivery share owed</th><th>Orders</th><th>Last paid</th><th/></tr></thead>
             <tbody>{r.settle.runners.map(x => { const last = lastPaid(`Runner payout · ${x.name}`); const list = since(x.orders, last); const owed = list.reduce((t, o) => t + o.amount, 0);
-              return <tr key={x.id}><td>{x.name}</td><td>{J(owed)}</td><td title={list.map(o => `#${o.code} ${J(o.amount)}`).join('\n')}>{plural(list.length, 'order')}{list.length ? `: ${list.slice(0, 4).map(o => `#${o.code}`).join(', ')}${list.length > 4 ? '…' : ''}` : ''}</td><td>{last || 'never'}</td>
+              return <tr key={x.id}><td>{x.name}</td><td>{J(owed)}</td><td title={list.map(o => `#${o.code} ${J(o.amount)}`).join('\n')}>{plural(list.length, 'order')}{list.length ? `: ${list.slice(0, 4).map(o => `#${o.code}`).join(', ')}${list.length > 4 ? '…' : ''}` : ''}</td><td>{last || 'never'}{x.held.length ? <em> · held: {x.held.map(o => `#${o.code}`).join(', ')} (problem reported)</em> : null}</td>
                 <td>{owed > 0 && <button className="btn-ghost rc-go" onClick={() => record(`Runner payout · ${x.name}`, owed, list.length)}>Record payout of {J(owed)}</button>}</td></tr>; })}
               {!r.settle.runners.length && <tr><td colSpan="5">No deliveries in the last 7 days.</td></tr>}</tbody></table>
         </Fold>
@@ -452,6 +489,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
                 </label>))}
             </div>))}
         </Fold>
+        <StoreSteps />
         {ROUTINES.map(g => {
           const done = g.items.filter(([id]) => routineDone(g.kind, id)).length;
           return (

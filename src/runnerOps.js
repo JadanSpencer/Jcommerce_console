@@ -147,6 +147,57 @@ export const ROUTINES = [
  * @param data  what electron/ops.js returned
  * @param local what is kept on this Mac: { ticks, resolved, expectedAdmins, deletions, handling }
  */
+// ── App stores: Android (Google Play) and iPhone (App Store) ──────────────────
+// The website is Runner's launch; the store apps follow. Each step is
+// [id, title, how, optional link]. Ticks are kept on this Mac (local.ticks).
+// Google's rules (Oct 2026): a PERSONAL developer account must run a closed
+// test with at least 12 testers opted in for 14 days in a row before it can
+// apply for production; an ORGANISATION account (needs a D-U-N-S number) is
+// exempt. Every new app on a personal account has to do this, so a second,
+// simpler app would not skip it. Check Play Console's "Production access"
+// page before relying on the numbers.
+export const CLOSED_TEST_DAYS = 14, CLOSED_TEST_TESTERS = 12;
+export const STORE_STEPS = [
+  { platform: 'Android: Google Play', groups: [
+    { title: 'Developer account', items: [
+      ['st-play', 'Google Play developer account', 'US$25 once. A personal account must run the closed test below before production. An organisation account in Jcommerce & Tech\'s name skips the test but needs a D-U-N-S number.', 'https://play.google.com/console'],
+      ['st-duns', 'Optional: a D-U-N-S number for Jcommerce & Tech', 'Free from Dun & Bradstreet; about 1 to 2 weeks. Needed for an organisation account on Google Play, and on Apple. Worth having for every future Jcommerce app.', 'https://www.dnb.com/duns/get-a-duns.html'],
+      ['st-verify', 'Verify your identity in Play Console', 'Government ID, phone number and address. Google checks these before anything can be published.'],
+    ] },
+    { title: 'The Android app', items: [
+      ['st-build', 'Build the Android app', 'The developer runs eas build -p android --profile production (an .aab file). The app ID is com.jcommerce.runner and never changes. Card payments stay hidden unless EXPO_PUBLIC_CARD_PAYMENTS=on.'],
+      ['st-sha', 'Google sign-in: add Play\'s signing key to Firebase', 'Play Console → Test and release → App integrity → App signing: copy the SHA-1 and SHA-256 of the app signing key into Firebase → Project settings → the Android app. Without this, "Continue with Google" fails in the store version.'],
+      ['st-appcheck', 'Leave App Check in watch-only mode', 'The Android app has no App Check provider yet, so enforcing it would lock the store app out (see "Is it running").'],
+    ] },
+    { title: 'Store listing', items: [
+      ['st-listing', 'Listing text and pictures', 'Name "Runner"; a short description (80 characters); a full description; icon 512×512; feature graphic 1024×500; at least 2 phone screenshots (4 to 8 is better).'],
+      ['st-links', 'Privacy and account deletion links', 'Privacy policy: https://uwi-runner.online/legal/privacy. Account deletion: the same page, "Deleting your account". In the app it is Profile, then Account.'],
+      ['st-safety', 'Data safety form', 'Declare what the privacy policy lists for the app: name, email, phone number, orders and coin records, order messages, problem reports, the campus place chosen, and the device\'s notification token. Sent encrypted; users can delete their account; nothing sold or used for ads. Speed measurements are website only.'],
+      ['st-rating', 'Content rating, audience and ads', 'Fill in the content rating questionnaire (food delivery; users can message each other). Target audience: 18 and over. Ads: none.'],
+      ['st-access', 'Sign-in details for Google\'s reviewers', 'Give a test student login with some coins, and a test runner login, with steps to sign in. Reviewers reject apps they can\'t get into.'],
+    ] },
+    { title: 'Closed test: 12 testers for 14 days (personal accounts)', tracker: true, items: [
+      ['st-track', 'Create the closed test and upload the build', 'Test and release → Testing → Closed testing: create a track, upload the .aab, add the testers\' Gmail addresses (or a Google Group).'],
+      ['st-testers', 'At least 12 testers opted in', 'Recruit 15 or more to be safe: runners, partners and launch students. Each opens the opt-in link, joins the test and installs Runner from Play. They must stay opted in for the whole 14 days.'],
+      ['st-14', 'Run the test for 14 days in a row', 'Set the start date below; the counter shows the day you can apply.'],
+      ['st-feedback', 'Collect feedback and ship fixes during the test', 'Google asks what you learned and what you changed, so keep notes.'],
+      ['st-apply', 'Apply for production access', 'Play Console dashboard → Apply for production. Answer the questions about the test. Google says review can take up to 7 days.'],
+      ['st-release', 'Release to production gradually', 'Staged rollout: 20% first, watch the control room for a day, then 100%.'],
+    ] },
+  ] },
+  { platform: 'iPhone: App Store', groups: [
+    { title: 'Apple', items: [
+      ['st-apple', 'Apple Developer Program', 'US$99 a year, as an individual or as an organisation (with a D-U-N-S number). Apple has no minimum test period.', 'https://developer.apple.com/programs/'],
+      ['st-iosbuild', 'Build and upload the iPhone app', 'The developer runs eas build -p ios --profile production, then eas submit -p ios. Bundle ID com.jcommerce.runner.'],
+      ['st-testflight', 'Test with TestFlight', 'Internal testers (up to 100, on your team) can install at once; outside testers after a short beta review.'],
+      ['st-signin', 'Sign-in options', 'The iPhone app offers email and password only. If Google sign-in is ever added there, Apple requires "Sign in with Apple" as well.'],
+      ['st-privacy', 'App privacy labels, screenshots and links', 'The same data as the Play form; screenshots for 6.9-inch and 6.5-inch iPhones; support and privacy URLs.'],
+      ['st-notes', 'Review notes', 'A demo student login with coins. Explain that Runner coins only pay for food deliveries (physical goods and services), so Apple in-app purchase does not apply, and that top-up cards are sold in person.'],
+      ['st-submit', 'Submit for review', 'Usually 1 to 3 days. Answer any questions in App Store Connect.'],
+    ] },
+  ] },
+];
+
 export function judgeRunner(data, local = {}) {
   const ticks = local.ticks || {}, resolved = local.resolved || {}, deletions = local.deletions || [];
   if (!data?.ok) {
@@ -229,6 +280,16 @@ export function judgeRunner(data, local = {}) {
         why: 'Either the student never came, or they did and the store forgot to tap "handed over". It stays open on the tablet until then.',
         next: `Ask ${o.storeName || 'the store'} whether it was collected; if so, they tap "handed over".` }));
   }
+  // Students' reports of a delivered order gone wrong (Runner: functions/src/problems.ts)
+  const PROBLEM_WORDS = { not_received: 'never arrived', missing_items: 'items missing', wrong_order: 'wrong order', other: 'other' };
+  const problemsOpen = (P.problems?.ok ? P.problems.rows : []).filter(o => o.problem && !resolved[`problem.${o.code}`]);
+  if (P.problems && !P.problems.ok) orders.push(cant('orders.problems', 'students\' reports of problems with delivered orders', P.problems));
+  if (problemsOpen.length) orders.push({ key: 'orders.problems', lv: 'act', resolve: problemsOpen.map(o => `problem.${o.code}`),
+    what: `${plural(problemsOpen.length, 'student')} reported a problem with a delivered order: ${problemsOpen.slice(0, 4).map(o => `#${o.code}${o.storeName ? ` from ${o.storeName}` : ''} (${PROBLEM_WORDS[o.problem.kind] || 'other'}${o.problem.note ? `: "${String(o.problem.note).slice(0, 80)}"` : ''})`).join('; ')}${problemsOpen.length > 4 ? ` and ${problemsOpen.length - 4} more` : ''}.`,
+    why: 'Runners mark orders delivered themselves. A report is how a delivery that never happened, or a wrong order, comes to light. The runner\'s pay for these orders is held below until you mark it sorted.',
+    next: 'Look the order up in Runner admin, message or call the student and the runner, and decide. If the student is right, give their coins back with "Adjust Runner coins" (note the order code) and don\'t pay the runner for it. Then press "Sorted, hide it". A runner with repeated reports should be switched off.',
+    link: BOARD });
+  const heldCodes = new Set(problemsOpen.map(o => o.code));
   const cancelledToday = todayOrders.filter(o => o.status === 'cancelled');
   const noRunner = cancelledToday.filter(o => o.cancelReason === 'no_dasher').length;
   if (noRunner >= LIMITS.noRunnerLook) orders.push({ key: 'orders.noRunnerDay', lv: noRunner >= LIMITS.noRunnerAct ? 'act' : 'look',
@@ -618,9 +679,11 @@ export function judgeRunner(data, local = {}) {
     stores: stores.map(s => { const list = delivered7.filter(o => o.storeId === s.id); const fl = floats.stores.find(f => f.id === s.id);
       return { id: s.id, name: s.name, orders: list.map(o => ({ code: o.code, at: o.deliveredAt || o.createdAt, amount: food(o) })), food: list.reduce((t, o) => t + food(o), 0), float: fl ? fl.float : null, owed: fl && fl.float < 0 ? -fl.float : 0 }; })
       .filter(s => s.orders.length || s.owed),
-    runners: runners.map(r => { const list = delivered7.filter(o => o.dasherId === r.id);
-      return { id: r.id, name: r.name || 'Runner', orders: list.map(o => ({ code: o.code, at: o.deliveredAt || o.createdAt, amount: Number(o.dasherPayoutJmd) || 0 })), owed: list.reduce((t, o) => t + (Number(o.dasherPayoutJmd) || 0), 0) }; })
-      .filter(r => r.orders.length),
+    // Orders with an open problem report are held: not owed until it is sorted
+    runners: runners.map(r => { const all = delivered7.filter(o => o.dasherId === r.id); const list = all.filter(o => !heldCodes.has(o.code)); const held = all.filter(o => heldCodes.has(o.code));
+      return { id: r.id, name: r.name || 'Runner', orders: list.map(o => ({ code: o.code, at: o.deliveredAt || o.createdAt, amount: Number(o.dasherPayoutJmd) || 0 })), owed: list.reduce((t, o) => t + (Number(o.dasherPayoutJmd) || 0), 0),
+        held: held.map(o => ({ code: o.code, amount: Number(o.dasherPayoutJmd) || 0 })) }; })
+      .filter(r => r.orders.length || r.held.length),
   };
 
   // ── Before launch: the owner's list, ticking itself where the data can tell ─
@@ -669,14 +732,21 @@ export function judgeRunner(data, local = {}) {
       B('launchcodes', 'Make the 100 launch codes and print their QR cards', 'Runner admin → Launch codes → Make codes, then Print QR cards (on a computer). Test-scan one card before handing them out.', { link: link('Open Runner admin: Launch codes', '/launch-codes'), ...auto('launchcodes', launch ? launch.made >= 100 : null, launch ? `${launch.made} of 100 made, ${launch.claimed} claimed.` : null) }),
       B('flyer', 'Flyer printed after a test scan', 'Print one copy at 100% (actual size), scan the QR with an iPhone and an Android phone, then print the rest.'),
     ] },
-    { title: 'Money while cards are off', items: [
-      B('cashroutine', 'A cash top-up routine', 'The student pays cash; you add coins with "Adjust Runner coins" and a note such as "Cash J$2,000, receipt 014". Money below lists each day\'s manual top-ups so cash and coins can be matched.'),
-      B('fygarooff', 'Fygaro stays off until its setup is finished', 'Follow PAYMENTS_SETUP.md in the Runner code (this venture\'s Docs tab).'),
+    { title: 'Money: top-up cards (no card payments yet)', items: [
+      B('topuptest', 'Test one top-up card from start to finish', 'Runner admin → Top-up cards: make 1 card of J$100 with yourself as seller, print it, press Activate, then scan its QR with a phone signed in as a student and check the coins arrive. Try a wrong code too, and "Check a card".', { link: link('Open Runner admin: Top-up cards', '/topup-cards') }),
+      B('topupbatches', 'Make and print the launch batches', 'One batch per seller, in multiples of 10 (10 cards to a sheet). Print each batch once: Print, then Save as PDF, and tell the print shop 100% size, double-sided, flip on long edge, 14 pt card or heavier, cut on the dashed lines. Check one sheet lines up before they print the rest.', { link: link('Open Runner admin: Top-up cards', '/topup-cards') }),
+      B('topupactivate', 'Activate each batch only when its seller has it in hand', 'Count the cards with the seller, then press "Activate (handed to seller)". Until then the cards don\'t work, so cards lost or copied at the printer are worthless.'),
+      B('sellers', 'Brief every seller', 'Cards are cash: keep them in an envelope, hand them over face-down, never photograph or write down codes, and send buyers to scan the QR straight away. Each seller owes you the value of their redeemed cards; settle every week.'),
+      B('cashroutine', 'A routine for cash without a card', 'If someone pays you cash directly, add coins with "Adjust Runner coins" and a note such as "Cash J$2,000, receipt 014". Money below lists each day\'s manual top-ups so cash and coins can be matched.'),
+      B('fygarooff', 'Card payments stay hidden until Fygaro is finished', 'Follow PAYMENTS_SETUP.md in the Runner code (this venture\'s Docs tab). Turning them on is one setting (EXPO_PUBLIC_CARD_PAYMENTS=on) and a website deploy.'),
     ] },
     { title: 'Test it like a student', items: [
-      B('t-phones', 'On a real Android phone and a real iPhone, with Runner installed to the home screen', 'Sign up, top up coins, order, have a second phone accept as a runner, pay, deliver.'),
+      B('t-phones', 'On a real Android phone and a real iPhone, with Runner added to the home screen', 'Sign up, add a top-up card, order, have a second phone accept as a runner, pay with coins, deliver.'),
+      B('t-short', 'Try to order with too few coins', 'Checkout should stop you and offer to add a card. Nothing should reach a runner.'),
+      B('t-paycard', 'Add a top-up card on the pay screen', 'Order with exactly enough coins, have another order eat into them, then on the pay screen type a card\'s code and pay.'),
       B('t-pickup', 'A pickup order at a store with its tablet', 'Store says yes, student pays, store marks ready, then handed over.'),
       B('t-cancel', 'Cancel an order after paying, and check the coins come back', ''),
+      B('t-problem', 'Report a problem on a delivered test order', 'The order screen\'s "Problem with this order?". Within 10 minutes the control room shows it in red and holds that runner\'s pay; then press "Sorted, hide it".'),
       B('t-push', 'Notifications arrive with Runner closed, on both phones', ''),
       B('t-green', 'The control room shows All good afterwards', 'Ticks itself whenever the verdict is green.'),
     ] },

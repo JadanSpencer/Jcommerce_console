@@ -166,3 +166,16 @@ admin yet. Don't tell the operator to cancel there.
   - Alerts `run.speedReady` (first screen over 8 s) and `run.speedTaps` (taps over 500 ms) once there are `LIMITS.speedMin` (20) or more reports.
 - `src/RunnerControl.js`: the "Speed on real phones" fold under "Is it running", coloured green, amber or red against Google's thresholds (LCP 2.5 s / 4 s, INP 200 ms / 500 ms, CLS 0.1 / 0.25; first screen 5 s / 8 s).
 - Fields per report: release, page, role, firstVisit, installed, intro, os, browser, memoryGb, cores, net, saveData, lowPower, ttfb, fcp, lcp, inp, cls, ready, load, at, day. No personal data.
+
+## Problem reports (added 2026-10-21)
+- Students can report a delivered order (never arrived, items missing, wrong order, other) within 48 h. Runner stores it as `orders/{id}.problem` = { kind, note, at } (functions/src/problems.ts).
+- `electron/ops.js` medium checks read orders with `problem.at` in the last 14 days (`problems`).
+- `src/runnerOps.js` raises `orders.problems` (act). It resolves per order with `problem.<code>`, and excludes those orders from a runner's owed pay in `settle.runners` (`held`) until resolved.
+
+## Launch on top-up cards, and app stores (added 2026-10-21)
+- **"Before launch":**
+  - The money group is now "Money: top-up cards (no card payments yet)": test one card from start to finish, make and print the batches, activate each at handover, brief the sellers, the cash routine, and card payments staying hidden.
+  - "Test it like a student" adds: ordering with too few coins, adding a card on the pay screen, and reporting a problem.
+- **App stores:** `STORE_STEPS` in `src/runnerOps.js` (Android: Google Play, 17 steps; iPhone: App Store, 7 steps) is drawn by `StoreSteps` in `src/RunnerControl.js` under Checklists, ticked in `local.ticks`.
+  - The closed-test group has a start date (`local.closedTestStart`) and a counter (`CLOSED_TEST_DAYS` 14, `CLOSED_TEST_TESTERS` 12).
+  - These are Google's rules for personal accounts as of Oct 2026. Organisation accounts (D-U-N-S) are exempt. A second, simpler app would not skip the test.
