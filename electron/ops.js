@@ -108,6 +108,28 @@ const ORDER_FIELDS = ['status', 'paymentStatus', 'paymentMethod', 'fulfilment', 
 // The order code is what everyone uses to talk about an order
 const tidyOrder = ({ receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase(), hasRunner: !!o.dasherId });
 
+// Where a domain's DNS points. A lookup can fail for reasons that have nothing
+// to do with the domain (the Mac just woke, Wi-Fi dropped, one DNS server is
+// slow), and on 22 Oct 2026 one such blip showed "uwi-runner.online points to
+// nothing" while it was fine. So: ask the Mac's DNS, then Cloudflare's and
+// Google's directly, then the Mac's own resolver; a domain counts as pointing
+// nowhere only when DNS answers that it has no address (NXDOMAIN / no data).
+// If none of them could be reached, `failed` says so and it is "couldn't check".
+async function addressesOf(name) {
+  const NO_ADDRESS = ['ENOTFOUND', 'ENODATA', 'NXDOMAIN'];
+  const ways = [
+    () => dns.resolve4(name),
+    () => { const r = new dns.Resolver({ timeout: 4000, tries: 2 }); r.setServers(['1.1.1.1', '8.8.8.8']); return r.resolve4(name); },
+    async () => (await dns.lookup(name, { all: true, family: 4 })).map(x => x.address),
+  ];
+  let answeredEmpty = false, lastError = null;
+  for (const way of ways) {
+    try { const ips = await way(); if (ips.length) return { ips, failed: null }; answeredEmpty = true; }
+    catch (e) { if (NO_ADDRESS.includes(e.code)) answeredEmpty = true; else lastError = e.code || e.message; }
+  }
+  return { ips: [], failed: answeredEmpty ? null : (lastError || 'no DNS server answered') };
+}
+
 // ── Runner's own folder: its lists, its web address, its newest code ──────
 // shared.ts holds every status, reason and time limit. They are read from
 // there so the control room can't drift from what Runner actually does.
@@ -250,8 +272,10 @@ async function medium(project, token, ctx, dir) {
       const j = await g(`https://firebasehosting.googleapis.com/v1beta1/projects/${project}/sites/${project}/customDomains`);
       const rows = await Promise.all((j.customDomains || []).map(async d => {
         const name = d.name.split('/').pop();
-        const ips = await dns.resolve4(name).catch(() => []);
-        return { name, host: d.hostState || '', ownership: d.ownershipState || '', cert: d.cert?.state || '', ips, direct: ips.includes(FIREBASE_HOSTING_IP) };
+        const { ips, failed } = await addressesOf(name);
+        // direct: true / false, or null when no DNS server could be reached (not the same as "points nowhere")
+        return { name, host: d.hostState || '', ownership: d.ownershipState || '', cert: d.cert?.state || '', ips, dnsFailed: failed || null,
+          direct: failed ? null : ips.includes(FIREBASE_HOSTING_IP) };
       }));
       return { rows };
     }),

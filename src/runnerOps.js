@@ -538,6 +538,8 @@ export function judgeRunner(data, local = {}) {
   // The site's own domain (uwi-runner.online): connected, certificate, DNS straight to Firebase
   if (!P.domains?.ok) running.push(cant('run.domain', 'the website\'s own domain', P.domains));
   else P.domains.rows.forEach(d => {
+    // The Mac couldn't reach any DNS server: say so, don't call the domain broken
+    if (d.direct === null) { running.push(cant(`run.domain.${d.name}`, `where ${d.name} points (this Mac couldn't reach a DNS server: ${d.dnsFailed || 'no answer'})`, { ok: false })); return; }
     const problem = !d.direct ? `its DNS does not point straight at Firebase (it points to ${d.ips.join(', ') || 'nothing'})`
       : d.host !== 'HOST_ACTIVE' ? 'Firebase is not serving it yet'
       : !['CERT_ACTIVE', 'CERT_PROPAGATING'].includes(d.cert) ? 'its security certificate is not ready' : null;
