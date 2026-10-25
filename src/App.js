@@ -230,14 +230,15 @@ function mondayOf(dateStr) {
   return localDateStr(d);
 }
 
-function calcTodoXP(todos, todayStr) {
+function calcTodoXP(todos, todayStr, since = '') {
   const yesterday = addDays(todayStr, -1);
+  if (yesterday < since) return todos.filter(t => Object.entries(t.doneOn || {}).some(([d, v]) => v && d >= since)).length * 5;
   let xp = 0;
 
   // REWARD: +5 XP once per task that got done. (Re-ticking an old task on
   // later days used to earn +5 every day.)
   todos.forEach(t => {
-    if (Object.values(t.doneOn || {}).some(Boolean)) xp += 5;
+    if (Object.entries(t.doneOn || {}).some(([d, v]) => v && d >= since)) xp += 5;
   });
 
   // PENALTY: only for todos added ON yesterday that were NOT completed yesterday
@@ -280,65 +281,69 @@ const XP_PER_MOVE = 10;
 // never reach back before that day, and nothing is ever taken for today:
 // penalties only land once a day, week or month is over.
 const XP_STRICT_FROM = '2026-10-09';
-function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {} }) {
+function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {}, fresh = {} }) {
+  // A fresh start (settings/xpFresh) counts nothing before its day. Focus time and
+  // study topics keep no dates, so those count only what was added after it.
+  const since = fresh.since || '';
+  const from = since > XP_STRICT_FROM ? since : XP_STRICT_FROM;
   const rows = [];
   const row = (k, tab, plus, minus, how) => rows.push({ k, tab, plus: Math.round(plus), minus: Math.round(minus), net: Math.round(plus - minus), how });
   const net = (k, tab, n, how) => row(k, tab, Math.max(0, n), Math.max(0, -n), how);
   const yesterday = addDays(todayStr, -1);
   const strictDays = [];
-  for (let d = XP_STRICT_FROM; d <= yesterday && strictDays.length < 120; d = addDays(d, 1)) strictDays.push(d);
-  const fromMonth = XP_STRICT_FROM.slice(0, 7), thisMonth = todayStr.slice(0, 7);
+  for (let d = from; d <= yesterday && strictDays.length < 120; d = addDays(d, 1)) strictDays.push(d);
+  const fromMonth = from.slice(0, 7), thisMonth = todayStr.slice(0, 7);
 
   // Habits: +10 a day done, −10 a day missed (since the habit was made, up to 90 days back)
   let hp = 0, hm = 0;
   habits.forEach(h => {
-    hp += Object.values(h.completions || {}).filter(Boolean).length * 10;
+    hp += Object.entries(h.completions || {}).filter(([d, v]) => v && d >= since).length * 10;
     const createdRaw = h.createdAt?.toDate ? h.createdAt.toDate() : null;
     const createdStr = createdRaw ? localDateStr(createdRaw) : todayStr;
     const daysBack = Math.min(90, Math.round((parseLocal(todayStr) - parseLocal(createdStr)) / 86400000));
     for (let i = 1; i <= daysBack; i++) {
       const d = addDays(todayStr, -i);
-      if (d < createdStr) break;
+      if (d < createdStr || d < since) break;
       if (h.archivedAt && d >= h.archivedAt) continue;
       if (!h.completions?.[d]) hm += 10;
     }
   });
   row('Habits', 'habits', hp, hm, '+10 a day done, −10 a day missed');
-  net('Tasks', 'todos', calcTodoXP(todos, todayStr), '+5 a task done; −10 each one missed, −10 for a day under five');
-  net('Focus', 'focus', focusXP(timers, todayStr), '+1 per 10 minutes, a bonus for finishing, the same taken for failing');
-  net('Goals', 'goals', goals.reduce((t, g) => t + goalXP(g, todayStr), 0), '+100 reached, −50 missed or given up');
+  net('Tasks', 'todos', calcTodoXP(todos, todayStr, since), '+5 a task done; −10 each one missed, −10 for a day under five');
+  net('Focus', 'focus', focusXP(timers, todayStr) - (fresh.focusBase || 0), '+1 per 10 minutes, a bonus for finishing, the same taken for failing');
+  net('Goals', 'goals', goals.filter(g => !since || ((g.completedAt || '').slice(0, 10) || g.deadline || '') >= since).reduce((t, g) => t + goalXP(g, todayStr), 0), '+100 reached, −50 missed or given up');
 
   // Tide Log: +15 an entry, −5 for a day with none
-  row('Tide Log', 'dashboard', journal.length * 15, strictDays.filter(d => !journal.some(j => j.date === d)).length * 5, '+15 an entry, −5 for a day with none');
+  row('Tide Log', 'dashboard', journal.filter(j => (j.date || '') >= since).length * 15, strictDays.filter(d => !journal.some(j => j.date === d)).length * 5, '+15 an entry, −5 for a day with none');
 
   // Studies: +5 a topic backed by study time. Before the stricter rules: −20 for a week under two
   // hours. Since then: each course owes its credit hours every week, and coursework costs extra
   let sm = 0;
   if (courses.length) {
-    let m = mondayOf(XP_STRICT_FROM); if (m < XP_STRICT_FROM) m = addDays(m, 7);
+    let m = mondayOf(from); if (m < from) m = addDays(m, 7);
     for (; addDays(m, 6) < todayStr && m < STUDY_FIRST_MONDAY; m = addDays(m, 7)) {
       const end = addDays(m, 6);
       const sec = timers.filter(t => t.category === 'Study').reduce((t, x) => t + (x.sessions || []).reduce((u, ss) => { const d = localDateStr(new Date(ss.end)); return u + (d >= m && d <= end ? Number(ss.sec) || 0 : 0); }, 0), 0);
       if (sec < 7200) sm += 20;
     }
   }
-  sm += studyPenalty(courses, timers, todos, todayStr);
-  row('Studies', 'studies', studyXP(courses, timers, todayStr), sm, '+5 a topic backed by study time; −25 a course under its credit hours in a week, −15 a tutorial and −40 a deadline not done on its day');
+  sm += studyPenalty(courses, timers, todos, todayStr, since);
+  row('Studies', 'studies', Math.max(0, studyXP(courses, timers, todayStr) - (fresh.studyBase || 0)), sm, '+5 a topic backed by study time; −25 a course under its credit hours in a week, −15 a tutorial and −40 a deadline not done on its day');
 
   // Pipeline: +200 a client won, −5 for each follow-up left past its date
   const liveLead = l => !['Flaked', 'Lost'].includes(l.status);
-  row('Pipeline', 'pipeline', leads.filter(l => l.status === 'Paid').length * 200,
-    leads.filter(l => liveLead(l) && l.nextAction && l.nextActionDate && l.nextActionDate >= XP_STRICT_FROM && l.nextActionDate < todayStr).length * 5,
+  row('Pipeline', 'pipeline', leads.filter(l => l.status === 'Paid' && (l.clientSince || (l.createdAt?.toDate ? localDateStr(l.createdAt.toDate()) : '')) >= since).length * 200,
+    leads.filter(l => liveLead(l) && l.nextAction && l.nextActionDate && l.nextActionDate >= from && l.nextActionDate < todayStr).length * 5,
     '+200 a client won, −5 for each next action left past its date');
 
   // Clients: +20 a retainer collected, −20 for each month a retainer is unpaid
-  row('Clients', 'clients', finances.filter(f => f.paymentStage === 'Monthly Retainer' && (f.date || '') >= XP_STRICT_FROM).length * 20,
+  row('Clients', 'clients', finances.filter(f => f.paymentStage === 'Monthly Retainer' && (f.date || '') >= from).length * 20,
     leads.filter(l => l.status === 'Paid').reduce((t, l) => t + retainerArrears(l, finances, todayStr).filter(mk => mk >= fromMonth).length, 0) * 20,
     '+20 a retainer collected, −20 for each month one is unpaid');
 
   // Finance: +2 a transaction logged (5 a day at most); −15 for a month that ends in the red, −10 for each budget broken
   const perDay = {};
-  finances.forEach(f => { if ((f.date || '') >= XP_STRICT_FROM) perDay[f.date] = (perDay[f.date] || 0) + 1; });
+  finances.forEach(f => { if ((f.date || '') >= from) perDay[f.date] = (perDay[f.date] || 0) + 1; });
   let fm = 0;
   for (let mk = fromMonth; mk < thisMonth; mk = addMonths(mk, 1)) {
     const month = finances.filter(f => (f.date || '').startsWith(mk));
@@ -346,29 +351,29 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
     budgets.forEach(bd => { const lim = Number(bd.limit) || 0; if (lim && month.filter(f => !isIncome(f) && f.category === bd.category).reduce((t, f) => t + amountOf(f), 0) > lim) fm += 10; });
   }
   const mine = debts.filter(d => d.direction === 'owe');
-  const cleared = mine.filter(d => debtLeft(d) === 0 && (d.settledAt || '') >= XP_STRICT_FROM).length;
-  fm += mine.filter(d => debtLeft(d) > 0 && d.dueDate && d.dueDate >= XP_STRICT_FROM && d.dueDate < todayStr).length * 10;
+  const cleared = mine.filter(d => debtLeft(d) === 0 && (d.settledAt || '') >= from).length;
+  fm += mine.filter(d => debtLeft(d) > 0 && d.dueDate && d.dueDate >= from && d.dueDate < todayStr).length * 10;
   row('Finance', 'finance', Object.values(perDay).reduce((t, n) => t + Math.min(5, n) * 2, 0) + cleared * 10, fm, '+2 a transaction logged (5 a day), +10 a debt cleared; −15 a month in the red, −10 a broken budget, −10 a debt past its date');
 
   // Ventures: +10 a daily check and a move finished; −10 a check missed or a move past its date, −5 a move finished late
   const firstVenture = [...ventures].sort((x, y) => (x.createdAt?.seconds ?? Infinity) - (y.createdAt?.seconds ?? Infinity))[0]?.id;
   const checkKey = c => `${c.date}|${c.ventureId || firstVenture || ''}`;
-  const checked = new Set(ventureChecks.map(checkKey));
+  const checked = new Set(ventureChecks.filter(c => (c.date || '') >= since).map(checkKey));
   let vm = 0;
   ventures.filter(v => v.stage !== 'Paused').forEach(v => {
-    const made = v.createdAt?.toDate ? localDateStr(v.createdAt.toDate()) : XP_STRICT_FROM;
+    const made = v.createdAt?.toDate ? localDateStr(v.createdAt.toDate()) : from;
     strictDays.forEach(d => { if (d >= made && !checked.has(`${d}|${v.id}`)) vm += 10; });
   });
   const moves = ventureItems.filter(i => i.kind === 'move');
   moves.forEach(m => {
-    if (!m.due || m.due < XP_STRICT_FROM) return;
+    if (!m.due || m.due < from) return;
     if (!m.done && m.due < todayStr) vm += 10;
     else if (m.done && m.doneAt && m.doneAt > m.due) vm += 5;
   });
-  row('Ventures', 'ventures', checked.size * 10 + moves.filter(m => m.done).length * XP_PER_MOVE, vm, '+10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late');
+  row('Ventures', 'ventures', checked.size * 10 + moves.filter(m => m.done && (m.doneAt || m.due || '').slice(0, 10) >= since).length * XP_PER_MOVE, vm, '+10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late');
 
   // In the red: every day the total sits below zero costs 100 more, whatever else happens
-  const red = Object.keys(debtDays).filter(d => debtDays[d]).length;
+  const red = Object.keys(debtDays).filter(d => debtDays[d] && d >= since).length;
   if (red) row('In the red', 'dashboard', 0, red * 100, '−100 XP for every day your total is below zero');
   return rows;
 }
@@ -1862,7 +1867,10 @@ function App() {
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
   const debtDoc = settings.find(x => x.key === 'xpDebt');
-  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {} };
+  const freshDoc = settings.find(x => x.key === 'xpFresh');
+  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {}, fresh: freshDoc || {} };
+  // Fresh start: XP counts again from 0, from today. History is kept; only the score restarts.
+  const freshStart = () => setDoc(doc(db, 'settings', 'xpFresh'), { key: 'xpFresh', since: todayStr, focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr), at: serverTimestamp() });
   const ledger = xpLedger(xpData);
   const xp = calcXP(xpData);
   const { level, progress, xpInLevel, inRed } = xpToLevel(xp);
@@ -2068,7 +2076,7 @@ function App() {
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={`mark-${tab}`}>{currentNav.jp}</div>
         <SectionBoundary key={`section-${tab}`}>
-        {tab==='dashboard' && <Dashboard invoices={invoices} lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
+        {tab==='dashboard' && <Dashboard invoices={invoices} lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} freshSince={freshDoc?.since || ''} onFreshStart={freshStart} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
         })} venturesUnchecked={ventures.filter(v => v.stage !== 'Paused' && !ventureChecks.some(c => c.date === todayStr && (!c.ventureId || c.ventureId === v.id))).map(v => v.name)} courses={courses} balance={balanceDoc?.targets} onSetBalance={setBalance}/>}
@@ -2324,9 +2332,13 @@ function TideRow({ tag, color, text, compact }) {
 // Pulls every section together into one answer: what to do next, and whether
 // you're on track. Everything here is read from the same data the other
 // sections use, so the two never disagree.
-function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], debts = [], lastBackup = '', onBackup, todayStr, xp, level, progress, xpInLevel,
+function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, goals, timers, journal, courses = [], balance, onSetBalance, venturesUnchecked = [], launchToday = [], ledger = [], freshSince = '', onFreshStart, debts = [], lastBackup = '', onBackup, todayStr, xp, level, progress, xpInLevel,
   onToggleHabit, onToggleTodo, onAddTodo, onSaveJournal, onNav, onStartTimer }) {
   const [taskDraft, setTaskDraft] = useState('');
+  const { confirm, ConfirmUI } = useConfirm();
+  const askFreshStart = async () => {
+    if (await confirm({ message: 'Restart your XP at 0 (Level 1), counting from today? Your habits, tasks, goals and history all stay. Only the score starts again.', label: 'Fresh start', danger: true })) onFreshStart();
+  };
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const thisMonth = todayStr.slice(0, 7), today = Number(todayStr.slice(8));
@@ -2604,7 +2616,11 @@ function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, go
             </button>
           ))}
         </div>
-        <div className="goal-hint" style={{ marginTop: '0.6rem' }}>Nothing is taken for today. A missed day, week or month costs you once it is over. The newer rules count from {fmtDate(XP_STRICT_FROM, { month: 'long', day: 'numeric' })}.</div>
+        <div className="row-between goal-hint" style={{ marginTop: '0.6rem', gap: '0.75rem' }}>
+          <span>Nothing is taken for today. A missed day, week or month costs you once it is over. {freshSince ? `XP counts from your fresh start on ${fmtDate(freshSince, { month: 'long', day: 'numeric' })}.` : `The newer rules count from ${fmtDate(XP_STRICT_FROM, { month: 'long', day: 'numeric' })}.`}</span>
+          {freshSince !== todayStr && <button className="link-btn" onClick={askFreshStart}>Fresh start</button>}
+        </div>
+        {ConfirmUI}
       </div>
 
       <div className="dash-row wide">
@@ -3775,12 +3791,14 @@ const weekStudySec = (course, timers, monday) => {
     const d = localDateStr(new Date(ss.end)); return u + (d >= monday && d <= end ? Number(ss.sec) || 0 : 0);
   }, 0), 0);
 };
-function studyPenalty(courses, timers, todos, todayStr) {
+function studyPenalty(courses, timers, todos, todayStr, since = '') {
   let m = 0;
-  for (let mon = STUDY_FIRST_MONDAY; addDays(mon, 6) < todayStr; mon = addDays(mon, 7))
+  let first = STUDY_FIRST_MONDAY;
+  while (first < since) first = addDays(first, 7);   // whole weeks after a fresh start only
+  for (let mon = first; addDays(mon, 6) < todayStr; mon = addDays(mon, 7))
     courses.forEach(c => { if (weekStudySec(c, timers, mon) < weeklyTargetSec(c)) m += 25; });
   todos.forEach(t => {
-    if (!t.addedDate || t.addedDate < STUDY_STRICT_FROM || t.addedDate >= todayStr || t.doneOn?.[t.addedDate] || !courseOfTask(t, courses)) return;
+    if (!t.addedDate || t.addedDate < STUDY_STRICT_FROM || t.addedDate < since || t.addedDate >= todayStr || t.doneOn?.[t.addedDate] || !courseOfTask(t, courses)) return;
     const k = courseworkKind(t);
     m += k === 'assessment' ? 40 : k === 'tutorial' ? 15 : 0;
   });
