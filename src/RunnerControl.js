@@ -6,11 +6,11 @@
 // handling what) stays on this Mac and never goes to Runner.
 import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
+import './RunnerControl.css';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
 const secs = ms => (ms === null || ms === undefined ? '–' : `${(ms / 1000).toFixed(1)} s`);
 const tone = (v, good, poor) => (v === null || v === undefined ? '' : v <= good ? 'rc-good' : v > poor ? 'rc-bad' : 'rc-meh');
-import './RunnerControl.css';
 
 const MIN = 60000;
 const NORMAL_MS = 2 * MIN, LAUNCH_MS = MIN, GAP_MS = MIN; // never faster than once a minute
@@ -259,8 +259,64 @@ const WORDS = [
 ];
 
 // ── The screen ──────────────────────────────────────────────────────────────
-export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile }) {
+// ── Trading: how the business is doing since it opened ─────────────────────
+function Trading({ T, launchDate }) {
+  if (!T?.ok) return <section className="card rc-sec"><p className="rc-item unknown rc-plain">Couldn't read the last week of orders this time, so no numbers are shown rather than wrong ones.</p></section>;
+  const live = T.days.filter(d => !launchDate || d.day >= launchDate);
+  const tot = k => live.reduce((t, d) => t + (d[k] || 0), 0);
+  const placed = tot('placed'), delivered = tot('delivered'), cancelled = tot('cancelled');
+  const timed = live.filter(d => d.avgMins !== null), timedN = timed.reduce((t, d) => t + d.delivered, 0);
+  const avg = timedN ? Math.round(timed.reduce((t, d) => t + d.avgMins * d.delivered, 0) / timedN) : null;
+  const today = T.days[T.days.length - 1]?.day;
+  const dayN = launchDate && today ? Math.round((Date.parse(`${today}T12:00:00`) - Date.parse(`${launchDate}T12:00:00`)) / 864e5) + 1 : null;
+  const top = Math.max(1, ...T.days.map(d => d.placed));
+  const since = launchDate && T.days[0].day <= launchDate ? 'since launch' : 'over the last 8 days';
+  return (<>
+    <section className="card rc-sec rc-trading">
+      <header><span className="rc-dot good"/><h3>{dayN ? `Day ${dayN} of trading` : 'Trading'}</h3><span className="rc-quiet">{since}{launchDate ? `, opened ${dayLabel(launchDate)}` : ''}</span>
+        <Help>Every order since Runner opened, day by day, from Runner's own records. Only the last 7 days and today are read, to keep the cost of each check low.</Help></header>
+      <div className="rc-tiles">
+        <div className="fin-tile"><span>Orders</span><b>{placed}</b><span className="fin-delta">{delivered} delivered · {cancelled} cancelled</span></div>
+        <div className="fin-tile"><span>Delivered rate</span><b className={placed && delivered / placed < 0.7 ? 'bad' : ''}>{placed ? `${Math.round(delivered / placed * 100)}%` : '–'}</b><span className="fin-delta">of orders placed</span></div>
+        <div className="fin-tile"><span>Money taken</span><b>{J(tot('taken'))}</b><span className="fin-delta">paid orders, not cancelled</span></div>
+        <div className="fin-tile"><span>Runner's share</span><b className="good">{J(tot('share'))}</b><span className="fin-delta">platform fee on delivered orders</span></div>
+        <div className="fin-tile"><span>Students who ordered</span><b>{T.buyers}</b><span className="fin-delta">last 7 days, delivered</span></div>
+        <div className="fin-tile"><span>Came back</span><b className={T.buyers && T.repeat / T.buyers >= 0.3 ? 'good' : ''}>{T.buyers ? `${Math.round(T.repeat / T.buyers * 100)}%` : '–'}</b><span className="fin-delta">{plural(T.repeat, 'student')} ordered twice or more</span></div>
+        <div className="fin-tile"><span>Average delivery</span><b className={avg !== null && avg > 40 ? 'bad' : ''}>{avg === null ? '–' : `${avg} min`}</b><span className="fin-delta">placed to delivered</span></div>
+      </div>
+      <div className="rc-days" role="img" aria-label="Orders placed and delivered each day">
+        {T.days.map(d => (
+          <div key={d.day} className={`rc-day ${d.today ? 'today' : ''} ${launchDate && d.day < launchDate ? 'before' : ''} ${d.day === launchDate ? 'launch' : ''}`} title={`${d.day}: ${d.placed} placed, ${d.delivered} delivered, ${J(d.share)} share`}>
+            <div className="rc-day-bar"><i style={{ height: `${(d.placed / top) * 100}%` }}/><b style={{ height: `${(d.delivered / top) * 100}%` }}/></div>
+            <span className="rc-day-n">{d.placed}</span><span className="rc-day-l">{d.today ? 'Today' : dayLabel(d.day)}</span>
+          </div>))}
+      </div>
+      <p className="rc-small">Light bar: orders placed. Solid bar: delivered.{launchDate ? ' Days before launch are faded.' : ''}{T.hitLimit ? ' Only the newest 3,000 orders of the week were read.' : ''}</p>
+    </section>
+    <section className="card rc-sec">
+      <header><span className="rc-dot good"/><h3>Day by day</h3></header>
+      <table className="rc-table"><thead><tr><th>Day</th><th>Placed</th><th>Delivered</th><th>Cancelled</th><th>Money taken</th><th>Runner's share</th><th>Students</th><th>Average delivery</th></tr></thead>
+        <tbody>{[...T.days].reverse().filter(d => !launchDate || d.day >= launchDate).map(d => (
+          <tr key={d.day} className={d.cancelled > d.delivered && d.placed ? 'warn' : ''}><td>{d.today ? 'Today' : dayLabel(d.day)}{d.day === launchDate ? <em> launch</em> : null}</td><td>{d.placed}</td><td>{d.delivered}</td><td>{d.cancelled || '–'}</td><td>{J(d.taken)}</td><td>{J(d.share)}</td><td>{d.students || '–'}</td><td>{d.avgMins === null ? '–' : `${d.avgMins} min`}</td></tr>))}</tbody></table>
+    </section>
+    <section className="card rc-sec">
+      <header><span className="rc-dot good"/><h3>Stores by delivered orders</h3><span className="rc-quiet">last 7 days</span></header>
+      {T.stores.length ? <table className="rc-table"><thead><tr><th>Store</th><th>Delivered</th><th>Money taken</th></tr></thead>
+        <tbody>{T.stores.map(x => <tr key={x.name}><td>{x.name}</td><td>{x.orders}</td><td>{J(x.taken)}</td></tr>)}</tbody></table>
+        : <p className="rc-small">No delivered orders in the last 7 days.</p>}
+      <p className="rc-small">A store near the top is worth a thank-you visit; one with no orders may need its menu, photos or hours checked in the People tab.</p>
+    </section>
+  </>);
+}
+
+const TABS = [['now', 'Now'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['running', 'Is it running'], ['handbook', 'Handbook']];
+const SECTION_TAB = { orders: 'now', money: 'money', people: 'people', running: 'running' };
+const dayLabel = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+
+export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile, launchDate = '' }) {
   const s = useStore();
+  const [tab, setTabRaw] = useState(() => { try { return localStorage.getItem('rc_tab') || 'now'; } catch { return 'now'; } });
+  const setTab = t => { setTabRaw(t); try { localStorage.setItem('rc_tab', t); } catch {} };
   const [, tick] = useState(0);
   const [delWho, setDelWho] = useState('');
   const [delDate, setDelDate] = useState('');
@@ -313,7 +369,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
 
   const exportLog = async () => {
     const lines = local.log.map(e => `${jmDate(e.at)} ${jmTime(e.at)}\t${e.event === 'appeared' ? `${WORD[e.lv] || ''}: ${e.what}` : e.event === 'cleared' ? `Cleared: ${e.what}` : e.what}\t${e.done || ''}`);
-    const text = `Runner launch log, exported ${jmDate(nowT)} ${jmTime(nowT)} (Jamaica time)\nTime\tWhat happened\tWhat was done\n${lines.join('\n')}\n`;
+    const text = `Runner alert log, exported ${jmDate(nowT)} ${jmTime(nowT)} (Jamaica time)\nTime\tWhat happened\tWhat was done\n${lines.join('\n')}\n`;
     if (exportFile) await exportFile(text, `runner-log-${jmDate(nowT)}.txt`);
   };
   const leftBefore = r.checklist.flatMap(g => g.items).filter(c => !c.ticked && !c.done).length;
@@ -335,30 +391,47 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         </div>
       </div>
 
-      {local.launch && (
+      <nav className="rc-tabs">
+        {TABS.map(([id, label]) => {
+          const sec = id === 'now' ? null : r.sections.find(x => SECTION_TAB[x.id] === id);
+          const n = sec ? sec.items.filter(i => i.lv === 'act' || i.lv === 'look').length : 0;
+          const act = sec ? sec.items.some(i => i.lv === 'act') : false;
+          return <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}{n > 0 && <i className={act ? 'act' : 'look'}>{n}</i>}</button>;
+        })}
+      </nav>
+
+      {tab === 'now' && (<>
         <div className="rc-big">
           {[['Orders today', r.live.orders], ['Waiting for a runner', r.live.waiting, r.live.waiting > 0], ['Runners online', r.live.online ?? '?', r.live.online !== null && r.live.online < 3], ['Delivered', r.live.delivered], ['Open right now', r.live.open], ['Stores open', `${r.live.storesOpen}/${r.live.stores}`]].map(([l, v, bad]) => (
             <div key={l} className={bad ? 'bad' : ''}><b>{v}</b><span>{l}</span></div>))}
         </div>
-      )}
-
-      <div className="rc-bar">
-        <label className="rc-switch"><input type="checkbox" checked={local.launch} onChange={e => { setLocal({ launch: e.target.checked }); addLog({ event: 'mode', what: e.target.checked ? 'Launch mode on' : 'Launch mode off' }); save(); schedule(); }}/> Launch mode <em>checks every minute, big counts, alert log</em></label>
-        <label className="rc-switch"><input type="checkbox" checked={local.watch} onChange={e => { setLocal({ watch: e.target.checked }); schedule(); }}/> Watch in the background <em>keeps checking and notifies you while the console is open on any page</em></label>
-        <label className="rc-name">Your name <input ref={nameRef} className="input" value={local.name} placeholder="for “I'm handling this”" onChange={e => setLocal({ name: e.target.value })}/></label>
-        <span className="rc-phone">{k.policies ? `Phone alerts: ${k.policies.filter(p => p.on && p.emails).length} of 3 on (email)` : 'Phone alerts: couldn\'t check'}</span>
-      </div>
-
-      {data.ok && clockOff >= 3 && <div className="rc-note">This Mac's clock is {ago(clockOff)} {data.clockOffMs > 0 ? 'ahead of' : 'behind'} Google's. Every wait here uses Google's clock, so it is still right. Fix the Mac's clock in System Settings → General → Date &amp; Time.</div>}
+        {(() => {
+          const elsewhere = r.sections.filter(x => x.id !== 'orders').flatMap(x => x.items.filter(i => i.lv === 'act' || i.lv === 'look').map(i => ({ i, x })));
+          return elsewhere.length > 0 && (
+            <section className="card rc-sec rc-elsewhere">
+              <header><span className={`rc-dot ${elsewhere.some(e => e.i.lv === 'act') ? 'act' : 'look'}`}/><h3>Needs you elsewhere</h3></header>
+              {elsewhere.map(({ i, x }) => (
+                <button key={i.key} className={`rc-else ${i.lv}`} onClick={() => setTab(SECTION_TAB[x.id] || 'now')}><span>{i.what}</span><em>{x.title} ›</em></button>))}
+            </section>
+          );
+        })()}
+        <section className="card rc-sec" id="sec-today">
+          <header><span className="rc-dot good"/><h3>Today at a glance</h3><Help>Totals since midnight (Jamaica time), each against the same time yesterday, so you can see whether today is busier or quieter than normal.</Help></header>
+          {r.today.ok ? <div className="rc-tiles">{r.today.tiles.map(t => <div key={t.label} className={`fin-tile ${t.bad ? 'rc-bad' : ''}`}><span>{t.label}</span><b>{t.value}</b><span className="fin-delta">{t.note}</span></div>)}</div>
+            : <p className="rc-item unknown rc-plain">{r.today.note}</p>}
+        </section>
 
       {/* ── Orders ─────────────────────────────────────────────────────── */}
       <Section s={r.sections[0]} extra={r.cancellations.length > 0 && (
         <div className="rc-sub"><h4>Today's cancellations</h4>
           <ul className="rc-list">{r.cancellations.map(([w, n]) => <li key={w}><b>{n}</b> {w}</li>)}</ul>
-          <p className="rc-small">Runner admin has no Orders page yet, so nobody can look up or cancel an order there. An emergency cancel uses the steps in "An order must be cancelled" below.</p></div>)}/>
+          <p className="rc-small">Runner admin has no Orders page yet, so nobody can look up or cancel an order there. An emergency cancel uses the steps in "An order must be cancelled" in the Handbook.</p></div>)}/>
+      </>)}
+
+      {tab === 'trading' && <Trading T={r.trading} launchDate={launchDate}/>}
 
       {/* ── Money ──────────────────────────────────────────────────────── */}
-      <Section s={r.sections[1]}>
+      {tab === 'money' && <Section s={r.sections[1]}>
         <Fold id="rc-floats" title="Floats: cash Runner has advanced" note={r.floats.ok ? `${plural(r.floats.stores.length, 'store')}, ${plural(r.floats.runners.length, 'runner')}` : "couldn't check"}>
           <p className="rc-small">When an order is paid, its food cost comes out of the store's float if it has one, otherwise the delivering runner's. A negative store float is what Runner owes that store. Only an admin can top one up: Runner admin → Users or Stores → "Adjust float".</p>
           <table className="rc-table"><thead><tr><th>Who</th><th>Float</th><th>Food paid today</th><th>Returned today</th><th>Top-ups today</th></tr></thead>
@@ -387,10 +460,10 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             {r.cash.removed.map(t => <li key={t.id} className="warn"><b>{J(t.amountJmd)}</b> {jmTime(t.createdAt)} · taken back · {t.note || 'no note'}</li>)}
             {!r.cash.added.length && !r.cash.removed.length && <li>None today.</li>}</ul>
         </Fold>
-      </Section>
+      </Section>}
 
       {/* ── People ─────────────────────────────────────────────────────── */}
-      <Section s={r.sections[2]}>
+      {tab === 'people' && <Section s={r.sections[2]}>
         <Fold id="rc-runners" title="Runners" note={`${plural(r.runnerTable.length, 'runner')}, ${r.runnerTable.filter(x => x.online).length} online`}>
           <table className="rc-table"><thead><tr><th>Runner</th><th>Phone</th><th>Now</th><th>Deliveries this week</th><th>Average time</th><th>Slow (over 40 min)</th><th>Cancelled after taking</th><th>Float</th></tr></thead>
             <tbody>{r.runnerTable.map(x => (
@@ -427,10 +500,10 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <ul className="rc-list">{r.admins.map(a => <li key={a.email} className={local.expectedAdmins && !a.expected ? 'warn' : ''}>{a.email}{local.expectedAdmins && !a.expected && <em> not expected</em>}</li>)}</ul>
           <button className="btn-ghost rc-go" onClick={() => setLocal({ expectedAdmins: r.admins.map(a => a.email) })}>These are all expected</button>
         </Fold>
-      </Section>
+      </Section>}
 
       {/* ── Is it running ──────────────────────────────────────────────── */}
-      <Section s={r.sections[3]}>
+      {tab === 'running' && <Section s={r.sections[3]}>
         <div className="rc-facts">
           <div><span>App Check: verified share, last 7 days</span>{k.appCheck.length ? k.appCheck.map(a => <b key={a.label}>{a.label}: {a.share === null ? 'no traffic' : `${a.share}%`} <em>{a.enforced ? 'enforced' : a.share !== null && a.share >= 98 ? 'safe to enforce once it holds 98% for a week' : 'not safe to enforce yet'}</em></b>) : <b>couldn't check</b>}
             <small>The server's own functions already refuse requests without proof. The database and sign-in are only watched until verified traffic stays at 98% or more for a week. Before the Android app ships, App Check must be set up for it too.</small></div>
@@ -463,21 +536,24 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             </>}
           <p className="rc-small">Each visit to the Runner website sends one anonymous report: no name, account or location (Runner's privacy policy, "Speed measurements"). Reports are deleted after 30 days. "3 in 4" means three quarters of visits were this fast or faster. Targets: first screen under 5 s is good, over 8 s is slow; largest picture or text under 2.5 s; taps answered under 200 ms; layout jumps under 0.1. Compare versions after each deploy to see whether a change helped.{r.speed.hitLimit ? ' Only the newest 3,000 reports are counted.' : ''}</p>
         </Fold>
-      </Section>
+      </Section>}
 
-      {/* ── Today at a glance ──────────────────────────────────────────── */}
-      <section className="card rc-sec" id="sec-today">
-        <header><span className="rc-dot good"/><h3>Today at a glance</h3><Help>Totals since midnight (Jamaica time), each against the same time yesterday, so you can see whether today is busier or quieter than normal.</Help></header>
-        {r.today.ok ? <div className="rc-tiles">{r.today.tiles.map(t => <div key={t.label} className={`fin-tile ${t.bad ? 'rc-bad' : ''}`}><span>{t.label}</span><b>{t.value}</b><span className="fin-delta">{t.note}</span></div>)}</div>
-          : <p className="rc-item unknown rc-plain">{r.today.note}</p>}
-      </section>
+      {tab === 'handbook' && (<>
+      <div className="rc-bar">
+        <label className="rc-switch"><input type="checkbox" checked={local.launch} onChange={e => { setLocal({ launch: e.target.checked }); addLog({ event: 'mode', what: e.target.checked ? 'Launch mode on' : 'Launch mode off' }); save(); schedule(); }}/> Busy-hours mode <em>checks every minute and logs every alert, for lunch rushes and events</em></label>
+        <label className="rc-switch"><input type="checkbox" checked={local.watch} onChange={e => { setLocal({ watch: e.target.checked }); schedule(); }}/> Watch in the background <em>keeps checking and notifies you while the console is open on any page</em></label>
+        <label className="rc-name">Your name <input ref={nameRef} className="input" value={local.name} placeholder="for “I'm handling this”" onChange={e => setLocal({ name: e.target.value })}/></label>
+        <span className="rc-phone">{k.policies ? `Phone alerts: ${k.policies.filter(p => p.on && p.emails).length} of 3 on (email)` : 'Phone alerts: couldn\'t check'}</span>
+      </div>
+
+      {data.ok && clockOff >= 3 && <div className="rc-note">This Mac's clock is {ago(clockOff)} {data.clockOffMs > 0 ? 'ahead of' : 'behind'} Google's. Every wait here uses Google's clock, so it is still right. Fix the Mac's clock in System Settings → General → Date &amp; Time.</div>}
 
       {/* ── Checklists ─────────────────────────────────────────────────── */}
       <section className="card rc-sec" id="sec-checklists">
         <header><span className={`rc-dot ${leftBefore ? 'look' : 'good'}`}/><h3>Checklists</h3><span className="rc-quiet">{leftBefore ? `${leftBefore} before-launch jobs left.` : 'Before-launch list done.'}</span>
           <Help>Jobs that need your own Google or Firebase sign-in, so no app can do them. Lines the control room can check tick themselves; tick the rest when done. Ticks are kept on this Mac.</Help></header>
-        <Fold id="rc-before" title="Before launch" note={`${leftBefore} left`} open={leftBefore > 0}>
-          <p className="rc-small">The website launches first; Android and iPhone come later.</p>
+        <Fold id="rc-before" title="Before-launch list" note={leftBefore ? `${leftBefore} still open from before launch` : 'all done'} open={false}>
+          <p className="rc-small">Kept for reference now Runner is live. Anything still open here is still worth finishing; Android and iPhone come later.</p>
           {r.checklist.map(g => (
             <div key={g.title} className="rc-group"><h4>{g.title}</h4>
               {g.items.map(c => (
@@ -506,8 +582,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
       </section>
 
       {/* ── Launch day ─────────────────────────────────────────────────── */}
-      <Fold id="rc-launch" title="Launch day" note={local.launch ? 'launch mode is on' : 'switch on Launch mode above on the day'} open={local.launch}>
-        <p className="rc-small">One person watches this screen all day; a second handles WhatsApp and phone calls.</p>
+      <Fold id="rc-launch" title="Alert log and busy days" note={local.launch ? 'busy-hours mode is on' : `${local.log.length} alerts logged`} open={local.launch}>
+        <p className="rc-small">On a busy day one person watches this screen; a second handles WhatsApp and phone calls. The plan below is the launch-day routine, still the right shape for any big day.</p>
         <table className="rc-table"><thead><tr><th>When</th><th>Do</th><th>Watch for</th></tr></thead><tbody>{STATIC_PLAN.map(([a, b, c]) => <tr key={a}><td>{a}</td><td>{b}</td><td>{c}</td></tr>)}</tbody></table>
         <h4>Alert log <span className="rc-small">every alert with the time it appeared and cleared (Jamaica time)</span></h4>
         <div className="rc-log">{[...local.log].reverse().slice(0, 150).map((e, n) => { const idx = local.log.length - 1 - n; return (
@@ -558,6 +634,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         <table className="rc-table"><tbody>{WORDS.map(([w, m]) => <tr key={w}><td><b>{w}</b></td><td>{m}</td></tr>)}
           {Object.entries(CANCEL_WORDS).slice(0, 6).map(([w, m]) => <tr key={w}><td><em>cancel reason "{w}"</em></td><td>{m}</td></tr>)}</tbody></table>
       </Fold>
+
+      </>)}
 
       <p className="rc-foot">Read-only: this screen never changes anything in Runner, never deploys and never asks for a key. {data.ok ? `This check read about ${data.reads} records from Runner's database` : ''} (stores, runners and Google's status pages are re-read every 10 minutes; past days every hour). Order names, phone numbers and emails of students are never read; runner names and phones are, so you can call them.</p>
     </div>

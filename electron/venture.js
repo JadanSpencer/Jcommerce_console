@@ -10,6 +10,7 @@ const { spawn, execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
+const dns = require('dns').promises;
 const { ops } = require('./ops');
 
 const SHELL = '/bin/zsh'; // login shell, so npm/firebase are on PATH when launched from Finder
@@ -37,6 +38,61 @@ const mask = v => {
   if (v.length < 10) return '•'.repeat(v.length);
   return `${v.slice(0, 4)}${'•'.repeat(6)}${v.slice(-3)}`;
 };
+
+
+// ── Websites: domain, registrar, DNS host and the outside services a static
+// site loads. Reads the folder's HTML and two public lookups (DNS and the
+// domain registry's RDAP record). Nothing is changed anywhere.
+const withTimeout = (p, ms) => Promise.race([p, new Promise(resolve => setTimeout(() => resolve(null), ms))]);
+// The registry that answers for a domain comes from IANA's bootstrap list
+// (rdap.org refuses requests that don't come from a browser).
+let rdapBoot = null;
+async function rdapLookup(domain) {
+  try {
+    rdapBoot = rdapBoot || await (await fetch('https://data.iana.org/rdap/dns.json')).json();
+    const tld = domain.split('.').pop();
+    const base = rdapBoot.services.find(([tlds]) => tlds.includes(tld))?.[1]?.[0];
+    if (!base) return null;
+    const r = await fetch(`${base.replace(/\/?$/, '/')}domain/${domain}`, { headers: { accept: 'application/rdap+json' } });
+    return r.ok ? await r.json() : null;
+  } catch { return null; }
+}
+async function siteInfo(dir) {
+  let html = '', names = [];
+  try { names = (await fs.readdir(dir)).filter(f => /\.html?$/i.test(f)); } catch {}
+  if (!names.length) return null;
+  for (const f of names.slice(0, 40)) html += await fs.readFile(path.join(dir, f), 'utf8').catch(() => '');
+  const cname = (await fs.readFile(path.join(dir, 'CNAME'), 'utf8').catch(() => '')).trim();
+  const canon = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']https?:\/\/([^/"']+)/i)?.[1]
+    || html.match(/property=["']og:url["'][^>]+content=["']https?:\/\/([^/"']+)/i)?.[1] || '';
+  const domain = (cname || canon).replace(/^www\./, '').toLowerCase();
+  const site = {
+    domain, pages: names.length,
+    emailjs: /@emailjs\/browser|emailjs\.send\(/.test(html),
+    fonts: /fonts\.googleapis\.com/.test(html),
+    cdns: ['cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'unpkg.com'].filter(h => html.includes(h)),
+    metaVerified: /facebook-domain-verification/.test(html),
+    host: '', ns: [], registrar: '', expires: '', created: '', live: null,
+  };
+  if (!domain) return site;
+  const [ns, rdap, live] = await Promise.all([
+    withTimeout(dns.resolveNs(domain).catch(() => []), 5000),
+    withTimeout(rdapLookup(domain), 9000),
+    withTimeout((async () => { const t = Date.now(); try { const r = await fetch(`https://${domain}/`, { method: 'GET', redirect: 'follow' }); return { ok: r.ok, status: r.status, ms: Date.now() - t, server: r.headers.get('server') || '' }; } catch (e) { return { ok: false, status: 0, ms: Date.now() - t, error: String(e.message || e) }; } })(), 10000),
+  ]);
+  site.ns = ns || [];
+  const nsText = site.ns.join(' ');
+  site.host = /vercel-dns/.test(nsText) || /vercel/i.test(live?.server || '') ? 'vercel'
+    : /netlify/.test(nsText) ? 'netlify' : /cloudflare/.test(nsText) ? 'cloudflare' : /github/i.test(live?.server || '') ? 'github-pages' : '';
+  if (rdap) {
+    const ev = a => (rdap.events || []).find(e => e.eventAction === a)?.eventDate?.slice(0, 10) || '';
+    site.expires = ev('expiration'); site.created = ev('registration');
+    const reg = (rdap.entities || []).find(e => (e.roles || []).includes('registrar'));
+    site.registrar = reg?.vcardArray?.[1]?.find(x => x[0] === 'fn')?.[3] || '';
+  }
+  site.live = live || { ok: false, status: 0, ms: 0, error: 'No answer in 10 seconds' };
+  return site;
+}
 
 async function isDir(dir) {
   try { return (await fs.stat(dir)).isDirectory(); } catch { return false; }
@@ -144,8 +200,8 @@ async function overview(dir) {
   return {
     ok: true, dir, name: pkg?.name || path.basename(dir),
     firebaseProject: rc?.projects?.default || '',
-    git, secrets, files, docs, checks, uses,
-    has: { vercel: await exists(path.join(dir, 'vercel.json')), expo: await exists(path.join(dir, 'eas.json')) || !!pkg?.dependencies?.expo, ci: await exists(path.join(dir, '.github', 'workflows')), functions: !!fnPkg },
+    git, secrets, files, docs, checks, uses, site: await siteInfo(dir),
+    has: { vercel: await exists(path.join(dir, 'vercel.json')) || await exists(path.join(dir, '.vercel', 'project.json')), expo: await exists(path.join(dir, 'eas.json')) || !!pkg?.dependencies?.expo, ci: await exists(path.join(dir, '.github', 'workflows')), functions: !!fnPkg },
   };
 }
 

@@ -104,7 +104,7 @@ const part = async job => {
 
 const ORDER_FIELDS = ['status', 'paymentStatus', 'paymentMethod', 'fulfilment', 'storeId', 'storeName', 'totalAmount', 'deliveryFee', 'platformFeeJmd', 'dasherPayoutJmd',
   'createdAt', 'verifiedAt', 'acceptedAt', 'paidAt', 'deliveredAt', 'readyAt', 'cancelledAt', 'cancelReason', 'deliveryMins', 'payDeadline',
-  'storeAskedAt', 'storeAnswerBy', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId', 'deliveryDiscountJmd'];
+  'storeAskedAt', 'storeAnswerBy', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId', 'deliveryDiscountJmd', 'studentId'];
 // The order code is what everyone uses to talk about an order
 const tidyOrder = ({ receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase(), hasRunner: !!o.dasherId });
 

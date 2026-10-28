@@ -651,6 +651,27 @@ export function judgeRunner(data, local = {}) {
       deliveries: done.length, avgMins: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null, slow: times.filter(t => t > LIMITS.onWayLook).length,
       dropped: mine.filter(o => o.status === 'cancelled').length, float: typeof d.floatJmd === 'number' ? d.floatJmd : null };
   }).sort((a, b) => b.online - a.online || b.deliveries - a.deliveries);
+  // ── Trading: each of the last 7 days and today, for the Trading tab ───────
+  // Student IDs are only counted (buyers, repeat buyers), never shown.
+  const trading = (() => {
+    if (!usable(P.ordersWeek)) return { ok: false };
+    const sumOf = (list, f) => list.reduce((t, o) => t + (Number(o[f]) || 0), 0);
+    const days = [];
+    for (let t = data.today - 7 * DAY; t <= data.today; t += DAY) {
+      const day = jmDate(t), list = weekAll.filter(o => jmDate(o.createdAt) === day), del = list.filter(o => o.status === 'delivered');
+      const times = del.map(o => Number(o.deliveryMins)).filter(n => n > 0);
+      days.push({ day, today: t === data.today, placed: list.length, delivered: del.length, cancelled: list.filter(o => o.status === 'cancelled').length,
+        taken: sumOf(list.filter(o => o.paidAt && o.status !== 'cancelled'), 'totalAmount'), share: sumOf(del, 'platformFeeJmd'),
+        students: new Set(list.map(o => o.studentId).filter(Boolean)).size, avgMins: times.length ? Math.round(times.reduce((a, b) => a + b, 0) / times.length) : null });
+    }
+    const del = weekAll.filter(o => o.createdAt >= data.today - 7 * DAY && o.status === 'delivered');
+    const per = {};
+    del.forEach(o => { if (o.studentId) per[o.studentId] = (per[o.studentId] || 0) + 1; });
+    const shops = {};
+    del.forEach(o => { const k = o.storeName || 'Store'; shops[k] = shops[k] || { name: k, orders: 0, taken: 0 }; shops[k].orders += 1; shops[k].taken += Number(o.totalAmount) || 0; });
+    return { ok: true, days, buyers: Object.keys(per).length, repeat: Object.values(per).filter(n => n > 1).length,
+      stores: Object.values(shops).sort((a, b) => b.orders - a.orders).slice(0, 8), hitLimit: !!P.ordersWeek.hitLimit };
+  })();
   const storeTable = stores.map(s => {
     const login = logins.find(u => u.storeId === s.id), fl = floats.stores.find(f => f.id === s.id);
     const items = menuItems.filter(m => m.storeId === s.id);
@@ -818,5 +839,5 @@ export function judgeRunner(data, local = {}) {
   if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L, launch, freeHeld, speed };
+    checklist, keeping, limits: L, launch, freeHeld, speed, trading };
 }

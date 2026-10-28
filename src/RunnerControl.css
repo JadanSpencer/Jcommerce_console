@@ -154,3 +154,31 @@
 /* Speed on real phones: good / so-so / slow figures, and slow rows */
 .rc-table .rc-good { color: var(--rc-good); } .rc-table .rc-meh { color: var(--rc-look); } .rc-table .rc-bad { color: var(--rc-act); }
 .rc-table tr.warn td:first-child { color: var(--rc-look); font-weight: 600; }
+
+/* ─── Tabs: the control room as an operating business ───────────────── */
+.rc-tabs { display: flex; gap: 1.4rem; border-bottom: 1px solid rgba(255,255,255,0.08); overflow-x: auto; scrollbar-width: none; margin: 0.25rem 0 0.25rem; }
+.rc-tabs button { position: relative; display: inline-flex; align-items: center; gap: 0.4rem; background: none; border: none; cursor: pointer; padding: 0.75rem 0 0.8rem;
+  font: 500 13.5px var(--fs); color: var(--ink-3); white-space: nowrap; }
+.rc-tabs button:hover { color: var(--ink-1); }
+.rc-tabs button.on { color: var(--ink-0); }
+.rc-tabs button.on::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--gold-400); border-radius: 2px; }
+.rc-tabs i { font: 600 10px var(--fm); font-style: normal; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; display: inline-grid; place-items: center; }
+.rc-tabs i.act { background: rgba(255,45,61,0.18); color: #ff6b75; }
+.rc-tabs i.look { background: rgba(255,154,74,0.16); color: #ffb37a; }
+.rc-elsewhere { display: flex; flex-direction: column; gap: 0.2rem; }
+.rc-else { display: flex; justify-content: space-between; gap: 1rem; align-items: center; text-align: left; background: none; border: none; border-left: 2px solid transparent;
+  padding: 0.55rem 0.7rem; border-radius: 6px; color: var(--ink-1); font: 13.5px var(--fs); cursor: pointer; }
+.rc-else:hover { background: rgba(255,255,255,0.03); }
+.rc-else.act { border-left-color: #ff2d3d; } .rc-else.look { border-left-color: #ff9a4a; }
+.rc-else em { font-style: normal; font: 500 11px var(--fm); color: var(--ink-3); white-space: nowrap; }
+.rc-days { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.6rem; align-items: end; height: 170px; margin: 1rem 0 0.4rem; }
+.rc-day { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.rc-day-bar { position: relative; flex: 1; width: 100%; max-width: 46px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+.rc-day-bar i, .rc-day-bar b { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 4px 4px 0 0; }
+.rc-day-bar i { background: rgba(211,168,85,0.22); }
+.rc-day-bar b { left: 18%; right: 18%; background: linear-gradient(180deg, #3ecf8e, #1f8f62); }
+.rc-day.before { opacity: 0.35; }
+.rc-day.launch .rc-day-l { color: var(--gold-300); }
+.rc-day.today .rc-day-l { color: var(--ink-0); font-weight: 600; }
+.rc-day-n { font: 600 12px var(--fm); color: var(--ink-1); }
+.rc-day-l { font: 10.5px var(--fm); color: var(--ink-3); white-space: nowrap; }

@@ -438,10 +438,11 @@ function goalStatus(g, todayStr) {
 // Wins logged after the fact are on the record but earn nothing.
 const goalXP = (g, todayStr) => { const st = goalStatus(g, todayStr); return st === 'done' ? (g.logged ? 0 : 100) : st === 'failed' ? -50 : 0; };
 
-// Level 1 starts at 0 XP. Below zero there is no Level 0: 1 to 500 under is Level −1,
-// 501 to 1,000 under is Level −2, and so on. progress then measures how deep in that level.
+// Level 0 is the starting line: 0 to 499 XP. Every 500 earned is a level up;
+// below zero, 1 to 500 under is Level −1, 501 to 1,000 under is Level −2, and so on.
+// progress then measures how deep into that level.
 function xpToLevel(xp) {
-  if (xp >= 0) return { level: Math.floor(xp / 500) + 1, progress: (xp % 500) / 500, xpInLevel: xp % 500, inRed: false };
+  if (xp >= 0) return { level: Math.floor(xp / 500), progress: (xp % 500) / 500, xpInLevel: xp % 500, inRed: false };
   const debt = -xp;
   return { level: -Math.ceil(debt / 500), progress: (debt % 500 || 500) / 500, xpInLevel: xp, inRed: true };
 }
@@ -1179,7 +1180,7 @@ function applyTheme(id) {
 // A rank for every stretch of levels, a hanging scroll with a proverb for the
 // day, and a sun that crosses the Home page with the clock (a moon at night).
 const RANKS = [
-  { from: 1,  jp: '見習い', en: 'Apprentice' },
+  { from: 0,  jp: '見習い', en: 'Apprentice' },
   { from: 2,  jp: '下忍',   en: 'Genin' },
   { from: 4,  jp: '中忍',   en: 'Chūnin' },
   { from: 7,  jp: '上忍',   en: 'Jōnin' },
@@ -1187,7 +1188,7 @@ const RANKS = [
   { from: 15, jp: '影',     en: 'Kage' },
 ];
 const rankOf = level => {
-  if (level < 1) return { from: level, jp: '赤字', en: 'In the red', next: RANKS[0] };
+  if (level < 0) return { from: level, jp: '赤字', en: 'In the red', next: RANKS[0] };
   const i = RANKS.reduce((at, r, k) => (level >= r.from ? k : at), 0);
   return { ...RANKS[i], next: RANKS[i + 1] || null };
 };
@@ -1870,7 +1871,17 @@ function App() {
   const freshDoc = settings.find(x => x.key === 'xpFresh');
   const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {}, fresh: freshDoc || {} };
   // Fresh start: XP counts again from 0, from today. History is kept; only the score restarts.
-  const freshStart = () => setDoc(doc(db, 'settings', 'xpFresh'), { key: 'xpFresh', since: todayStr, focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr), at: serverTimestamp() });
+  // Days already charged for being in the red are cleared too, so the score really is 0.
+  const freshStart = async () => {
+    await setDoc(doc(db, 'settings', 'xpFresh'), { key: 'xpFresh', since: todayStr, focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr), at: serverTimestamp() });
+    await setDoc(doc(db, 'settings', 'xpDebt'), { key: 'xpDebt', days: {}, lastSeen: todayStr, lastNegative: false, createdAt: debtDoc?.createdAt || serverTimestamp() });
+  };
+  // A fresh start saved without its baselines (for example from outside the app) gets them here,
+  // from the same day's data, so focus and study time from before it don't count.
+  useEffect(() => {
+    if (loading || !freshDoc?.since || freshDoc.focusBase !== undefined) return;
+    setDoc(doc(db, 'settings', 'xpFresh'), { focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr) }, { merge: true }).catch(() => {});
+  }, [loading, freshDoc?.since, freshDoc?.focusBase]); // eslint-disable-line react-hooks/exhaustive-deps
   const ledger = xpLedger(xpData);
   const xp = calcXP(xpData);
   const { level, progress, xpInLevel, inRed } = xpToLevel(xp);
@@ -2337,7 +2348,7 @@ function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, go
   const [taskDraft, setTaskDraft] = useState('');
   const { confirm, ConfirmUI } = useConfirm();
   const askFreshStart = async () => {
-    if (await confirm({ message: 'Restart your XP at 0 (Level 1), counting from today? Your habits, tasks, goals and history all stay. Only the score starts again.', label: 'Fresh start', danger: true })) onFreshStart();
+    if (await confirm({ message: 'Restart your XP at 0 (Level 0), counting from today? Your habits, tasks, goals and history all stay. Only the score starts again.', label: 'Fresh start', danger: true })) onFreshStart();
   };
   const now = new Date(), hour = now.getHours(), nowMin = hour * 60 + now.getMinutes();
   const greet = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -7078,7 +7089,7 @@ const fullUrl = u => (/^https?:\/\//i.test(u) ? u : `https://${u}`);
 // `bills` says how the service charges; the amounts you actually pay come
 // from the bills you log (they are real Finance entries), because none of
 // these companies offers a way to read your spend with the logins on this Mac.
-const SERVICE_GROUPS = ['Runs the app', 'Payments', 'Alerts and media', 'Build and ship', 'Dashboards', 'Added by you'];
+const SERVICE_GROUPS = ['Runs the app', 'Website', 'Payments', 'Alerts and media', 'Build and ship', 'Dashboards', 'Added by you'];
 function ventureServices(o) {
   if (!o?.ok) return [];
   const p = o.firebaseProject, u = o.uses || {};
@@ -7104,6 +7115,21 @@ function ventureServices(o) {
   if (u.ntfy) add('Alerts and media', 'ntfy', 'ntfy', 'Order alerts on each store phone', 'Free, with a shared daily message limit (your code notes say about 250 a day, and busy times can be refused). A paid account removes that.', 'https://ntfy.sh/account');
   if (u.photoroom) add('Alerts and media', 'photoroom', 'Photoroom API', 'Cuts the background out of store and menu photos', 'A small free image allowance, then charged per image.', 'https://app.photoroom.com/api-dashboard');
   if (u.push) add('Alerts and media', 'push', 'Push notifications', 'Expo push for the apps, Firebase Cloud Messaging for the web app', 'Free.', 'https://expo.dev/');
+  // Websites: the address, where it is hosted, and what the pages load from elsewhere
+  const w = o.site;
+  if (w?.domain) {
+    const reg = w.registrar || 'the registrar';
+    const regUrl = /name\.com/i.test(w.registrar) ? 'https://www.name.com/account/domain' : /namecheap/i.test(w.registrar) ? 'https://ap.www.namecheap.com/domains/list/' : /godaddy/i.test(w.registrar) ? 'https://dcc.godaddy.com/control/portfolio' : /cloudflare/i.test(w.registrar) ? 'https://dash.cloudflare.com/' : `https://lookup.icann.org/en/lookup?name=${w.domain}`;
+    add('Website', 'domain', `Domain · ${w.domain}`, `The web address${w.registrar ? `, registered with ${w.registrar}` : ''}${w.created ? ` since ${w.created}` : ''}`,
+      `Renews once a year${w.expires ? `; this term ends ${w.expires}` : ''}. If it lapses, the site and anything else on the address stop working. Turn on auto-renew at ${reg}.`, regUrl, 'Hosting');
+    if (w.host === 'vercel' && !o.has.vercel) add('Website', 'vercel', 'Vercel', 'Hosts the website and answers for its DNS', "Free on the Hobby plan, which Vercel means for non-commercial sites; a business site belongs on Pro, a monthly fee per member.", 'https://vercel.com/dashboard', 'Hosting', 'https://vercel.com/dashboard');
+    if (w.host === 'netlify') add('Website', 'netlify', 'Netlify', 'Hosts the website', 'Free tier with monthly limits; paid plans per member.', 'https://app.netlify.com/', 'Hosting');
+    if (w.host === 'github-pages') add('Website', 'gh-pages', 'GitHub Pages', 'Hosts the website', 'Free.', o.git?.remote ? `${o.git.remote}/settings/pages` : 'https://github.com/');
+    if (w.emailjs) add('Website', 'emailjs', 'EmailJS', 'Sends the contact and enquiry forms to your inbox', 'A free monthly allowance of emails; paid plans raise it. If the allowance runs out, form messages stop arriving.', 'https://dashboard.emailjs.com/', 'Tools', 'https://dashboard.emailjs.com/admin/history');
+    if (w.fonts) add('Website', 'google-fonts', 'Google Fonts', 'The typefaces the pages load', 'Free.', 'https://fonts.google.com/');
+    if (w.cdns.length) add('Website', 'cdn', 'Public CDNs', `Scripts and styles loaded from ${w.cdns.join(', ')}`, 'Free.', '');
+    if (w.metaVerified) add('Website', 'meta-domain', 'Meta domain verification', 'Proves to Facebook and Instagram that you own the address', 'Free.', 'https://business.facebook.com/settings/owned-domains');
+  }
   if (o.git?.remote) {
     add('Build and ship', 'github', 'GitHub', 'Code, history and Dependabot updates', 'Free for this use.', o.git.remote);
     if (o.has.ci) add('Build and ship', 'github-ci', 'GitHub Actions', 'Automatic checks on every push', 'Free minutes each month for private repositories, then charged per minute.', `${o.git.remote}/actions`, 'Tools', `${o.git.remote}/actions`);
@@ -7146,6 +7172,10 @@ function estimateFor(id, u = {}) {
     case 'ntfy': return E(0, 5, 0, 0, 'Free with a shared daily limit; US$5 a month for a supporter account that lifts it.');
     case 'photoroom': return E(0, 20, 0, 0, 'First 10 photos free, then US$0.02 a photo, sold in packs: US$20 for 1,000.', true);
     case 'push': return E(0, 0, 0, 0, 'Free.');
+    case 'domain': return E(2, 4, 0, 0, 'A .com or .online name is roughly US$25 to US$45 a year to renew, about US$2 to US$4 a month. The first year is often cheaper than renewals; your registrar shows the real figure.');
+    case 'emailjs': return E(0, 15, 0, 0, 'Nothing on the free allowance (a couple of hundred emails a month). Paid plans are roughly US$9 to US$15 a month if enquiries outgrow it.');
+    case 'netlify': return E(0, 19, 0, 0, 'US$0 on the free tier; about US$19 a month per member on Pro.');
+    case 'gh-pages': case 'google-fonts': case 'cdn': case 'meta-domain': return E(0, 0, 0, 0, 'Free.');
     case 'github': return E(0, 4, 0, 0, 'Free for this use; US$4 a month only if you move to GitHub Pro.');
     case 'github-ci': return E(0, 3, 0, 0, '2,000 free minutes a month on a private repository; a few dollars only if the checks run very often.');
     case 'expo': return E(0, 19, 0, 0, 'Free plan: 15 Android and 15 iPhone builds a month. Starter is US$19 a month plus usage.', true);
@@ -7257,6 +7287,15 @@ function ventureHealth(v, d, { services, items, todayStr, rounds = {} }) {
   const overdue = moves.filter(m => m.due && m.due < todayStr);
   if (overdue.length) add('danger', `${overdue.length} move${s1(overdue.length)} past ${overdue.length === 1 ? 'its' : 'their'} date: ${overdue.slice(0, 3).map(m => m.title).join(', ')}${overdue.length > 3 ? '…' : ''}.`);
   moves.filter(m => m.due === todayStr).forEach(m => add('warn', `Due today: ${m.title}.`));
+  // Websites: the address must not lapse, and the site must answer
+  const w = o?.ok ? o.site : null;
+  if (w?.expires) {
+    const n = days(w.expires);
+    if (n < 0) add('danger', `${w.domain} expired ${-n} day${s1(-n)} ago. Renew it now or the site goes dark.`);
+    else if (n <= 30) add(n <= 7 ? 'danger' : 'warn', `${w.domain} expires ${n === 0 ? 'today' : `in ${n} day${s1(n)}`}${w.registrar ? ` (${w.registrar})` : ''}. Check auto-renew.`);
+  }
+  if (w?.domain && w.live && !w.live.ok) add('danger', `${w.domain} isn't answering${w.live.status ? ` (HTTP ${w.live.status})` : w.live.error ? ` (${w.live.error})` : ''}.`);
+  else if (w?.live?.ok && w.live.ms > 3000) add('warn', `${w.domain} took ${(w.live.ms / 1000).toFixed(1)}s to answer. Usually it's well under a second.`);
   services.filter(s => s.renewsOn).forEach(s => {
     const n = days(s.renewsOn);
     if (n < 0) add('danger', `${s.name} was due to renew ${-n} day${s1(-n)} ago. Is it still running?`);
@@ -7396,6 +7435,7 @@ function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, 
   const coming = list.flatMap(v => [
     ...health[v.id].moves.filter(m => m.due && m.due <= horizon).map(m => ({ v, date: m.due, text: m.title, kind: 'Move' })),
     ...of(services, v).filter(s => s.renewsOn && s.renewsOn <= horizon).map(s => ({ v, date: s.renewsOn, text: `${s.name} renews${Number(s.monthlyCost) > 0 ? ` · ${J(s.monthlyCost)}` : ''}`, kind: 'Bill' })),
+    ...(() => { const w = data[v.id]?.o?.site; return w?.expires && w.expires <= addDays(todayStr, 45) && !of(services, v).some(s => s.serviceId === 'domain' && s.renewsOn) ? [{ v, date: w.expires, text: `${w.domain} expires`, kind: 'Bill' }] : []; })(),
   ]).sort((a, b) => a.date.localeCompare(b.date));
 
   return (
@@ -7443,7 +7483,12 @@ function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, 
                   {h.today && <div><dt>Today</dt><dd>{h.today.placed} orders · <span className="good">{J(h.today.platform)}</span></dd></div>}
                   {git && <div><dt>Code</dt><dd className={git.dirty.length || git.ahead ? 'warn' : ''}>{git.dirty.length ? `${git.dirty.length} uncommitted` : git.ahead ? `${git.ahead} not pushed` : 'clean'}{git.commits[0] ? ` · ${ago(git.commits[0].at)}` : ''}</dd></div>}
                   {v.launchDate && (() => { const lp = launchPlan(v, of(items, v), todayStr); return (
-                    <div><dt>Launch</dt><dd className={lp.late.length ? 'bad' : lp.daysLeft <= 3 ? 'warn' : ''}>{lp.daysLeft > 0 ? `in ${lp.daysLeft} day${lp.daysLeft === 1 ? '' : 's'}` : lp.daysLeft === 0 ? 'today' : 'launched'} · {lp.done}/{lp.steps.length} steps</dd></div>
+                    lp.daysLeft < 0
+                      ? <div><dt>Trading</dt><dd className="good">day {1 - lp.daysLeft} · live since {fmtDate(v.launchDate, { month: 'short', day: 'numeric' })}</dd></div>
+                      : <div><dt>Launch</dt><dd className={lp.late.length ? 'bad' : lp.daysLeft <= 3 ? 'warn' : ''}>{lp.daysLeft > 0 ? `in ${lp.daysLeft} day${lp.daysLeft === 1 ? '' : 's'}` : 'today'} · {lp.done}/{lp.steps.length} steps</dd></div>
+                  ); })()}
+                  {d?.money?.ok && (() => { const w = ventureStats(d.money, Date.now() - 7 * 864e5); return (
+                    <div><dt>Last 7 days</dt><dd>{w.delivered} delivered · <span className="good">{J(w.platform)}</span> share{w.cancelled ? ` · ${w.cancelled} cancelled` : ''}</dd></div>
                   ); })()}
                   <div><dt>Next move</dt><dd className={next ? (next.due && next.due < todayStr ? 'bad' : '') : 'warn'}>{next ? `${next.title}${next.due ? ` · ${fmtDate(next.due, { month: 'short', day: 'numeric' })}` : ''}` : 'none written'}</dd></div>
                   <div><dt>Running cost</dt><dd>{h.monthly ? `${J(h.monthly)}/mo` : '—'}</dd></div>
@@ -7489,7 +7534,9 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
-  const [view, setView] = useState(v.launchDate ? 'launch' : 'overview');
+  // Before launch the room opens on the launch plan; once trading, on the control room
+  const launched = !!v.launchDate && v.launchDate < todayStr;
+  const [view, setView] = useState(v.launchDate && !launched ? 'launch' : v.dir ? 'control' : 'overview');
   const [openDay, setOpenDay] = useState(null);
   const [billForm, setBillForm] = useState(null);
   const [usage, setUsage] = useState(100);
@@ -7571,8 +7618,10 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
   const hasFolder = !!o?.ok;
   const plan = launchPlan(v, items, todayStr);
   const backlog = moves.filter(m => !m.phase);
-  const tabs = [...(fbProject ? [['control','Control room']] : []), ...(plan ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
-    ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : [])];
+  const tabs = [...(fbProject ? [['control','Control room']] : []), ...(plan && !launched ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
+    ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : []), ...(plan && launched ? [['launch', 'Launch review']] : [])];
+  // A folder without a Firebase project has no control room: fall back once the folder is read
+  useEffect(() => { if (view === 'control' && d && !d.loading && !fbProject) setView('overview'); }, [view, d, fbProject]);
 
   const addMove = () => {
     if (!moveTitle.trim()) return;
@@ -7642,7 +7691,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
       </div>
       {v.tagline && <div className="fin-delta vt-tagline">{v.tagline}</div>}
 
-      {view === 'control' && fbProject && <RunnerControl project={fbProject} dir={v.dir} api={api} Mask={MoodMask} notify={RUNNER_NOTIFY}
+      {view === 'control' && fbProject && <RunnerControl launchDate={v.launchDate || ''} project={fbProject} dir={v.dir} api={api} Mask={MoodMask} notify={RUNNER_NOTIFY}
         bills={bills} onRecordPayout={onAddBill} exportFile={RUNNER_EXPORT}/>}
 
       {view === 'launch' && plan && (<>

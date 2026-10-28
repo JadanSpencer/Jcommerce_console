@@ -3549,3 +3549,8 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
 .cw-add { display: grid; grid-template-columns: minmax(0, 1fr) auto 150px auto; gap: 0.4rem; margin-top: 0.5rem; }
 .nav-foot.red .nav-foot-lv, .home-lv.red, .head-me-lv.red, .home-xpn.red, .nav-foot.red .nav-foot-xp { color: var(--coral-400) !important; }
 .nav-foot.red .xp-fill { background: var(--coral-500) !important; }
+/* Long strips (more than four numbers) wrap into rows of four instead of squeezing */
+.app :is(div):has(> .fin-tile:nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.app :is(div):has(> .fin-tile:nth-child(5)) > .fin-tile:nth-child(4n+1) { border-left: none !important; }
+.app :is(div):has(> .fin-tile:nth-child(5)) > .fin-tile:nth-child(n+5) { border-top: 1px solid rgba(255,255,255,0.07) !important; }
+@media (max-width: 760px) { .app :is(div):has(> .fin-tile:nth-child(5)) { grid-template-columns: 1fr 1fr; } }
