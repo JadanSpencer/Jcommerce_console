@@ -709,6 +709,37 @@ export function judgeRunner(data, local = {}) {
       .filter(r => r.orders.length || r.held.length),
   };
 
+  // Every server function: its state and its errors over the last 24 hours
+  const fnErr = P.fnErrors?.ok ? P.fnErrors.by : null;
+  const fnHealth = {
+    ok: !!P.functions?.ok && Array.isArray(P.functions.rows), errorsOk: !!fnErr, more: !!P.fnErrors?.more,
+    rows: (P.functions?.rows || []).map(f => { const e = fnErr?.[f.name.toLowerCase()];
+      return { ...f, errors: e ? e.n : 0, lastErrorAt: e?.lastAt || null, lastError: e?.last || '' }; })
+      .sort((a, b) => (b.state !== 'ACTIVE') - (a.state !== 'ACTIVE') || b.errors - a.errors || a.name.localeCompare(b.name)),
+  };
+  const brokenFns = fnHealth.rows.filter(f => f.state && f.state !== 'ACTIVE');
+  if (brokenFns.length) running.push({ key: 'run.fnState', lv: 'act',
+    what: `${plural(brokenFns.length, 'server function')} not running: ${brokenFns.map(f => `${f.name} (${f.state.toLowerCase()})`).join(', ')}.`,
+    why: 'A function that failed to deploy keeps running its old copy, or nothing at all. Orders, payments or alerts that use it may stop.',
+    next: 'Send this line to the developer. The fix is usually to deploy again: npm run deploy:all in the Runner folder.',
+    link: { label: 'Open Functions', url: fb('/functions') } });
+
+  // Money due both ways, for the Money tab's summary (runners' shares since
+  // last paid are worked out on screen, from the console's own Finance)
+  const batches = P.topupBatches?.ok ? P.topupBatches.rows : [];
+  const sellers = Object.values(batches.reduce((m, b) => {
+    const k = String(b.holder || 'Unknown').trim() || 'Unknown';
+    const x = m[k] || (m[k] = { name: k, redeemed: 0, cards: 0, unredeemed: 0 });
+    const left = (Number(b.count) || 0) - (Number(b.redeemedCount) || 0) - (Number(b.voidedCount) || 0);
+    x.redeemed += Number(b.redeemedJmd) || 0; x.cards += Number(b.redeemedCount) || 0; x.unredeemed += Math.max(0, left) * (Number(b.valueJmd) || 0);
+    return m; }, {})).sort((a, b) => b.redeemed - a.redeemed);
+  const due = {
+    ok: usable(P.dashers) && usable(P.storeFloats),
+    storesOwed: settle.stores.reduce((t, x) => t + (x.owed || 0), 0),
+    runnersHoldingCash: dashers.filter(d => Number(d.cashOwedJmd) > 0).map(d => ({ id: d.id, name: (runners.find(r => r.id === d.id) || {}).name || 'Runner', amount: Number(d.cashOwedJmd) })),
+    sellers, sellersOk: !!P.topupBatches?.ok,
+  };
+
   // ── Before launch: the owner's list, ticking itself where the data can tell ─
   const has = fn => (usable(P.stores) ? fn() : null);
   const storeGaps = has(() => {
@@ -839,5 +870,5 @@ export function judgeRunner(data, local = {}) {
   if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L, launch, freeHeld, speed, trading };
+    checklist, keeping, limits: L, launch, freeHeld, speed, trading, fnHealth, due };
 }

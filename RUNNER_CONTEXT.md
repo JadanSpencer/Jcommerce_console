@@ -194,3 +194,11 @@ admin yet. Don't tell the operator to cancel there.
 Writes: only through Runner's `ownerAction` endpoint (`electron/ops.js` ownerAction): revokeCash, restoreCash, payAdminCommissions, reverseOrder. The Runner control room's "Cash & referrals" tab uses them. Customer names are read for the cash list only.
 
 j-commerce.online is a venture (added once) with a Tech tab: Vercel domain settings with a Vercel token (encrypted on this Mac), and request checks from this Mac every 5 minutes while the tab is open.
+
+## 2026-10-29
+- Admin referral commission is 2.5% of confirmed orders (was 5%) + J$100 first-order bonus.
+- Control room → Is it running → "Every server function": each Cloud Function's state and its errors over 24 h (Cloud Functions v2 list + Logging, read every 10 minutes). A function not ACTIVE raises "Act now".
+- Control room → Money → "Money due": what Runner owes (stores' negative floats, runners' delivery shares since last recorded payout, admin commission earned and unpaid), runners holding cash (`dashers.cashOwedJmd`), cash from redeemed top-up cards per seller (`topupBatches`, all time), and unpaid cash orders.
+- XP: +2 per service stamped on the daily rounds (`service_rounds`) and +5 per control-room routine ticked (new collection `control_ticks`, one doc per routine per day), counted from 2026-10-29.
+- Admin runners (Runner functions/src/adminRunners.ts): `coinStock/{uid}` (balanceJmd, allocatedJmd, returnedJmd, soldJmd, cashInJmd, cashOwedJmd, lastSaleAt) read in the trust part; Money → Money due shows cash owed for coins sold and a table per admin runner, flagged when allocated ≠ sold + returned + in stock. They also appear in Admin referrals as "Name (admin runner)".
+- Admin commission (from 29 Oct 2026, later the same day): 2.5% of each confirmed order's delivery or pickup fee, not the food; no first-order bonus. `adminCommissions` docs gain `basis: 'fee'` and `feeJmd`.

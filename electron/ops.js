@@ -238,7 +238,7 @@ async function medium(project, token, ctx, dir) {
   const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
   const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
   const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts] = await Promise.all([
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'cashOwedJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
@@ -254,7 +254,9 @@ async function medium(project, token, ctx, dir) {
     part(async () => { const j = await g(`https://firebasehosting.googleapis.com/v1beta1/sites/${project}/releases?pageSize=1`); const r = (j.releases || [])[0];
       return r ? { at: Date.parse(r.releaseTime), message: r.message || '', by: r.releaseUser?.email || '', type: r.type } : { at: null }; }),
     part(async () => { const j = await g(`https://cloudfunctions.googleapis.com/v2/projects/${project}/locations/-/functions?pageSize=200`);
-      return { names: (j.functions || []).map(f => f.name.split('/').pop()), at: Math.max(0, ...(j.functions || []).map(f => Date.parse(f.updateTime) || 0)) || null }; }),
+      return { names: (j.functions || []).map(f => f.name.split('/').pop()), at: Math.max(0, ...(j.functions || []).map(f => Date.parse(f.updateTime) || 0)) || null,
+        // Each function's own state: ACTIVE, or FAILED / DEPLOYING / DELETING
+        rows: (j.functions || []).map(f => ({ name: f.name.split('/').pop(), state: f.state || '', updatedAt: Date.parse(f.updateTime) || null, trigger: f.eventTrigger ? 'event' : 'call' })) }; }),
     part(async () => { const j = await g(`https://monitoring.googleapis.com/v3/projects/${project}/alertPolicies?pageSize=50`);
       return { rows: (j.alertPolicies || []).map(a => ({ name: a.displayName, on: a.enabled !== false, emails: (a.notificationChannels || []).length })) }; }),
     // "Enabled" only says a billing account is linked. The account itself can be
@@ -307,9 +309,25 @@ async function medium(project, token, ctx, dir) {
         botCheck: web.length > 0 && !web.some(k => k.webSettings.allowAllDomains || (k.webSettings.allowedDomains || []).includes(h)),
       })).filter(m => m.signIn || m.botCheck) };
     }),
+    // Every function's errors over the last 24 hours, counted per function
+    // (Cloud Run names a function's service in lower case), with its newest one
+    part(async () => {
+      const j = await g('https://logging.googleapis.com/v2/entries:list', { resourceNames: [`projects/${project}`],
+        filter: `severity>=ERROR AND timestamp>="${new Date(now - 86400000).toISOString()}"`, orderBy: 'timestamp desc', pageSize: 500 });
+      const by = {};
+      (j.entries || []).forEach(e => {
+        const where = String(e.resource?.labels?.service_name || e.resource?.labels?.function_name || '').toLowerCase();
+        if (!where) return;
+        const b = by[where] || (by[where] = { n: 0, lastAt: Date.parse(e.timestamp), last: firstLine(e) });
+        b.n += 1;
+      });
+      return { by, more: !!j.nextPageToken };
+    }),
+    // Top-up card batches: who holds each, and what has been redeemed (cash the seller owes Runner)
+    q({ collectionId: 'topupBatches', fields: ['holder', 'valueJmd', 'count', 'redeemedCount', 'redeemedJmd', 'voidedCount', 'activatedAt', 'createdAt'], limit: 300 }),
   ]);
   return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, at: now };
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, at: now };
 }
 
 async function slow(project, token, ctx) {
@@ -348,21 +366,25 @@ async function slow(project, token, ctx) {
     // Confirmed orders: cash eligibility per customer, cash not paid, admin
     // referral commission and payouts, and refunds held for a decision.
     part(async () => {
-      const [wallets, issues, stats, payouts, held] = await Promise.all([
+      const [wallets, issues, stats, payouts, held, stock] = await Promise.all([
         query(project, token, { collectionId: 'wallets', where: cmp('confirmedSpendJmd', 'GREATER_THAN', num(0)), orderBy: 'confirmedSpendJmd',
           fields: ['confirmedSpendJmd', 'cashEligibleAt', 'cashRevokedAt', 'cashRevokeReason', 'cashRefusals'], limit: 300 }),
         query(project, token, { collectionId: 'cashIssues', orderBy: 'createdAt', fields: ['orderId', 'studentId', 'storeName', 'amountJmd', 'mode', 'reporterRole', 'note', 'createdAt'], limit: 100 }),
         query(project, token, { collectionId: 'adminReferralStats', fields: ['code', 'signups', 'orderingUsers', 'confirmedOrders', 'spendJmd', 'earnedJmd', 'paidJmd', 'clawbackJmd', 'reversedJmd', 'lastPaidAt'], limit: 50 }),
         query(project, token, { collectionId: 'adminPayouts', orderBy: 'createdAt', fields: ['adminUid', 'amountJmd', 'grossJmd', 'clawbackJmd', 'count', 'note', 'createdAt'], limit: 50 }),
         query(project, token, { collectionId: 'orders', where: cmp('refundHeld', 'EQUAL', { booleanValue: true }), fields: ['storeName', 'totalAmount', 'cancelReason', 'cancelledAt', 'receipt.code', 'paymentMethod'], limit: 50 }),
+        // Admin runners' coin stock and the cash they owe for coins sold (Runner: functions/src/adminRunners.ts)
+        query(project, token, { collectionId: 'coinStock', fields: ['name', 'balanceJmd', 'allocatedJmd', 'returnedJmd', 'soldJmd', 'cashInJmd', 'cashOwedJmd', 'lastSaleAt', 'lastCashInAt'], limit: 100 }).catch(() => ({ rows: [] })),
       ]);
-      const uids = [...new Set([...wallets.rows.map(w => w.id), ...issues.rows.map(i => i.studentId)].filter(Boolean))].slice(0, 300);
-      const names = await batchGet(project, token, uids.map(u => `users/${u}`), ['name']);
+      const uids = [...new Set([...wallets.rows.map(w => w.id), ...issues.rows.map(i => i.studentId), ...stats.rows.map(a => a.id)].filter(Boolean))].slice(0, 350);
+      const names = await batchGet(project, token, uids.map(u => `users/${u}`), ['name', 'role']);
       const nameOf = uid => String(names[uid]?.name || '').slice(0, 60) || 'Unknown';
       return {
         customers: wallets.rows.map(({ movedAt, parent, ...w }) => ({ ...w, uid: w.id, name: nameOf(w.id) })),
         issues: issues.rows.map(({ movedAt, parent, ...i }) => ({ ...i, name: nameOf(i.studentId) })),
-        admins: stats.rows.map(({ movedAt, parent, ...a }) => ({ ...a, uid: a.id })),
+        // Admins and admin runners (who earn the same commission)
+        admins: stats.rows.map(({ movedAt, parent, ...a }) => ({ ...a, uid: a.id, name: nameOf(a.id), runner: names[a.id]?.role === 'dasher' })),
+        coinStock: stock.rows.map(({ movedAt, parent, ...x }) => ({ ...x, uid: x.id })),
         payouts: payouts.rows.map(({ movedAt, parent, ...x }) => x),
         held: held.rows.map(({ movedAt, parent, receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase() })),
       };

@@ -335,7 +335,7 @@ function CashReferrals({ T, admins, api, project }) {
     setMsg(r.ok ? { ok: true, text: done(r) } : { ok: false, text: r.error });
     if (r.ok) { store.last = 0; refresh(); }
   };
-  const emailOf = uid => (admins?.rows || []).find(a => a.id === uid)?.email || uid;
+  const emailOf = uid => (admins?.rows || []).find(a => a.id === uid)?.email || (T.admins.find(a => a.uid === uid)?.runner ? `${T.admins.find(a => a.uid === uid).name} (admin runner)` : uid);
   const shown = T.customers.filter(c => !filter || c.name.toLowerCase().includes(filter.toLowerCase()));
   const eligible = T.customers.filter(c => c.cashEligibleAt && !c.cashRevokedAt).length;
   return (<>
@@ -365,7 +365,7 @@ function CashReferrals({ T, admins, api, project }) {
     </section>
 
     <section className="card rc-sec">
-      <header><span className="rc-dot good"/><h3>Admin referrals</h3><span className="rc-quiet">5% of confirmed orders + J$100 per first order</span>
+      <header><span className="rc-dot good"/><h3>Admin referrals</h3><span className="rc-quiet">2.5% of the delivery or pickup fee on confirmed orders</span>
         <Help>Sign-ups with each admin's code, how many of them ordered, what they spent on confirmed orders, and the commission: earned and not yet paid, paid, and held back because a paid commission's order was later reversed (taken off the next payout). Pay marks everything earned as paid in one payout; pay the admin the amount shown, outside Runner.</Help></header>
       <table className="rc-table"><thead><tr><th>Admin</th><th>Code</th><th>Signed up</th><th>Ordered</th><th>Spent</th><th>Earned, unpaid</th><th>Paid</th><th>Held back</th><th></th></tr></thead>
         <tbody>{T.admins.map(a => (<tr key={a.uid}>
@@ -397,7 +397,7 @@ function CashReferrals({ T, admins, api, project }) {
 const SECTION_TAB = { orders: 'now', money: 'money', people: 'people', running: 'running' };
 const dayLabel = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
 
-export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile, launchDate = '' }) {
+export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile, launchDate = '', onRoutineTick }) {
   const s = useStore();
   const [tab, setTabRaw] = useState(() => { try { return localStorage.getItem('rc_tab') || 'now'; } catch { return 'now'; } });
   const setTab = t => { setTabRaw(t); try { localStorage.setItem('rc_tab', t); } catch {} };
@@ -446,7 +446,13 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
 
   // Routines that reset themselves
   const routineDone = (kind, id) => { const at = local.routines[id]; return at && periodKey(kind, at) === periodKey(kind, nowT) ? at : null; };
-  const toggleRoutine = id => setLocal(l => ({ routines: { ...l.routines, [id]: l.routines[id] && routineDone(ROUTINES.find(g => g.items.some(x => x[0] === id)).kind, id) ? 0 : Date.now() } }));
+  // Ticks stay on this Mac; each is also saved to the console's data so it counts towards XP
+  const toggleRoutine = id => {
+    const kind = ROUTINES.find(g => g.items.some(x => x[0] === id)).kind;
+    const was = routineDone(kind, id), at = was || Date.now();
+    setLocal(l => ({ routines: { ...l.routines, [id]: was ? 0 : at } }));
+    if (onRoutineTick) onRoutineTick(id, kind, at, !was);
+  };
   const routineLink = where => (where === 'inbox' ? { label: 'Open the inbox', url: INBOX } : where === 'logs' ? { label: 'Open the error log', url: `https://console.cloud.google.com/logs/query?project=${project}` }
     : where === 'appcheck' ? { label: 'Open App Check', url: `https://console.firebase.google.com/project/${project}/appcheck/apis` } : where === 'billing' ? { label: 'Open billing reports', url: `https://console.cloud.google.com/billing/reports?project=${project}` }
       : where ? { label: 'Open Runner admin', url: `${data.adminUrl}${where}` } : null);
@@ -517,6 +523,44 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
 
       {/* ── Money ──────────────────────────────────────────────────────── */}
       {tab === 'money' && <Section s={r.sections[1]}>
+        {(() => {
+          // Everything owed both ways, in one place. Runners' shares count from
+          // the last payout recorded in Finance, as in "Settling up" below.
+          const runnersOwed = r.settle.runners.map(x => { const list = since(x.orders, lastPaid(`Runner payout · ${x.name}`)); return { name: x.name, amount: list.reduce((t, o) => t + o.amount, 0) }; }).filter(x => x.amount > 0);
+          const trust = data.parts.trust?.ok ? data.parts.trust : null;
+          const adminsOwed = trust ? trust.admins.filter(a => (a.earnedJmd || 0) > 0) : [];
+          const unpaidCash = trust ? trust.issues.reduce((t, i) => t + (Number(i.amountJmd) || 0), 0) : null;
+          const sum = list => list.reduce((t, x) => t + (x.amount ?? x.earnedJmd ?? 0), 0);
+          const out = r.due.storesOwed + sum(runnersOwed) + sum(adminsOwed);
+          const coinRunners = trust?.coinStock || [];
+          const coinCash = coinRunners.reduce((t, x) => t + (Number(x.cashOwedJmd) || 0), 0);
+          const cardCash = r.due.sellers.reduce((t, x) => t + x.redeemed, 0);
+          const holding = sum(r.due.runnersHoldingCash);
+          return (
+            <div className="rc-sub">
+              <h4>Money due</h4>
+              <div className="rc-facts">
+                <div><span>Runner owes</span><b>{J(out)}</b>
+                  <small>Stores {J(r.due.storesOwed)} · runners {J(sum(runnersOwed))} · admin referrals {trust ? J(sum(adminsOwed)) : "couldn't check"}</small></div>
+                <div><span>Runners holding Runner's cash</span><b>{J(holding)}</b>
+                  <small>{r.due.runnersHoldingCash.length ? r.due.runnersHoldingCash.map(x => `${x.name} ${J(x.amount)}`).join(' · ') : 'Nobody is holding cash.'}</small></div>
+                <div><span>Cash from top-up cards</span><b>{r.due.sellersOk ? J(cardCash) : "couldn't check"}</b>
+                  <small>Value of every card redeemed so far, all time. Each seller owes you this in cash, less what they have already handed over.</small></div>
+                <div><span>Admin runners: cash for coins sold</span><b>{trust ? J(coinCash) : "couldn't check"}</b>
+                  <small>{coinRunners.length ? `${coinRunners.reduce((t, x) => t + (Number(x.balanceJmd) || 0), 0).toLocaleString('en-US')} coins still in their stock.` : 'No admin runner has coins yet.'}</small></div>
+                <div><span>Cash orders not paid</span><b>{unpaidCash === null ? "couldn't check" : J(unpaidCash)}</b>
+                  <small>Logged by runners and stores; details in Cash &amp; referrals.</small></div>
+              </div>
+              {r.due.sellers.length > 0 && <table className="rc-table"><thead><tr><th>Card seller</th><th>Redeemed (all time)</th><th>Cards</th><th>Still out, unredeemed</th></tr></thead>
+                <tbody>{r.due.sellers.map(x => <tr key={x.name}><td>{x.name}</td><td>{J(x.redeemed)}</td><td>{x.cards}</td><td>{J(x.unredeemed)}</td></tr>)}</tbody></table>}
+              {coinRunners.length > 0 && <table className="rc-table"><thead><tr><th>Admin runner</th><th>Given</th><th>Sold</th><th>Taken back</th><th>In stock</th><th>Cash handed in</th><th>Cash owed</th><th>Last sale</th></tr></thead>
+                <tbody>{coinRunners.map(x => { const ok = (Number(x.allocatedJmd) || 0) === (Number(x.balanceJmd) || 0) + (Number(x.soldJmd) || 0) + (Number(x.returnedJmd) || 0);
+                  return <tr key={x.uid} className={!ok || (Number(x.cashOwedJmd) || 0) > 0 ? 'warn' : ''}><td>{x.name || x.uid}{ok ? '' : <em> · coins don't add up</em>}</td><td>{(x.allocatedJmd || 0).toLocaleString('en-US')}</td><td>{(x.soldJmd || 0).toLocaleString('en-US')}</td><td>{(x.returnedJmd || 0).toLocaleString('en-US')}</td><td>{(x.balanceJmd || 0).toLocaleString('en-US')}</td><td>{J(x.cashInJmd || 0)}</td><td>{J(x.cashOwedJmd || 0)}</td><td>{x.lastSaleAt ? `${jmDate(x.lastSaleAt)} ${jmTime(x.lastSaleAt)}` : '–'}</td></tr>; })}</tbody></table>}
+              {coinRunners.length > 0 && <p className="rc-small">Coins, 1 coin = J$1. Given = sold + taken back + in stock for every admin runner, or the row says so. Record cash they hand in from Runner admin → Users → the runner → "Cash handed in". Each sale is listed on the student's wallet too.</p>}
+              {adminsOwed.length > 0 && <p className="rc-small">Admin commission waiting: {adminsOwed.map(a => `${(data.parts.admins?.rows || []).find(x => x.id === a.uid)?.email || (a.runner ? `${a.name} (admin runner)` : a.code || 'admin')} ${J(a.earnedJmd)}`).join(' · ')}. Pay it from Cash &amp; referrals.</p>}
+            </div>
+          );
+        })()}
         <Fold id="rc-floats" title="Floats: cash Runner has advanced" note={r.floats.ok ? `${plural(r.floats.stores.length, 'store')}, ${plural(r.floats.runners.length, 'runner')}` : "couldn't check"}>
           <p className="rc-small">When an order is paid, its food cost comes out of the store's float if it has one, otherwise the delivering runner's. A negative store float is what Runner owes that store. Only an admin can top one up: Runner admin → Users or Stores → "Adjust float".</p>
           <table className="rc-table"><thead><tr><th>Who</th><th>Float</th><th>Food paid today</th><th>Returned today</th><th>Top-ups today</th></tr></thead>
@@ -599,6 +643,12 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <div><span>Budget alert</span><b>{k.budgets ? (k.budgets.length ? k.budgets.map(b => `${b.currency} ${b.amount}`).join(', ') : 'none set') : 'not connected'}</b>
             <small>{k.budgets ? 'Recommended: US$25 a month.' : <>The console can't see budgets until Google's Budget API is switched on for Runner. {ext('Switch it on', `https://console.cloud.google.com/apis/library/billingbudgets.googleapis.com?project=${project}`)}, then {ext('set a US$25 budget', `https://console.cloud.google.com/billing/budgets?project=${project}`)}.</>}</small></div>
         </div>
+        <Fold id="rc-fns" title="Every server function" note={!r.fnHealth.ok ? "couldn't check" : `${plural(r.fnHealth.rows.length, 'function')}, ${plural(r.fnHealth.rows.filter(f => f.errors).length, 'with errors')} in 24 hours`}>
+          <p className="rc-small">Each of Runner's server functions, whether it is running, and its errors over the last 24 hours. Any error also emails you (at most once every 30 minutes) once the alerts are set up: node scripts/setup-alerts.mjs jcommerceandtech@gmail.com in the Runner folder.{r.fnHealth.more ? ' Only the newest 500 errors are counted.' : ''}{!r.fnHealth.errorsOk ? ' The error counts could not be read this time.' : ''}</p>
+          <table className="rc-table"><thead><tr><th>Function</th><th>State</th><th>Kind</th><th>Errors, 24 h</th><th>Newest error</th></tr></thead>
+            <tbody>{r.fnHealth.rows.map(f => <tr key={f.name} className={f.state !== 'ACTIVE' || f.errors ? 'warn' : ''}><td>{f.name}</td><td>{f.state === 'ACTIVE' ? 'running' : (f.state || 'unknown').toLowerCase()}</td>
+              <td>{f.trigger === 'event' ? 'runs by itself' : 'called by the app'}</td><td>{f.errors || '–'}</td><td>{f.lastError ? `${jmTime(f.lastErrorAt)} · ${f.lastError}` : '–'}</td></tr>)}</tbody></table>
+        </Fold>
         <Fold id="rc-cost" title="What it costs to keep running" note="about US$11 to 13 a month with no orders">
           <table className="rc-table"><thead><tr><th>Item</th><th>Monthly</th></tr></thead><tbody>
             {[['Server copy kept awake for orders', 'about US$10'], ['The 5-minute clean-up', 'US$0 to 2'], ['Stored server images', 'under US$1'], ['Hosting, database, file storage, secrets, monitoring', 'US$0 within free limits'], ['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, once bought', 'about US$1']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>

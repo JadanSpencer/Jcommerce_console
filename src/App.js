@@ -277,11 +277,15 @@ function getLast20Weeks(count = 20) {
 }
 
 const XP_PER_MOVE = 10;
+const XP_PER_STAMP = 2;
+const XP_PER_ROUTINE = 5;
+// Stamps and routines earn from the day they were added to XP, not before
+const XP_STAMPS_FROM = '2026-10-29';
 // Every section both earns and costs XP. The rules added on XP_STRICT_FROM
 // never reach back before that day, and nothing is ever taken for today:
 // penalties only land once a day, week or month is over.
 const XP_STRICT_FROM = '2026-10-09';
-function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {}, fresh = {} }) {
+function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {}, fresh = {}, serviceRounds = [], controlTicks = [] }) {
   // A fresh start (settings/xpFresh) counts nothing before its day. Focus time and
   // study topics keep no dates, so those count only what was added after it.
   const since = fresh.since || '';
@@ -371,6 +375,13 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
     else if (m.done && m.doneAt && m.doneAt > m.due) vm += 5;
   });
   row('Ventures', 'ventures', checked.size * 10 + moves.filter(m => m.done && (m.doneAt || m.due || '').slice(0, 10) >= since).length * XP_PER_MOVE, vm, '+10 a daily check, +10 a move finished; −10 a check missed or a move past its date, −5 a move finished late');
+
+  // Stamps: +2 for each service stamped as checked on a venture's daily rounds
+  const newFrom = since > XP_STAMPS_FROM ? since : XP_STAMPS_FROM;
+  const stamps = serviceRounds.filter(r => (r.date || '') >= newFrom).reduce((t, r) => t + Object.values(r.done || {}).filter(Boolean).length, 0);
+  row('Stamps', 'ventures', stamps * XP_PER_STAMP, 0, `+${XP_PER_STAMP} a service stamped as checked on the daily rounds`);
+  // Control room: +5 for each routine ticked in a venture's control room (daily, weekly, monthly, term)
+  row('Control room', 'ventures', controlTicks.filter(c => (c.date || '') >= newFrom).length * XP_PER_ROUTINE, 0, `+${XP_PER_ROUTINE} a control-room routine done`);
 
   // In the red: every day the total sits below zero costs 100 more, whatever else happens
   const red = Object.keys(debtDays).filter(d => debtDays[d] && d >= since).length;
@@ -1475,6 +1486,7 @@ function App() {
   const [ventures, setVentures] = useState([]);
   const [ventureItems, setVentureItems] = useState([]);
   const [serviceRounds, setServiceRounds] = useState([]);
+  const [controlTicks, setControlTicks] = useState([]);
   const [courses, setCourses]   = useState([]);
   const [settings, setSettings] = useState([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1581,7 +1593,7 @@ function App() {
       ['leads',setLeads],['habits',setHabits],['schedule',setSchedule],
       ['finances',setFinances],['goals',setGoals],['todos',setTodos],
       ['jaxon_queue',setQueue],['lead_searches',setLeadSearches],['jaxon_logs',setLogs],['briefings',setBriefings],
-      ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['courses',setCourses],['settings',setSettings],['invoices',setInvoices],
+      ['journal',setJournal],['budgets',setBudgets],['debts',setDebts],['timers',setTimers],['venture_services',setVentureServices],['venture_checks',setVentureChecks],['ventures',setVentures],['venture_items',setVentureItems],['service_rounds',setServiceRounds],['control_ticks',setControlTicks],['courses',setCourses],['settings',setSettings],['invoices',setInvoices],
     ];
 
     // Track which collections have fired at least once
@@ -1689,7 +1701,7 @@ function App() {
   const [lastBackup, setLastBackup] = useState(() => { try { return localStorage.getItem('jc_last_backup') || ''; } catch { return ''; } });
   const backupData = async () => {
     if (!DESKTOP?.exportData) { toast('Backups only work in the Mac app', 'bad'); return; }
-    const collections = { invoices, leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds };
+    const collections = { invoices, leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds, control_ticks: controlTicks };
     const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), collections }, null, 1), `jcommerce-console-backup-${todayStr}.json`);
     if (!r?.ok) return;
     try { localStorage.setItem('jc_last_backup', todayStr); } catch {}
@@ -1869,7 +1881,7 @@ function App() {
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
   const debtDoc = settings.find(x => x.key === 'xpDebt');
   const freshDoc = settings.find(x => x.key === 'xpFresh');
-  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {}, fresh: freshDoc || {} };
+  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {}, fresh: freshDoc || {}, serviceRounds, controlTicks };
   // Fresh start: XP counts again from 0, from today. History is kept; only the score restarts.
   // Days already charged for being in the red are cleared too, so the score really is 0.
   const freshStart = async () => {
@@ -2128,7 +2140,13 @@ function App() {
           onSaveCheck={d => { if (!ventureChecks.some(c => c.date === d.date && c.ventureId === d.ventureId)) add('venture_checks', d); }}
           onSaveItem={d => { const { id, createdAt, ...data } = d; id ? update('venture_items', id, data) : add('venture_items', data); }}
           onDeleteItem={id => remove('venture_items', id)}
-          onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}/>}
+          onAddTodo={d => add('todos', { ...d, doneOn: {}, addedDate: todayStr })}
+          // A control-room routine ticked or unticked: one doc per routine per day, for XP
+          onRoutineTick={(routineId, kind, at, on) => {
+            const date = localDateStr(new Date(at));
+            const ref = doc(db, 'control_ticks', `${date}_${routineId}`);
+            (on ? setDoc(ref, { date, routineId, kind, at: serverTimestamp() }) : deleteDoc(ref)).catch(() => setError('Failed to save the tick.'));
+          }}/>}
         {tab==='clients'  && <ClientManagement invoices={invoices} invoiceApi={invoiceApi} leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
         </SectionBoundary>
       </main>
@@ -7348,7 +7366,7 @@ function launchPlan(v, items, todayStr) {
   };
 }
 
-function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, onRoutineTick, ventures, finances = [], onAddFinance, services, checks, items, todayStr, onSaveVenture, onDeleteVenture, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP?.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const acrossPager = usePager(6), comingPager = usePager(6);
@@ -7429,7 +7447,7 @@ function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, 
         bills={finances.filter(f => f.ventureId === current.id && f.type === 'expense')} onAddBill={d => onAddFinance({ ...d, scope: 'work', ventureId: current.id })}
         onSaveService={d => onSaveService({ ...d, ventureId: current.id }, of(services, current))} onDeleteService={onDeleteService}
         onSaveCheck={d => onSaveCheck({ ...d, ventureId: current.id, venture: current.name })}
-        onSaveItem={d => onSaveItem({ ...d, ventureId: current.id })} onDeleteItem={onDeleteItem} onAddTodo={onAddTodo}/>
+        onSaveItem={d => onSaveItem({ ...d, ventureId: current.id })} onDeleteItem={onDeleteItem} onAddTodo={onAddTodo} onRoutineTick={onRoutineTick}/>
       {modal}{ConfirmUI}
     </div>
   );
@@ -7610,7 +7628,7 @@ function SiteTech({ domain, site }) {
   </>);
 }
 
-function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
+function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo, onRoutineTick }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
@@ -7774,7 +7792,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
 
       {view === 'tech' && d?.o?.site?.domain && <SiteTech domain={d.o.site.domain} site={d.o.site}/>}
       {view === 'control' && fbProject && <RunnerControl launchDate={v.launchDate || ''} project={fbProject} dir={v.dir} api={api} Mask={MoodMask} notify={RUNNER_NOTIFY}
-        bills={bills} onRecordPayout={onAddBill} exportFile={RUNNER_EXPORT}/>}
+        bills={bills} onRecordPayout={onAddBill} exportFile={RUNNER_EXPORT} onRoutineTick={onRoutineTick}/>}
 
       {view === 'launch' && plan && (<>
         <div className="card lp-hero">
