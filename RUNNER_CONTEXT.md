@@ -179,3 +179,18 @@ admin yet. Don't tell the operator to cancel there.
 - **App stores:** `STORE_STEPS` in `src/runnerOps.js` (Android: Google Play, 17 steps; iPhone: App Store, 7 steps) is drawn by `StoreSteps` in `src/RunnerControl.js` under Checklists, ticked in `local.ticks`.
   - The closed-test group has a start date (`local.closedTestStart`) and a counter (`CLOSED_TEST_DAYS` 14, `CLOSED_TEST_TESTERS` 12).
   - These are Google's rules for personal accounts as of Oct 2026. Organisation accounts (D-U-N-S) are exempt. A second, simpler app would not skip the test.
+
+## Confirmed orders, cash and admin referrals (29 Oct 2026, Runner branch `confirmed-orders-cash-referrals`)
+
+| Collection | Fields the control room reads |
+| --- | --- |
+| `orders` | `confirmedAt` (paid and final), `storeConfirmedAt`, `refundHeld` (a refund waiting for the owner), `paymentMethod` 'cash', `paymentStatus` 'cash_due' |
+| `wallets` | `confirmedSpendJmd`, `cashEligibleAt`, `cashRevokedAt`, `cashRevokeReason`, `cashRefusals` |
+| `cashIssues` | `orderId`, `studentId`, `storeName`, `amountJmd`, `mode`, `reporterRole`, `note`, `createdAt` |
+| `adminReferralStats/{adminUid}` | `code`, `signups`, `orderingUsers`, `confirmedOrders`, `spendJmd`, `earnedJmd`, `paidJmd`, `clawbackJmd`, `reversedJmd` |
+| `adminPayouts` | `adminUid`, `amountJmd`, `grossJmd`, `clawbackJmd`, `count`, `createdAt` |
+| `dashers` | `cashOwedJmd` (cash a runner collected for Runner) |
+
+Writes: only through Runner's `ownerAction` endpoint (`electron/ops.js` ownerAction): revokeCash, restoreCash, payAdminCommissions, reverseOrder. The Runner control room's "Cash & referrals" tab uses them. Customer names are read for the cash list only.
+
+j-commerce.online is a venture (added once) with a Tech tab: Vercel domain settings with a Vercel token (encrypted on this Mac), and request checks from this Mac every 5 minutes while the tab is open.

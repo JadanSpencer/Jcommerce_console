@@ -13,7 +13,7 @@ const { ipcMain, safeStorage, app } = require('electron');
 const fs = require('fs/promises');
 const path = require('path');
 
-const KEY_IDS = ['anthropic', 'render'];
+const KEY_IDS = ['anthropic', 'render', 'vercel'];
 const keyFile = () => path.join(app.getPath('userData'), 'live-keys.json');
 const cfgFile = () => path.join(app.getPath('userData'), 'live-config.json');
 const readJson = async f => { try { return JSON.parse(await fs.readFile(f, 'utf8')); } catch { return {}; } };
@@ -40,6 +40,53 @@ const tidy = (days, extra = {}) => {
   const list = Object.entries(days).map(([date, amount]) => ({ date, amount: Math.round(amount * 10000) / 10000 })).sort((a, b) => a.date.localeCompare(b.date));
   return { ok: true, fetchedAt: Date.now(), mtd: Math.round(list.reduce((t, x) => t + x.amount, 0) * 100) / 100, days: list, ...extra };
 };
+
+// ── Vercel: a website's domain settings and recent deployments ─────────────
+// j-commerce.online is on Vercel (Vercel's nameservers). With a Vercel token
+// (Account Settings → Tokens), read: the domain (verified, nameservers,
+// expiry, renewal), its configuration (misconfigured or not, how it points)
+// and its DNS records, plus the latest production deployments and whether
+// they built. Read-only: nothing is changed on Vercel from here.
+const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+async function vercelDomain(domain) {
+  if (!DOMAIN_RE.test(String(domain || ''))) return { ok: false, error: 'Unknown domain' };
+  const key = await getKey('vercel');
+  if (!key) return { ok: false, needs: 'key' };
+  const get = async p => {
+    const r = await fetch(`https://api.vercel.com${p}`, { headers: { Authorization: `Bearer ${key}` } });
+    const j = await r.json().catch(() => ({}));
+    if (r.status === 401 || r.status === 403) throw new Error('Vercel refused the token. Make a new one in Vercel → Account Settings → Tokens.');
+    if (!r.ok) throw new Error(j?.error?.message || `Vercel answered ${r.status}`);
+    return j;
+  };
+  try {
+    const [info, config, records, deployments] = await Promise.all([
+      get(`/v5/domains/${domain}`), get(`/v6/domains/${domain}/config`), get(`/v4/domains/${domain}/records?limit=100`),
+      get('/v6/deployments?limit=8&target=production').catch(() => ({ deployments: [] })),
+    ]);
+    const d = info.domain || {};
+    return {
+      ok: true, fetchedAt: Date.now(),
+      domain: { name: d.name, verified: !!d.verified, nameservers: d.nameservers || [], intended: d.intendedNameservers || [], expiresAt: d.expiresAt || null, renew: d.renew, createdAt: d.createdAt || null, boughtAt: d.boughtAt || null },
+      config: { misconfigured: !!config.misconfigured, configuredBy: config.configuredBy || null, aValues: config.aValues || [], cnames: config.cnames || [] },
+      records: (records.records || []).map(r => ({ id: r.id, name: r.name || '@', type: r.type, value: String(r.value || '').slice(0, 200), ttl: r.ttl })),
+      deployments: (deployments.deployments || []).map(x => ({ name: x.name, url: x.url, state: x.state || x.readyState, createdAt: x.created || x.createdAt })),
+    };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+
+// ── A request from this Mac to the site: is it up, how fast, is HTTPS good ──
+async function probe(domain) {
+  if (!DOMAIN_RE.test(String(domain || ''))) return { ok: false, error: 'Unknown domain' };
+  const one = async (url) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 10000); const t0 = Date.now();
+    try { const r = await fetch(url, { signal: ctl.signal, redirect: 'manual' }); return { status: r.status, ms: Date.now() - t0, server: r.headers.get('server') || '', cache: r.headers.get('x-vercel-cache') || '' }; }
+    catch (e) { return { status: 0, ms: Date.now() - t0, error: e.name === 'AbortError' ? 'no answer in 10 s' : (e.cause?.code || e.message) }; }
+    finally { clearTimeout(t); }
+  };
+  const [home, www, missing] = await Promise.all([one(`https://${domain}/`), one(`https://www.${domain}/`), one(`https://${domain}/__console_probe_missing_page`)]);
+  return { ok: true, at: Date.now(), home, www, missing };
+}
 
 // ── Anthropic: cost report, one bucket a day, amounts come in cents ──────────
 async function anthropic() {
@@ -133,7 +180,8 @@ async function gcp(project, cliToken) {
 function register(cliToken) {
   ipcMain.handle('live:status', () => status());
   ipcMain.handle('live:setKey', (_e, { id, value }) => setKey(id, value));
-  ipcMain.handle('live:fetch', (_e, { source, project }) => (source === 'anthropic' ? anthropic() : source === 'render' ? render() : source === 'gcp' ? gcp(project, cliToken) : { ok: false, error: 'Unknown source' }));
+  ipcMain.handle('live:fetch', (_e, { source, project }) => (source === 'anthropic' ? anthropic() : source === 'render' ? render() : source === 'gcp' ? gcp(project, cliToken)
+    : source === 'vercel' ? vercelDomain(project) : source === 'probe' ? probe(project) : { ok: false, error: 'Unknown source' }));
 }
 
 module.exports = { register };

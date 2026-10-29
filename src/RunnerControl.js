@@ -309,7 +309,91 @@ function Trading({ T, launchDate }) {
   </>);
 }
 
-const TABS = [['now', 'Now'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['running', 'Is it running'], ['handbook', 'Handbook']];
+const TABS = [['now', 'Now'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
+
+// ── Cash & referrals (Runner's confirmed orders) ────────────────────────────
+// Each customer's progress toward paying by cash (J$5,000 of confirmed coin
+// spend unlocks it, permanently, unless taken away here), cash orders that
+// weren't paid, admins' referral commission and payouts, and refunds Runner
+// held back for a decision (a confirmed order cancelled outside the
+// approved paths). The buttons are the control room's only changes to
+// Runner: they go through Runner's own checked endpoint (ownerAction).
+const CASH_UNLOCK = 5000;
+function CashReferrals({ T, admins, api, project }) {
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(null);
+  const [why, setWhy] = useState({});
+  const [orderId, setOrderId] = useState('');
+  const [orderWhy, setOrderWhy] = useState('');
+  const [filter, setFilter] = useState('');
+  if (!T?.ok) return <section className="card rc-sec"><p className="rc-item unknown rc-plain">Couldn't read cash and referrals this time ({T?.error || 'not read yet'}), so nothing is shown rather than something wrong.</p></section>;
+  const act = async (key, body, done) => {
+    if (busy) return;
+    setBusy(key); setMsg(null);
+    const r = await api.ownerAction(project, body);
+    setBusy('');
+    setMsg(r.ok ? { ok: true, text: done(r) } : { ok: false, text: r.error });
+    if (r.ok) { store.last = 0; refresh(); }
+  };
+  const emailOf = uid => (admins?.rows || []).find(a => a.id === uid)?.email || uid;
+  const shown = T.customers.filter(c => !filter || c.name.toLowerCase().includes(filter.toLowerCase()));
+  const eligible = T.customers.filter(c => c.cashEligibleAt && !c.cashRevokedAt).length;
+  return (<>
+    {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
+    <section className="card rc-sec">
+      <header><span className="rc-dot good"/><h3>Cash: who may pay cash</h3><span className="rc-quiet">{eligible} can pay cash · {T.customers.length} with confirmed coin spend</span>
+        <Help>Cash unlocks once a customer has spent {J(CASH_UNLOCK)} with Runner coins on confirmed orders, and stays unlocked even if an order is later reversed. Cash orders never count toward it. Take cash away from anyone who doesn't pay; give it back the same way.</Help></header>
+      <input className="input" placeholder="Find a customer" value={filter} onChange={e => setFilter(e.target.value)} style={{ maxWidth: 260, margin: '0.5rem 0' }}/>
+      <table className="rc-table"><thead><tr><th>Customer</th><th>Confirmed coin spend</th><th>Cash</th><th>Not paid</th><th></th></tr></thead>
+        <tbody>{shown.slice(0, 100).map(c => {
+          const state = c.cashRevokedAt ? `Taken away ${jmDate(c.cashRevokedAt)}${c.cashRevokeReason ? `: ${c.cashRevokeReason}` : ''}` : c.cashEligibleAt ? `Yes, since ${jmDate(c.cashEligibleAt)}` : `${Math.min(100, Math.round((c.confirmedSpendJmd / CASH_UNLOCK) * 100))}% of the way`;
+          return (<tr key={c.uid}>
+            <td>{c.name}</td><td>{J(c.confirmedSpendJmd)}</td><td>{state}</td><td>{c.cashRefusals || 0}</td>
+            <td>{c.cashRevokedAt
+              ? <button className="btn-ghost" disabled={!!busy} onClick={() => act(`r${c.uid}`, { action: 'restoreCash', uid: c.uid }, () => `${c.name} can pay cash again.`)}>{busy === `r${c.uid}` ? 'Saving…' : 'Give cash back'}</button>
+              : <span className="row-gap"><input className="input" style={{ width: 150 }} placeholder="Why" value={why[c.uid] || ''} onChange={e => setWhy(w => ({ ...w, [c.uid]: e.target.value }))}/>
+                <button className="btn-ghost" disabled={!!busy || (why[c.uid] || '').trim().length < 3} onClick={() => act(`v${c.uid}`, { action: 'revokeCash', uid: c.uid, reason: why[c.uid].trim() }, () => `${c.name} can no longer pay cash.`)}>{busy === `v${c.uid}` ? 'Saving…' : 'Take cash away'}</button></span>}</td>
+          </tr>);
+        })}</tbody></table>
+    </section>
+
+    <section className="card rc-sec">
+      <header><span className={`rc-dot ${T.issues.length ? 'look' : 'good'}`}/><h3>Cash not paid</h3><span className="rc-quiet">{T.issues.length ? `${T.issues.length} logged` : 'None logged'}</span>
+        <Help>Confirmed cash orders the customer didn't pay at the door or the counter, as reported by the runner or the store. The order was cancelled; the food may still be owed to the store.</Help></header>
+      {T.issues.length > 0 && <table className="rc-table"><thead><tr><th>When</th><th>Customer</th><th>Store</th><th>Amount</th><th>How</th><th>Note</th></tr></thead>
+        <tbody>{T.issues.map(i => <tr key={i.id}><td>{jmDate(i.createdAt)} {jmTime(i.createdAt)}</td><td>{i.name}</td><td>{i.storeName}</td><td>{J(i.amountJmd)}</td><td>{i.mode} · {i.reporterRole === 'dasher' ? 'runner' : i.reporterRole}</td><td>{i.note}</td></tr>)}</tbody></table>}
+    </section>
+
+    <section className="card rc-sec">
+      <header><span className="rc-dot good"/><h3>Admin referrals</h3><span className="rc-quiet">5% of confirmed orders + J$100 per first order</span>
+        <Help>Sign-ups with each admin's code, how many of them ordered, what they spent on confirmed orders, and the commission: earned and not yet paid, paid, and held back because a paid commission's order was later reversed (taken off the next payout). Pay marks everything earned as paid in one payout; pay the admin the amount shown, outside Runner.</Help></header>
+      <table className="rc-table"><thead><tr><th>Admin</th><th>Code</th><th>Signed up</th><th>Ordered</th><th>Spent</th><th>Earned, unpaid</th><th>Paid</th><th>Held back</th><th></th></tr></thead>
+        <tbody>{T.admins.map(a => (<tr key={a.uid}>
+          <td>{emailOf(a.uid)}</td><td>{a.code || '–'}</td><td>{a.signups || 0}</td><td>{a.orderingUsers || 0}</td><td>{J(a.spendJmd || 0)}</td>
+          <td>{J(a.earnedJmd || 0)}</td><td>{J(a.paidJmd || 0)}</td><td>{J(a.clawbackJmd || 0)}</td>
+          <td>{(a.earnedJmd || 0) > 0 && <button className="btn-ghost" disabled={!!busy} onClick={() => act(`p${a.uid}`, { action: 'payAdminCommissions', adminUid: a.uid, note: `Paid from the console ${new Date().toISOString().slice(0, 10)}` },
+            r => `Recorded a payout of ${J(r.paidJmd)} to ${emailOf(a.uid)}${r.clawbackJmd ? ` (${J(r.clawbackJmd)} held back)` : ''}. Pay them that amount.`)}>{busy === `p${a.uid}` ? 'Saving…' : `Mark ${J(Math.max(0, (a.earnedJmd || 0) - (a.clawbackJmd || 0)))} paid`}</button>}</td>
+        </tr>))}</tbody></table>
+      {T.payouts.length > 0 && <Fold id="rc-payouts" title="Payouts" note={`${T.payouts.length} recorded`}>
+        <table className="rc-table"><thead><tr><th>When</th><th>Admin</th><th>Paid</th><th>Held back</th><th>Commissions</th></tr></thead>
+          <tbody>{T.payouts.map(x => <tr key={x.id}><td>{jmDate(x.createdAt)}</td><td>{emailOf(x.adminUid)}</td><td>{J(x.amountJmd)}</td><td>{J(x.clawbackJmd || 0)}</td><td>{x.count}</td></tr>)}</tbody></table>
+      </Fold>}
+    </section>
+
+    <section className="card rc-sec">
+      <header><span className={`rc-dot ${T.held.length ? 'act' : 'good'}`}/><h3>Refunds held and reversals</h3><span className="rc-quiet">{T.held.length ? `${T.held.length} held` : 'Nothing held'}</span>
+        <Help>Confirmed orders are paid and final: no refunds. A confirmed order is only undone by its store, or by an approved reversal here (with a reason), which refunds the customer as Runner coins and takes back spend and commission. "Held" orders were cancelled some other way; their refund waits for you.</Help></header>
+      {T.held.length > 0 && <table className="rc-table"><thead><tr><th>Order</th><th>Store</th><th>Total</th><th>Cancelled</th><th>Why</th></tr></thead>
+        <tbody>{T.held.map(o => <tr key={o.id}><td>#{o.code}</td><td>{o.storeName}</td><td>{J(o.totalAmount)}</td><td>{jmDate(o.cancelledAt)}</td><td>{o.cancelReason || 'no reason'}</td></tr>)}</tbody></table>}
+      <div className="row-gap" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
+        <input className="input" style={{ width: 220 }} placeholder="Order id (the long one)" value={orderId} onChange={e => setOrderId(e.target.value.trim())}/>
+        <input className="input" style={{ width: 280 }} placeholder="Reason for the reversal" value={orderWhy} onChange={e => setOrderWhy(e.target.value)}/>
+        <button className="btn-ghost" disabled={!!busy || !orderId || orderWhy.trim().length < 5}
+          onClick={() => act('rev', { action: 'reverseOrder', orderId, reason: orderWhy.trim() }, () => { setOrderId(''); setOrderWhy(''); return 'Reversed: the customer is refunded and the store and runner are told.'; })}>{busy === 'rev' ? 'Reversing…' : 'Approve reversal'}</button>
+      </div>
+    </section>
+  </>);
+}
 const SECTION_TAB = { orders: 'now', money: 'money', people: 'people', running: 'running' };
 const dayLabel = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
 
@@ -429,6 +513,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
       </>)}
 
       {tab === 'trading' && <Trading T={r.trading} launchDate={launchDate}/>}
+      {tab === 'cash' && <CashReferrals T={data.parts.trust} admins={data.parts.admins} api={api} project={project}/>}
 
       {/* ── Money ──────────────────────────────────────────────────────── */}
       {tab === 'money' && <Section s={r.sections[1]}>

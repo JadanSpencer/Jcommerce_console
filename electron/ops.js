@@ -6,7 +6,12 @@
 //
 // Personal data: orders are read without names, phone numbers, emails or
 // addresses. The only personal fields read are a runner's name and phone (the
-// owner has to be able to call them) and admin emails (the admin list).
+// owner has to be able to call them), admin emails (the admin list), and the
+// name of each customer on the cash list (the owner decides who may pay cash).
+//
+// Writing: the control room changes Runner only through ownerAction (below):
+// Runner's own server endpoint, which checks this login can already write
+// Runner's database, applies the change in a transaction and logs it.
 //
 // Cost: every Runner document read is billed. Checks run at three speeds:
 //   fast    every refresh (kept at least a minute): open orders, today's orders and money
@@ -73,6 +78,16 @@ async function query(project, token, { collectionId, allDescendants, where, orde
     ...Object.fromEntries(Object.entries(x.document.fields || {}).map(([k, v]) => [k, fromValue(v)])),
   }));
   return { rows, hitLimit: rows.length >= limit };
+}
+// Several documents at once, only the named fields.
+async function batchGet(project, token, paths, fields) {
+  if (!paths.length) return {};
+  const r = await fetch(`${BASE(project)}:batchGet`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ documents: paths.map(p => `projects/${project}/databases/(default)/documents/${p}`), mask: { fieldPaths: fields } }) });
+  if (r.status === 401) throw unauthorized();
+  const out = await r.json();
+  if (!Array.isArray(out)) throw new Error(out?.error?.message || 'Read failed');
+  return Object.fromEntries(out.filter(x => x.found).map(x => [x.found.name.split('/').pop(), Object.fromEntries(Object.entries(x.found.fields || {}).map(([k, v]) => [k, fromValue(v)]))]));
 }
 async function getDoc(project, token, docPath) {
   const r = await fetch(`${BASE(project)}/${docPath}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -226,7 +241,7 @@ async function medium(project, token, ctx, dir) {
     launchCodes, problems, freeDeliveries, domains, signInHosts] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
-    q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
+    q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'cashOwedJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
     // Runners: name and phone are read so the owner can call them; nothing else personal
     q({ collectionId: 'users', where: cmp('role', 'EQUAL', str('dasher')), fields: ['name', 'phone', 'dasherStatus', 'createdAt', 'isActive'], limit: 400 }),
     // Store tablet logins: which store, switched on, and whether the tablet can get alerts (yes or no only)
@@ -300,7 +315,7 @@ async function medium(project, token, ctx, dir) {
 async function slow(project, token, ctx) {
   const { now, today } = ctx;
   const since = today - 7 * 86400000;
-  const [ordersWeek, signups, appCheck, budgets] = await Promise.all([
+  const [ordersWeek, signups, appCheck, budgets, trust] = await Promise.all([
     part(async () => {
       const r = await query(project, token, { collectionId: 'orders', where: all([cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(since)), cmp('createdAt', 'LESS_THAN', num(today))]), orderBy: 'createdAt',
         fields: ['status', 'storeId', 'storeName', 'totalAmount', 'deliveryFee', 'platformFeeJmd', 'dasherPayoutJmd', 'createdAt', 'acceptedAt', 'paidAt', 'deliveredAt', 'deliveryMins', 'cancelReason', 'fulfilment', 'dasherId', 'studentId', 'receipt.code', 'paymentMethod', 'paymentStatus', 'refundAttemptFailed', 'refundAttemptReason'], limit: 3000 });
@@ -330,8 +345,30 @@ async function slow(project, token, ctx) {
       const j = await google(token, project, `https://billingbudgets.googleapis.com/v1/billingAccounts/${acct}/budgets`);
       return { rows: (j.budgets || []).map(b => ({ name: b.displayName, amount: Number(b.amount?.specifiedAmount?.units || 0), currency: b.amount?.specifiedAmount?.currencyCode || '' })) };
     }),
+    // Confirmed orders: cash eligibility per customer, cash not paid, admin
+    // referral commission and payouts, and refunds held for a decision.
+    part(async () => {
+      const [wallets, issues, stats, payouts, held] = await Promise.all([
+        query(project, token, { collectionId: 'wallets', where: cmp('confirmedSpendJmd', 'GREATER_THAN', num(0)), orderBy: 'confirmedSpendJmd',
+          fields: ['confirmedSpendJmd', 'cashEligibleAt', 'cashRevokedAt', 'cashRevokeReason', 'cashRefusals'], limit: 300 }),
+        query(project, token, { collectionId: 'cashIssues', orderBy: 'createdAt', fields: ['orderId', 'studentId', 'storeName', 'amountJmd', 'mode', 'reporterRole', 'note', 'createdAt'], limit: 100 }),
+        query(project, token, { collectionId: 'adminReferralStats', fields: ['code', 'signups', 'orderingUsers', 'confirmedOrders', 'spendJmd', 'earnedJmd', 'paidJmd', 'clawbackJmd', 'reversedJmd', 'lastPaidAt'], limit: 50 }),
+        query(project, token, { collectionId: 'adminPayouts', orderBy: 'createdAt', fields: ['adminUid', 'amountJmd', 'grossJmd', 'clawbackJmd', 'count', 'note', 'createdAt'], limit: 50 }),
+        query(project, token, { collectionId: 'orders', where: cmp('refundHeld', 'EQUAL', { booleanValue: true }), fields: ['storeName', 'totalAmount', 'cancelReason', 'cancelledAt', 'receipt.code', 'paymentMethod'], limit: 50 }),
+      ]);
+      const uids = [...new Set([...wallets.rows.map(w => w.id), ...issues.rows.map(i => i.studentId)].filter(Boolean))].slice(0, 300);
+      const names = await batchGet(project, token, uids.map(u => `users/${u}`), ['name']);
+      const nameOf = uid => String(names[uid]?.name || '').slice(0, 60) || 'Unknown';
+      return {
+        customers: wallets.rows.map(({ movedAt, parent, ...w }) => ({ ...w, uid: w.id, name: nameOf(w.id) })),
+        issues: issues.rows.map(({ movedAt, parent, ...i }) => ({ ...i, name: nameOf(i.studentId) })),
+        admins: stats.rows.map(({ movedAt, parent, ...a }) => ({ ...a, uid: a.id })),
+        payouts: payouts.rows.map(({ movedAt, parent, ...x }) => x),
+        held: held.rows.map(({ movedAt, parent, receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase() })),
+      };
+    }),
   ]);
-  return { ordersWeek, signups, appCheck, budgets, at: now };
+  return { ordersWeek, signups, appCheck, budgets, trust, at: now };
 }
 
 async function menus(project, token, ctx) {
@@ -407,4 +444,36 @@ async function ops(project, dir, cliToken) {
   return inFlight;
 }
 
-module.exports = { ops, snapshot, dayStart, sharedLists, FAST_MS };
+// ── Owner actions: the only writes ────────────────────────────────────────
+// Runner's ownerAction endpoint (functions/src/owner.ts) accepts this Mac's
+// Firebase login only if it can already write Runner's database; it then
+// makes the change in a transaction and logs it in ownerActions.
+const OWNER_ACTIONS = ['revokeCash', 'restoreCash', 'payAdminCommissions', 'reverseOrder'];
+async function ownerAction(project, cliToken, body = {}) {
+  if (!/^[a-z0-9-]+$/.test(project || '') || !OWNER_ACTIONS.includes(body.action)) return { ok: false, error: 'Unknown action' };
+  const send = async token => {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetch(`https://${SCHEDULER_REGION}-${project}.cloudfunctions.net/ownerAction`, {
+        method: 'POST', signal: ctl.signal, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      return { status: r.status, j };
+    } finally { clearTimeout(timer); }
+  };
+  try {
+    let token = await cliToken(false);
+    if (!token) return { ok: false, error: 'This Mac\'s Firebase sign-in has run out.' };
+    let { status, j } = await send(token);
+    if (status === 401 || status === 403) ({ status, j } = await send(await cliToken(true)));
+    if (status >= 200 && status < 300 && j.ok) {
+      const c = cache[project]; if (c) { c.slowAt = 0; c.lastAt = 0; }   // read fresh next time
+      return { ok: true, ...j };
+    }
+    return { ok: false, error: j.error || `Runner answered ${status}` };
+  } catch (e) {
+    return { ok: false, error: e.name === 'AbortError' ? 'Runner did not answer in 20 seconds. Check before trying again: it may have gone through.' : (e.message || 'Could not reach Runner') };
+  }
+}
+
+module.exports = { ops, ownerAction, snapshot, dayStart, sharedLists, FAST_MS };

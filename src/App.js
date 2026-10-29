@@ -7370,6 +7370,16 @@ function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, 
     const money = o.ok && o.firebaseProject ? await api.money(o.firebaseProject, 30) : null;
     setData(d => ({ ...d, [v.id]: { o, money, loading: false, dir } }));
   };
+  // j-commerce.online, the parent company's own website, is a venture too
+  // (added once; if you remove it, it stays removed).
+  useEffect(() => {
+    if (!list.length) return; // not loaded yet
+    let done = false; try { done = localStorage.getItem('jc_seed_jcommerce_site') === '1'; } catch {}
+    if (done) return;
+    try { localStorage.setItem('jc_seed_jcommerce_site', '1'); } catch {}
+    if (list.some(v => /j-commerce\.online/i.test(v.name || '') || /\/Jcommerce\/jcommerce\/Jcommerce\/?$/.test(v.dir || ''))) return;
+    onSaveVenture({ name: 'j-commerce.online', stage: 'Live', tagline: 'Jcommerce & Tech\'s own website: domain, hosting and requests (Tech tab)', dir: '/Users/account/Documents/Jcommerce/jcommerce/Jcommerce' });
+  }, [list.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadKey = list.map(v => `${v.id}:${v.dir || ''}`).join('|');
   useEffect(() => { list.forEach(v => { if (!data[v.id] || data[v.id].dir !== (v.dir || '')) loadOne(v); }); }, [loadKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -7530,6 +7540,76 @@ function Ventures({ leads = [], timers = [], onNav, rounds = [], onToggleRound, 
   );
 }
 
+// ── Tech: a website venture's domain and the requests reaching it ─────────
+// For a site on Vercel such as j-commerce.online. Domain settings come from
+// Vercel's API with a Vercel token (kept encrypted on this Mac, never in the
+// window): verified or not, nameservers, expiry and renewal, how it points,
+// the DNS records, and recent production deployments. Requests: this Mac
+// asks the site every 5 minutes while this tab is open (home page, www, and
+// a page that doesn't exist, which must answer 404, not an error), and keeps
+// the last 500 answers here, so errors, slow answers and refusals (403/429)
+// show up. Vercel keeps its own counts of all visitors' requests, errors and
+// firewall blocks in its dashboard (Observability and Firewall); its public
+// API doesn't offer those for a site like this, so they are linked, not read.
+const PROBE_KEY = d => `jc_probe_${d}`;
+function SiteTech({ domain, site }) {
+  const live = DESKTOP?.live;
+  const [v, setV] = useState(null);
+  const [hasKey, setHasKey] = useState(null);
+  const [token, setToken] = useState('');
+  const [log, setLog] = useState(() => { try { return JSON.parse(localStorage.getItem(PROBE_KEY(domain))) || []; } catch { return []; } });
+  const pull = async () => {
+    if (!live) return;
+    const keys = await live.status(); setHasKey(!!keys.vercel);
+    setV(keys.vercel ? await live.fetch('vercel', domain) : null);
+  };
+  const probeNow = async () => {
+    if (!live) return;
+    const r = await live.fetch('probe', domain);
+    if (!r?.ok) return;
+    setLog(cur => { const next = [...cur, r].slice(-500); try { localStorage.setItem(PROBE_KEY(domain), JSON.stringify(next)); } catch {} return next; });
+  };
+  useEffect(() => { pull(); probeNow(); const t = setInterval(probeNow, 5 * 60000); return () => clearInterval(t); }, [domain]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!live) return <div className="card">Tech only works in the Mac app.</div>;
+  const day = Date.now() - 86400000;
+  const recent = log.filter(x => x.at >= day);
+  const answers = recent.flatMap(x => [x.home, x.www]);
+  const errors = answers.filter(a => a.status === 0 || a.status >= 500).length;
+  const refused = answers.filter(a => a.status === 403 || a.status === 429).length;
+  const slow = answers.filter(a => a.ms > 3000).length;
+  const notFoundOk = recent.filter(x => x.missing?.status === 404).length;
+  const last = log[log.length - 1];
+  const saveKey = async () => { await live.setKey('vercel', token.trim()); setToken(''); pull(); };
+  const fmtD = t => (t ? new Date(t).toISOString().slice(0, 10) : '–');
+  return (<>
+    <div className="card">
+      <div className="lp-head"><b>Domain · {domain}</b> <span className="fin-delta">{site?.registrar ? `Registered with ${site.registrar}` : ''}{site?.expires ? ` · expires ${site.expires}` : ''}</span></div>
+      <p className="fin-delta">Nameservers: {(site?.ns || []).join(', ') || '–'}{site?.host ? ` · hosted on ${site.host}` : ''}{site?.live ? ` · ${site.live.ok ? `answering in ${site.live.ms} ms` : 'not answering'}` : ''}</p>
+      {hasKey === false && (<div className="row-gap" style={{ flexWrap: 'wrap' }}>
+        <span className="fin-delta">Add a Vercel token to see the domain's settings, DNS records and deployments (Vercel → Account Settings → Tokens; read access is enough).</span>
+        <input className="input" type="password" style={{ width: 280 }} placeholder="Vercel token" value={token} onChange={e => setToken(e.target.value)}/>
+        <button className="btn-ghost" disabled={!token.trim()} onClick={saveKey}>Save token</button>
+      </div>)}
+      {v && !v.ok && <p className="fin-delta" style={{ color: 'var(--danger, #ff6b6b)' }}>{v.error || 'Could not read Vercel'}</p>}
+      {v?.ok && (<>
+        <p>{v.config.misconfigured ? <b style={{ color: 'var(--danger, #ff6b6b)' }}>Vercel says this domain is misconfigured.</b> : 'Vercel says the domain is set up correctly'}{v.config.configuredBy ? ` (points by ${v.config.configuredBy})` : ''}. {v.domain.verified ? 'Verified.' : 'Not verified.'}
+          {v.domain.expiresAt ? ` Renewal ${fmtD(v.domain.expiresAt)}${v.domain.renew === false ? ', auto-renew OFF' : v.domain.renew ? ', auto-renew on' : ''}.` : ''}</p>
+        <table className="rc-table"><thead><tr><th>Name</th><th>Type</th><th>Value</th><th>TTL</th></tr></thead>
+          <tbody>{v.records.map(r => <tr key={r.id}><td>{r.name}</td><td>{r.type}</td><td style={{ wordBreak: 'break-all' }}>{r.value}</td><td>{r.ttl || 'auto'}</td></tr>)}</tbody></table>
+        <p className="fin-delta">Latest production deployments: {v.deployments.length ? v.deployments.map(x => `${x.name} ${x.state} ${fmtD(x.createdAt)}`).join(' · ') : 'none read'}</p>
+      </>)}
+      <div className="row-gap"><a className="btn-ghost" href={`https://vercel.com/domains/${domain}`} target="_blank" rel="noreferrer">Domain settings on Vercel</a><button className="btn-ghost" onClick={pull}>↻ Refresh</button></div>
+    </div>
+    <div className="card">
+      <div className="lp-head"><b>Requests</b> <span className="fin-delta">from this Mac, every 5 minutes while this tab is open · last 24 h</span></div>
+      <p>{recent.length ? `${answers.length} requests: ${errors} errors (5xx or no answer), ${refused} refused or rate-limited (403/429), ${slow} slower than 3 s. Missing pages answered 404 ${notFoundOk} of ${recent.length} times.` : 'No checks yet in the last 24 hours.'}</p>
+      {last && <p className="fin-delta">Last check {new Date(last.at).toLocaleTimeString()}: home {last.home.status || last.home.error} in {last.home.ms} ms ({last.home.server || 'unknown server'}{last.home.cache ? `, cache ${last.home.cache}` : ''}) · www {last.www.status || last.www.error} · missing page {last.missing.status || last.missing.error}</p>}
+      <p className="fin-delta">Everyone's traffic, errors and blocked or rate-limited requests are counted by Vercel itself: open its Observability and Firewall pages for this project. Its public API doesn't give those numbers for this site, so they aren't copied here.</p>
+      <div className="row-gap"><a className="btn-ghost" href="https://vercel.com/dashboard" target="_blank" rel="noreferrer">Open Vercel (Observability, Firewall)</a><button className="btn-ghost" onClick={probeNow}>Check now</button></div>
+    </div>
+  </>);
+}
+
 function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
@@ -7619,6 +7699,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
   const plan = launchPlan(v, items, todayStr);
   const backlog = moves.filter(m => !m.phase);
   const tabs = [...(fbProject ? [['control','Control room']] : []), ...(plan && !launched ? [['launch','Launch']] : []), ['overview','Overview'], ['plan',`Plan${backlog.length ? ` · ${backlog.length}` : ''}`], ...(hasOrders ? [['money','Money']] : []), ['services','Services'], ['people','People & links'],
+    ...(d?.o?.site?.domain ? [['tech', 'Tech']] : []),
     ...(hasFolder ? [['keys','Keys'], ['terminal','Terminal'], ['docs','Docs']] : []), ...(plan && launched ? [['launch', 'Launch review']] : [])];
   // A folder without a Firebase project has no control room: fall back once the folder is read
   useEffect(() => { if (view === 'control' && d && !d.loading && !fbProject) setView('overview'); }, [view, d, fbProject]);
@@ -7691,6 +7772,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
       </div>
       {v.tagline && <div className="fin-delta vt-tagline">{v.tagline}</div>}
 
+      {view === 'tech' && d?.o?.site?.domain && <SiteTech domain={d.o.site.domain} site={d.o.site}/>}
       {view === 'control' && fbProject && <RunnerControl launchDate={v.launchDate || ''} project={fbProject} dir={v.dir} api={api} Mask={MoodMask} notify={RUNNER_NOTIFY}
         bills={bills} onRecordPayout={onAddBill} exportFile={RUNNER_EXPORT}/>}
 
