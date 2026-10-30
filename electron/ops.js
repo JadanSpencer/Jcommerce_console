@@ -238,7 +238,7 @@ async function medium(project, token, ctx, dir) {
   const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
   const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
   const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches] = await Promise.all([
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'cashOwedJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
@@ -325,9 +325,11 @@ async function medium(project, token, ctx, dir) {
     }),
     // Top-up card batches: who holds each, and what has been redeemed (cash the seller owes Runner)
     q({ collectionId: 'topupBatches', fields: ['holder', 'valueJmd', 'count', 'redeemedCount', 'redeemedJmd', 'voidedCount', 'activatedAt', 'createdAt'], limit: 300 }),
+    // WhatsApp assistant: messages and AI tokens per day (Runner: functions/src/whatsapp.ts)
+    q({ collectionId: 'whatsappStats', fields: ['messages', 'inputTokens', 'outputTokens', 'cacheReadTokens'], limit: 400 }),
   ]);
   return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, at: now };
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, at: now };
 }
 
 async function slow(project, token, ctx) {

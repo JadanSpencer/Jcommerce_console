@@ -53,6 +53,7 @@ export const CANCEL_WORDS = {
   admin: 'Cancelled by Runner support', insufficient_tokens: 'Not enough Runner coins', pickup_unavailable: 'Pickup is not offered there',
   store_not_found: 'The store no longer exists', invalid_item: 'An item was not valid', too_many_items: 'Too many items',
   empty_order: 'The order was empty', account_inactive: 'The account is switched off',
+  slot_closed: 'Ordering for that pickup time had closed',
 };
 const cancelWord = r => (r ? CANCEL_WORDS[r] || `"${r}" (not understood)` : 'The student cancelled');
 const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review', 'failed'];
@@ -733,6 +734,12 @@ export function judgeRunner(data, local = {}) {
     const left = (Number(b.count) || 0) - (Number(b.redeemedCount) || 0) - (Number(b.voidedCount) || 0);
     x.redeemed += Number(b.redeemedJmd) || 0; x.cards += Number(b.redeemedCount) || 0; x.unredeemed += Math.max(0, left) * (Number(b.valueJmd) || 0);
     return m; }, {})).sort((a, b) => b.redeemed - a.redeemed);
+  // WhatsApp assistant: this month's messages and AI cost (Claude Opus 5.5: US$4 in, US$20 out, US$0.20 cached, per million)
+  const month = jmDate(now).slice(0, 7);
+  const botDays = (P.whatsappStats?.ok ? P.whatsappStats.rows : []).filter(d => String(d.id).startsWith(month));
+  const botSum = k => botDays.reduce((t, d) => t + (Number(d[k]) || 0), 0);
+  const bot = { ok: !!P.whatsappStats?.ok, messages: botSum('messages'), usd: (botSum('inputTokens') * 4 + botSum('outputTokens') * 20 + botSum('cacheReadTokens') * 0.2) / 1e6 };
+
   const due = {
     ok: usable(P.dashers) && usable(P.storeFloats),
     storesOwed: settle.stores.reduce((t, x) => t + (x.owed || 0), 0),
@@ -870,5 +877,5 @@ export function judgeRunner(data, local = {}) {
   if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L, launch, freeHeld, speed, trading, fnHealth, due };
+    checklist, keeping, limits: L, launch, freeHeld, speed, trading, fnHealth, due, bot };
 }
