@@ -368,7 +368,7 @@ async function slow(project, token, ctx) {
     // Confirmed orders: cash eligibility per customer, cash not paid, admin
     // referral commission and payouts, and refunds held for a decision.
     part(async () => {
-      const [wallets, issues, stats, payouts, held, stock] = await Promise.all([
+      const [wallets, issues, stats, payouts, held, stock, transfers] = await Promise.all([
         query(project, token, { collectionId: 'wallets', where: cmp('confirmedSpendJmd', 'GREATER_THAN', num(0)), orderBy: 'confirmedSpendJmd',
           fields: ['confirmedSpendJmd', 'cashEligibleAt', 'cashRevokedAt', 'cashRevokeReason', 'cashRefusals'], limit: 300 }),
         query(project, token, { collectionId: 'cashIssues', orderBy: 'createdAt', fields: ['orderId', 'studentId', 'storeName', 'amountJmd', 'mode', 'reporterRole', 'note', 'createdAt'], limit: 100 }),
@@ -377,6 +377,8 @@ async function slow(project, token, ctx) {
         query(project, token, { collectionId: 'orders', where: cmp('refundHeld', 'EQUAL', { booleanValue: true }), fields: ['storeName', 'totalAmount', 'cancelReason', 'cancelledAt', 'receipt.code', 'paymentMethod'], limit: 50 }),
         // Admin runners' coin stock and the cash they owe for coins sold (Runner: functions/src/adminRunners.ts)
         query(project, token, { collectionId: 'coinStock', fields: ['name', 'balanceJmd', 'allocatedJmd', 'returnedJmd', 'soldJmd', 'cashInJmd', 'cashOwedJmd', 'lastSaleAt', 'lastCashInAt'], limit: 100 }).catch(() => ({ rows: [] })),
+        // WhatsApp bank transfers waiting for an admin (Runner: functions/src/botOrders.ts)
+        query(project, token, { collectionId: 'transferPayments', where: cmp('status', 'EQUAL', str('pending_review')), fields: ['amountJmd', 'proofAt'], limit: 50 }).catch(() => ({ rows: [] })),
       ]);
       const uids = [...new Set([...wallets.rows.map(w => w.id), ...issues.rows.map(i => i.studentId), ...stats.rows.map(a => a.id)].filter(Boolean))].slice(0, 350);
       const names = await batchGet(project, token, uids.map(u => `users/${u}`), ['name', 'role']);
@@ -387,6 +389,7 @@ async function slow(project, token, ctx) {
         // Admins and admin runners (who earn the same commission)
         admins: stats.rows.map(({ movedAt, parent, ...a }) => ({ ...a, uid: a.id, name: nameOf(a.id), runner: names[a.id]?.role === 'dasher' })),
         coinStock: stock.rows.map(({ movedAt, parent, ...x }) => ({ ...x, uid: x.id })),
+        transfers: transfers.rows.map(({ movedAt, parent, ...x }) => x),
         payouts: payouts.rows.map(({ movedAt, parent, ...x }) => x),
         held: held.rows.map(({ movedAt, parent, receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase() })),
       };

@@ -534,7 +534,7 @@ function useNotifications() {
 
       // 3. Save subscription to Firebase so JAXON can reach this device
       const subJson = sub.toJSON();
-      await fetch('https://jaxon-rctv.onrender.com/subscribe', {
+      if (JAXON_ON) await fetch('https://jaxon-rctv.onrender.com/subscribe', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -560,6 +560,10 @@ function useNotifications() {
 }
 
 // ─── SYSTEM HEALTH MONITOR ────────────────────────────────────────────────────
+// JAXON's server is off for now, to save money (30 Oct 2026). True brings back
+// its tab, health check, reinvestment advice and notifications sign-up.
+const JAXON_ON = false;
+
 // Pings JAXON and detects Anthropic credit errors from logs
 function useSystemHealth() {
   const [health, setHealth] = useState({
@@ -575,7 +579,7 @@ function useSystemHealth() {
     const check = async () => {
       // 1. Ping JAXON server
       let jaxon = 'unknown', jaxonMsg = '';
-      try {
+      if (JAXON_ON) try {
         // Render's free tier can take ~30-50s to wake from sleep
         const r = await fetch('https://jaxon-rctv.onrender.com/', { signal: AbortSignal.timeout(60000) });
         if (r.ok) { jaxon = 'ok'; }
@@ -1928,7 +1932,7 @@ function App() {
     {id:'clients',   label:'Clients',  icon:Icons.briefcase, jp:'顧客', group:'Business'},
     {id:'finance',   label:'Finance',  icon:Icons.finance, jp:'財務', group:'Business'},
     {id:'ventures',  label:'Ventures', icon:Icons.rocket, jp:'事業', group:'Business'},
-    {id:'jaxon',     label:'JAXON',    icon:Icons.jaxon, jp:'参謀', group:'Business'},
+    ...(JAXON_ON ? [{id:'jaxon',     label:'JAXON',    icon:Icons.jaxon, jp:'参謀', group:'Business'}] : []),
     {id:'todos',     label:'Tasks',    icon:Icons.tasks, jp:'任務', group:'Personal'},
     {id:'habits',    label:'Habits',   icon:Icons.habits, jp:'習慣', group:'Personal'},
     {id:'focus',     label:'Focus',    icon:Icons.hourglass, jp:'集中', group:'Personal'},
@@ -2115,7 +2119,7 @@ function App() {
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={addFinance} onStartOver={startFinancesOver} invoices={invoices} invoiceApi={invoiceApi} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
-        {tab==='jaxon'    && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
+        {JAXON_ON && tab==='jaxon' && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
           onToggleRound={(ventureId, serviceId) => {
             const doc = serviceRounds.find(r => r.date === todayStr && r.ventureId === ventureId);
@@ -4979,7 +4983,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
         <button className="btn-primary" onClick={() => setForm({ date: isCurrent ? todayStr : `${month}-01` })}><Icons.plus size={14}/> Transaction</button>
       </div>
       <div className="page-tabs">
-          {[['overview','Overview'],['invoices', <>Invoices{invoices.some(i => invoiceState(i, allFinances, todayStr).id === 'overdue') && <i className="tab-alert" title="An invoice is overdue"/>}</>],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].map(([id, label]) => (
+          {[['overview','Overview'],['invoices', <>Invoices{invoices.some(i => invoiceState(i, allFinances, todayStr).id === 'overdue') && <i className="tab-alert" title="An invoice is overdue"/>}</>],['debts',`Debts${oweList.length + owedList.length ? ` · ${oweList.length + owedList.length}` : ''}`],['budgets','Budgets'],['forecast','Forecast'],['invest','Invest']].filter(([id]) => JAXON_ON || id !== 'invest').map(([id, label]) => (
             <button key={id} className={view === id ? 'on' : ''} onClick={() => setView(id)}>{label}</button>
           ))}
       </div>
@@ -5301,7 +5305,7 @@ function Finance({ventures = [], debts: allDebts = [], onSaveDebt, onDeleteDebt,
         </div>
       </>)}
 
-      {view === 'invest' && (
+      {JAXON_ON && view === 'invest' && (
         <InvestAdvisor cash={cash} avgExp={avgExp} avgNet={avgNet} runway={runway} mrr={mrr} target={target}
           advice={investAdvice} loading={investLoading}
           onFetch={async () => {

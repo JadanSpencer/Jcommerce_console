@@ -548,6 +548,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
                   <small>Value of every card redeemed so far, all time. Each seller owes you this in cash, less what they have already handed over.</small></div>
                 <div><span>Admin runners: cash for coins sold</span><b>{trust ? J(coinCash) : "couldn't check"}</b>
                   <small>{coinRunners.length ? `${coinRunners.reduce((t, x) => t + (Number(x.balanceJmd) || 0), 0).toLocaleString('en-US')} coins still in their stock.` : 'No admin runner has coins yet.'}</small></div>
+                <div><span>Bank transfers to verify</span><b>{trust ? (trust.transfers || []).length : "couldn't check"}</b>
+                  <small>{(trust?.transfers || []).length ? `${J((trust.transfers).reduce((t, x) => t + (Number(x.amountJmd) || 0), 0))} from WhatsApp customers who are waiting. Approve in Runner admin.` : 'Nobody is waiting.'}</small></div>
                 <div><span>Cash orders not paid</span><b>{unpaidCash === null ? "couldn't check" : J(unpaidCash)}</b>
                   <small>Logged by runners and stores; details in Cash &amp; referrals.</small></div>
               </div>
