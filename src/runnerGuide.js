@@ -65,7 +65,7 @@ export const OTHER_SCREENS = [
   ['Store tablet: Today', 'The day\'s orders, best sellers, and its statement with Runner.'],
   ['Store tablet: Batch', 'Only for batch kitchens. The cooking list for each pickup time, labels and a pause switch.'],
   ['Runner app', 'Go online, accept orders, move each order along, "Cash paid, delivered" or "Not paid". Admin runners also get a Coin desk under Profile.'],
-  ['Student Profile', 'Add coins, referral link, How Runner works, and Account controls (deactivate or delete).'],
+  ['Student Profile', 'Add coins, referral link, How Runner works, and Account controls (deactivate or delete). "Order on WhatsApp" shows here once Runner\'s number is set.'],
 ];
 
 export const GROUPS = ['Orders', 'Coins and cash', 'Paying people', 'Stores', 'Runners and customers', 'WhatsApp', 'Website and updates'];
@@ -170,6 +170,12 @@ export const HOWTO = [
     steps: ['Admins get a notification with their full number.', 'Reply from Runner\'s WhatsApp Business account.'] },
   { group: 'WhatsApp', id: 'golive', q: 'Put the WhatsApp assistant live', keys: 'meta number setup launch keys secrets',
     steps: ['This is a developer-level job. Tick through Handbook → Before-launch list → WhatsApp assistant and batch kitchens.', 'The full guide is docs/WHATSAPP_ORDERING.md in the Runner folder.', 'The one step that must not be skipped: Runner\'s number needs its own webhook, or the D&D bot answers Runner\'s customers.', 'Have about 30 real test conversations before telling customers.', 'Then add EXPO_PUBLIC_WHATSAPP_NUMBER=1876XXXXXXX (Runner\'s number) to the .env file in the Runner folder, run npx expo export --platform web --clear, then npm run deploy:web. "Order on WhatsApp" then shows in the app. Remove the line and run both again to hide it.'] },
+  { group: 'WhatsApp', id: 'status', q: 'How far the WhatsApp setup has got (31 Oct 2026)', keys: 'progress done left remaining status live ready',
+    steps: ['Done: the five keys were entered, the WhatsApp server functions are deployed, and the Terms cover WhatsApp orders (updated 31 Oct 2026).', 'Not confirmed: the keys are hidden, so nobody can read them back. Check they are for Runner\'s own number, not D&D\'s.', 'Still to do: add Runner\'s number in Meta with a payment method, give it its own webhook, send one test message, get the four templates approved, have about 30 test conversations.', 'Last step: show "Order on WhatsApp" in the app. Customers don\'t see it until then.', 'The ticks in Handbook → Before-launch list are the up-to-date record. This note is from 31 Oct 2026.'],
+    never: 'Don\'t tell customers the number until only Runner\'s bot answers it and the test conversations are done.' },
+  { group: 'WhatsApp', id: 'show-app', q: 'Show or hide "Order on WhatsApp" in the app', keys: 'mention card profile button number hide env guide',
+    steps: ['It is hidden until Runner\'s number is set. When set, customers see a card in How Runner works and a row in Account controls. Runners don\'t see the row.', 'To show it, add EXPO_PUBLIC_WHATSAPP_NUMBER=1876XXXXXXX to the .env file in the Runner folder, using Runner\'s real number.', 'Open Terminal in the Runner folder and run npx expo export --platform web --clear', 'Run npm run deploy:web', 'To hide it, remove that line and run both commands again.'],
+    never: 'Don\'t skip --clear: the build can keep the old setting. Don\'t use the number in the Jcommerce badge: that is not Runner\'s assistant.' },
   { group: 'WhatsApp', id: 'bot-off', q: 'Switch the WhatsApp assistant off', keys: 'stop bot disable emergency',
     steps: ['Set WHATSAPP_BOT_ENABLED to false in functions/src/shared.ts.', 'Run firebase deploy --only functions in the Runner folder.', 'Orders already placed carry on as normal orders.'] },
 
@@ -180,6 +186,11 @@ export const HOWTO = [
     steps: ['Open [Firebase Hosting](fb:/hosting/sites) and choose the site.', 'Under Release history, find the previous release and choose Rollback.', 'That only undoes the website. Server and rules problems need the developer.', 'Write down the time it started.'] },
   { group: 'Website and updates', id: 'relogin', q: 'The console says it can\'t see Runner', keys: 'login firebase sign in expired couldn\'t check',
     steps: ['Open Terminal and type firebase login --reauth, then press Enter.', 'Sign in with the Google account that owns Runner.', 'Come back here and press Refresh.'] },
+  { group: 'Website and updates', id: 'deploy-alert', q: 'A red server error appeared during or right after a deploy', keys: 'act now alert quota write requests cloud run payments false alarm',
+    steps: ['Google limits how fast functions can update, so a big deploy can log "Quota exceeded". It happened on 30 Oct 2026 and named runnerSellCoins. No money was affected.', 'The console now ignores those Google deploy messages, so they no longer raise this alert.', 'Open [Is it running](tab:running) and check every server function is healthy.', 'If a function failed to deploy, run npm run deploy:all again in a quiet hour.', 'Any red error with no deploy running is real. Treat it as real and look at it.'] },
+  { group: 'Website and updates', id: 'thumbs', q: 'Make small copies of menu photos again', keys: 'thumbnails backfill photos gcloud python credentials default login images',
+    steps: ['You rarely need this. New uploads make their own copies, and older photos were finished on 31 Oct 2026 (0 left to make).', 'Run it only if the Before-launch list says some photos have no small copy.', 'Open Terminal in the Runner folder and run: export CLOUDSDK_PYTHON=/Library/Frameworks/Python.framework/Versions/3.15/bin/python3', 'Run ~/google-cloud-sdk/bin/gcloud auth application-default login', 'In the browser, sign in with the account that owns Runner and tick every permission box. If the terminal says "scope is required but not consented", a box was missed. The browser\'s success page doesn\'t prove it worked. Look for "Credentials saved to file".', 'Run node scripts/backfill-thumbnails.mjs to count. It changes nothing.', 'If the count looks right, run node scripts/backfill-thumbnails.mjs --write'],
+    never: 'If a Python folder is missing, install Python from python.org and use its version number in the first command.' },
   { group: 'Website and updates', id: 'bill', q: 'Keep the Google bill from stopping Runner', keys: 'billing card declined payment cost',
     steps: ['A declined card can close the billing account, which stops the server even though the website still loads. It happened on 16 Oct 2026.', 'Check [billing](gc:/billing/linkedaccount) every day until there is a backup card.', 'Ask your bank to allow international online charges from Google Cloud.'] },
 ];

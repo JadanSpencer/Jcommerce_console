@@ -219,8 +219,15 @@ j-commerce.online is a venture (added once) with a Tech tab: Vercel domain setti
 
 ## How to tab and new reads (30 Oct 2026)
 
-- **`src/runnerGuide.js`** holds the How to tab: Start here, 45 step-by-step answers, and a map of every admin page. Every button named there must match Runner's screens. Update it the same day a screen, button or rule changes.
+- **`src/runnerGuide.js`** holds the How to tab: Start here, 49 step-by-step answers, and a map of every admin page. Every button named there must match Runner's screens. Update it the same day a screen, button or rule changes.
 - **Find an order** (Now tab): `electron/ops.js` `findOrder`, through `venture:findOrder`. Code lookup queries `receipt.code`; orders without a receipt are matched from what the screen already read. Reads order fields and item names only, never a customer's name, phone or address.
 - **New reads, every 10 minutes:** `stores.phone`, `storeSuggestions`, `topupBatches.needsActivation`, Firebase Rules release times, and two settings reduced to yes or no (`WA_BANK_DETAILS` filled in, `EXPO_PUBLIC_CARD_PAYMENTS` on). The values never leave `settings()`.
 - **Also read:** on/off switches in `shared.ts` (`flags`), unsaved file count, and when the rules files last changed.
 - **New alerts:** `run.storageAppCheck`, `run.rulesBehind`, `money.cardCap`, `money.heldBatches`, `money.heldRefunds`, `people.suggestions`.
+
+## Added 31 Oct 2026
+
+- **Runner `d98f76f`, live:** the app can mention WhatsApp ordering, behind `EXPO_PUBLIC_WHATSAPP_NUMBER` (`WHATSAPP_CHAT_URL` in `services/whatsappLink.ts`). Empty hides the How Runner works card and the customer row in Account controls. Changing it needs a build with `--clear`, or Metro can keep the old value. The Terms now cover WhatsApp orders (`termsUpdated` 31 October 2026).
+- **Error alerts:** `electron/ops.js` leaves out `cloudaudit.googleapis.com` logs, so a Google deploy quota message can't raise a payment alert. The 30 Oct alert was one of those, on `runnerSellCoins`, which then deployed.
+- **Thumbnails:** backfill finished 31 Oct: 0 to make, 9 skipped, 0 failed. It needs Application Default Credentials; gcloud runs with Python 3.15 through `CLOUDSDK_PYTHON`.
+- **WhatsApp status:** secrets set and functions deployed. Not done: Runner's number in Meta, the per-number webhook override, templates, test conversations, the `.env` number. Secret values were never read, so they are unconfirmed.
