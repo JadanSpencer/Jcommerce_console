@@ -258,6 +258,7 @@ async function medium(project, token, ctx, dir) {
   const g = (url, body) => google(token, project, url, body);
   const hourAgo = new Date(now - 3600000).toISOString();
   const logs = filter => g('https://logging.googleapis.com/v2/entries:list', { resourceNames: [`projects/${project}`], filter: `${filter} AND timestamp>="${hourAgo}"`, orderBy: 'timestamp desc', pageSize: 100 });
+  const AUDIT = 'logName:"cloudaudit.googleapis.com"';
   const firstLine = e => String(e.jsonPayload?.message || e.textPayload || '').split('\n')[0].slice(0, 160);
   // Runner's own address comes from its settings file, not from the last check
   const address = await appUrl(dir, project).catch(() => null) || ctx.siteUrl;
@@ -274,7 +275,10 @@ async function medium(project, token, ctx, dir) {
     part(async () => { const r = await query(project, token, { collectionId: 'users', where: cmp('role', 'EQUAL', str('store')), fields: ['storeId', 'storeName', 'isActive', 'pushToken'], limit: 200 });
       return { rows: r.rows.map(({ pushToken, ...u }) => ({ ...u, canNotify: !!pushToken })), hitLimit: r.hitLimit }; }),
     q({ collectionId: 'users', where: cmp('role', 'EQUAL', str('admin')), fields: ['email', 'isActive', 'createdAt'], limit: 50 }),
-    part(async () => { const j = await logs('severity>=ERROR'); return { rows: (j.entries || []).map(e => ({ at: Date.parse(e.timestamp), where: e.resource?.labels?.service_name || e.resource?.labels?.function_name || e.resource?.type || '', text: firstLine(e) })), more: !!j.nextPageToken }; }),
+    // Google's own audit entries are left out: a brief quota limit while deploying
+    // logged an error against runnerSellCoins on 30 Oct and read as a payment problem.
+    // A deploy that really failed shows under "Every server function".
+    part(async () => { const j = await logs(`severity>=ERROR AND NOT ${AUDIT}`); return { rows: (j.entries || []).map(e => ({ at: Date.parse(e.timestamp), where: e.resource?.labels?.service_name || e.resource?.labels?.function_name || e.resource?.type || '', text: firstLine(e) })), more: !!j.nextPageToken }; }),
     part(async () => { const j = await logs('(jsonPayload.message:"Dead web push token" OR jsonPayload.message:"push failed" OR jsonPayload.message:"Push notification failed" OR jsonPayload.message:"push batch failed")');
       const rows = (j.entries || []).map(e => firstLine(e)); return { dead: rows.filter(t => /Dead/i.test(t)).length, failed: rows.filter(t => !/Dead/i.test(t)).length, more: !!j.nextPageToken }; }),
     part(async () => { const j = await g(`https://firebasehosting.googleapis.com/v1beta1/sites/${project}/releases?pageSize=1`); const r = (j.releases || [])[0];
@@ -339,7 +343,7 @@ async function medium(project, token, ctx, dir) {
     // (Cloud Run names a function's service in lower case), with its newest one
     part(async () => {
       const j = await g('https://logging.googleapis.com/v2/entries:list', { resourceNames: [`projects/${project}`],
-        filter: `severity>=ERROR AND timestamp>="${new Date(now - 86400000).toISOString()}"`, orderBy: 'timestamp desc', pageSize: 500 });
+        filter: `severity>=ERROR AND NOT ${AUDIT} AND timestamp>="${new Date(now - 86400000).toISOString()}"`, orderBy: 'timestamp desc', pageSize: 500 });
       const by = {};
       (j.entries || []).forEach(e => {
         const where = String(e.resource?.labels?.service_name || e.resource?.labels?.function_name || '').toLowerCase();

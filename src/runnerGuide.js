@@ -169,7 +169,7 @@ export const HOWTO = [
   { group: 'WhatsApp', id: 'person', q: 'A WhatsApp customer asked for a person', keys: 'human help support',
     steps: ['Admins get a notification with their full number.', 'Reply from Runner\'s WhatsApp Business account.'] },
   { group: 'WhatsApp', id: 'golive', q: 'Put the WhatsApp assistant live', keys: 'meta number setup launch keys secrets',
-    steps: ['This is a developer-level job. Tick through Handbook → Before-launch list → WhatsApp assistant and batch kitchens.', 'The full guide is docs/WHATSAPP_ORDERING.md in the Runner folder.', 'The one step that must not be skipped: Runner\'s number needs its own webhook, or the D&D bot answers Runner\'s customers.', 'Have about 30 real test conversations before telling customers.'] },
+    steps: ['This is a developer-level job. Tick through Handbook → Before-launch list → WhatsApp assistant and batch kitchens.', 'The full guide is docs/WHATSAPP_ORDERING.md in the Runner folder.', 'The one step that must not be skipped: Runner\'s number needs its own webhook, or the D&D bot answers Runner\'s customers.', 'Have about 30 real test conversations before telling customers.', 'Then add EXPO_PUBLIC_WHATSAPP_NUMBER=1876XXXXXXX (Runner\'s number) to the .env file in the Runner folder, run npx expo export --platform web --clear, then npm run deploy:web. "Order on WhatsApp" then shows in the app. Remove the line and run both again to hide it.'] },
   { group: 'WhatsApp', id: 'bot-off', q: 'Switch the WhatsApp assistant off', keys: 'stop bot disable emergency',
     steps: ['Set WHATSAPP_BOT_ENABLED to false in functions/src/shared.ts.', 'Run firebase deploy --only functions in the Runner folder.', 'Orders already placed carry on as normal orders.'] },
 
