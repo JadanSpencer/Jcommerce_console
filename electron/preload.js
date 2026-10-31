@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('desktop', {
     billing: project => ipcRenderer.invoke('venture:billing', project),
     ops: (project, dir) => ipcRenderer.invoke('venture:ops', { project, dir }),
     ownerAction: (project, body) => ipcRenderer.invoke('venture:ownerAction', { project, body }),
+    findOrder: (project, query) => ipcRenderer.invoke('venture:findOrder', { project, query }),
     pick: () => ipcRenderer.invoke('venture:pick'),
     open: dir => ipcRenderer.invoke('venture:open', dir),
     doc: (dir, file) => ipcRenderer.invoke('venture:doc', { dir, file }),

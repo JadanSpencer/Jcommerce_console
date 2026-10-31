@@ -4,10 +4,11 @@
 // login, the same way venture.js does. It never writes, never deploys and never
 // stores a key.
 //
-// Personal data: orders are read without names, phone numbers, emails or
-// addresses. The only personal fields read are a runner's name and phone (the
+// Personal data: orders and bank transfers are read without names, phone
+// numbers, emails or addresses. The only personal fields read are a runner's name and phone (the
 // owner has to be able to call them), admin emails (the admin list), and the
 // name of each customer on the cash list (the owner decides who may pay cash).
+// A store's phone number is its public business number.
 //
 // Writing: the control room changes Runner only through ownerAction (below):
 // Runner's own server endpoint, which checks this login can already write
@@ -59,7 +60,7 @@ const BASE = project => `https://firestore.googleapis.com/v1/projects/${project}
 const unauthorized = () => Object.assign(new Error('unauthorized'), { code: 401 });
 
 // One query. `rows` also carry `movedAt`: when the document last changed.
-async function query(project, token, { collectionId, allDescendants, where, orderBy, fields, limit }) {
+async function query(project, token, { parent, collectionId, allDescendants, where, orderBy, fields, limit }) {
   const body = { structuredQuery: {
     from: [{ collectionId, ...(allDescendants ? { allDescendants: true } : {}) }],
     select: { fields: fields.map(fieldPath => ({ fieldPath })) },
@@ -67,7 +68,7 @@ async function query(project, token, { collectionId, allDescendants, where, orde
     ...(orderBy ? { orderBy: [{ field: { fieldPath: orderBy }, direction: 'DESCENDING' }] } : {}),
     limit,
   } };
-  const r = await fetch(`${BASE(project)}:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(`${BASE(project)}${parent ? `/${parent}` : ''}:runQuery`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (r.status === 401) throw unauthorized();
   const out = await r.json();
   if (!Array.isArray(out)) throw new Error(out?.error?.message || 'Query failed');
@@ -119,7 +120,7 @@ const part = async job => {
 
 const ORDER_FIELDS = ['status', 'paymentStatus', 'paymentMethod', 'fulfilment', 'storeId', 'storeName', 'totalAmount', 'deliveryFee', 'platformFeeJmd', 'dasherPayoutJmd',
   'createdAt', 'verifiedAt', 'acceptedAt', 'paidAt', 'deliveredAt', 'readyAt', 'cancelledAt', 'cancelReason', 'deliveryMins', 'payDeadline',
-  'storeAskedAt', 'storeAnswerBy', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId', 'deliveryDiscountJmd', 'studentId'];
+  'storeAskedAt', 'storeAnswerBy', 'storeConfirmedAt', 'slotDispatchAt', 'pickupSlot', 'pickupSlotAt', 'placedVia', 'waGuest', 'receipt.code', 'dasherId', 'refundAttemptFailed', 'refundAttemptReason', 'groupId', 'deliveryDiscountJmd', 'studentId', 'ask.place', 'waterRun.trip'];
 // The order code is what everyone uses to talk about an order
 const tidyOrder = ({ receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase(), hasRunner: !!o.dasherId });
 
@@ -160,7 +161,10 @@ async function sharedLists(dir) {
     if (/^[\d\s*+.]+$/.test(m[2])) limits[m[1]] = m[2].split('+').reduce((t, term) => t + term.split('*').reduce((p, f) => p * Number(f), 1), 0);
   }
   for (const m of src.matchAll(/export const (MAX_ACTIVE_ORDERS|TOKEN_JMD|PLATFORM_TAKE_RATE)\s*=\s*([\d.]+);/g)) limits[m[1]] = Number(m[2]);
-  return { orderStatus: union('OrderStatus'), paymentStatus: union('PaymentStatus'), cancelReason: union('CancelReason'), limits };
+  // The on/off switches, shown under Is it running → What is switched on
+  const flags = {};
+  for (const m of src.matchAll(/export const ([A-Z_]+)\s*=\s*(true|false);/g)) flags[m[1]] = m[2] === 'true';
+  return { orderStatus: union('OrderStatus'), paymentStatus: union('PaymentStatus'), cancelReason: union('CancelReason'), limits, flags };
 }
 // Only the public web address is taken from Runner's settings file; every
 // other line in it is ignored and nothing from it leaves this function.
@@ -172,12 +176,24 @@ async function appUrl(dir, project) {
   }
   return null;
 }
+// Two settings reduced to yes or no: whether the bank details are filled in, and
+// whether card payments are on in the website build. Their values never leave here.
+async function settings(dir, project) {
+  const read = f => fs.readFile(path.join(dir, f), 'utf8').catch(() => '');
+  const bank = /^\s*WA_BANK_DETAILS\s*=\s*["']?[^"'\s#]/m.test(await read(`functions/.env.${project}`));
+  const cards = /^\s*EXPO_PUBLIC_CARD_PAYMENTS\s*=\s*["']?on\b/m.test(await read('.env'));
+  return { bank, cards };
+}
 const git = (dir, args) => new Promise(resolve => execFile('git', args, { cwd: dir, timeout: 8000 }, (err, out) => resolve(err ? null : String(out).trim())));
 async function newestCode(dir) {
   const line = await git(dir, ['log', '-1', '--format=%ct|%s', 'main']) || await git(dir, ['log', '-1', '--format=%ct|%s']);
   if (!line) throw new Error('Could not read the Runner folder\'s history');
   const [t, ...msg] = line.split('|');
-  return { at: Number(t) * 1000, message: msg.join('|').slice(0, 140) };
+  // Finished work still sitting in the folder, and when the rules last changed
+  const dirty = await git(dir, ['status', '--porcelain']);
+  const rulesAt = async f => Number(await git(dir, ['log', '-1', '--format=%ct', 'main', '--', f])) * 1000 || null;
+  return { at: Number(t) * 1000, message: msg.join('|').slice(0, 140), unsaved: dirty === null ? null : dirty ? dirty.split('\n').length : 0,
+    firestoreRulesAt: await rulesAt('firestore.rules'), storageRulesAt: await rulesAt('storage.rules') };
 }
 
 // ── The three speeds ──────────────────────────────────────────────────────
@@ -186,7 +202,7 @@ async function fast(project, token, ctx) {
   const q = spec => part(() => query(project, token, spec));
   const orders = spec => part(async () => { const r = await query(project, token, spec); return { rows: r.rows.map(tidyOrder), hitLimit: r.hitLimit }; });
   const PAY = ['status', 'purpose', 'amountJmd', 'createdAt', 'orderId', 'failReason', 'reviewReason', 'returnVerifiedAt'];
-  const [ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler, server] = await Promise.all([
+  const [ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, transfers, site, scheduler, server] = await Promise.all([
     // Anything still open, whatever day it was placed
     orders({ collectionId: 'orders', where: cmp('status', 'IN', oneOf(['pending', 'accepted', 'picking_up', 'on_the_way'])), fields: ORDER_FIELDS, limit: 150 }),
     orders({ collectionId: 'orders', where: cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(today)), orderBy: 'createdAt', fields: ORDER_FIELDS, limit: 800 }),
@@ -197,6 +213,16 @@ async function fast(project, token, ctx) {
     part(async () => { const r = await query(project, token, { collectionId: 'walletTx', where: cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(today)), orderBy: 'createdAt', fields: ['type', 'orderId', 'amountJmd', 'createdAt', 'note', 'paymentId'], limit: 1500 });
       return { rows: r.rows.map(({ note, ...t }) => (t.type === 'admin_adjust' ? { ...t, note: String(note || '').slice(0, 120) } : t)), hitLimit: r.hitLimit }; }),
     q({ collectionId: 'floatTx', where: cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(today)), orderBy: 'createdAt', fields: ['kind', 'targetId', 'orderId', 'amountJmd', 'note', 'createdAt', 'by'], limit: 1000 }),
+    // WhatsApp bank transfers an admin has to check: customers wait on these, so every refresh (Runner: functions/src/botOrders.ts)
+    part(async () => {
+      const F = ['status', 'amountJmd', 'proofAt', 'createdAt'];
+      const [open, late] = await Promise.all([
+        query(project, token, { collectionId: 'transferPayments', where: cmp('status', 'EQUAL', str('pending_review')), fields: F, limit: 100 }),
+        // Timed out with a picture sent, last 7 days: the customer may really have paid
+        query(project, token, { collectionId: 'transferPayments', where: all([cmp('status', 'EQUAL', str('timed_out')), cmp('proofAt', 'GREATER_THAN_OR_EQUAL', num(now - 7 * 86400000))]), fields: F, limit: 100 }),
+      ]);
+      return { rows: [...open.rows, ...late.rows], hitLimit: open.hitLimit || late.hitLimit };
+    }),
     part(async () => {
       const url = siteUrl;
       const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 10000);
@@ -223,7 +249,7 @@ async function fast(project, token, ctx) {
       return { answers, up: answers.filter(a => a.status > 0 && a.status < 500).length, asked: answers.length };
     }),
   ]);
-  return { ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, site, scheduler, server, at: now };
+  return { ordersActive, ordersToday, paymentsOpen, paymentsToday, walletToday, floatToday, transfers, site, scheduler, server, at: now };
 }
 
 async function medium(project, token, ctx, dir) {
@@ -238,8 +264,8 @@ async function medium(project, token, ctx, dir) {
   const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
   const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
   const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats] = await Promise.all([
-    q({ collectionId: 'stores', fields: ['name', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId'], limit: 150 }),
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, sellerApps, botHelp, suggestions, rulesLive, keys] = await Promise.all([
+    q({ collectionId: 'stores', fields: ['name', 'phone', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId', 'dailyMenu', 'pickupSlots', 'autoConfirm'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'cashOwedJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
     // Runners: name and phone are read so the owner can call them; nothing else personal
@@ -324,12 +350,32 @@ async function medium(project, token, ctx, dir) {
       return { by, more: !!j.nextPageToken };
     }),
     // Top-up card batches: who holds each, and what has been redeemed (cash the seller owes Runner)
-    q({ collectionId: 'topupBatches', fields: ['holder', 'valueJmd', 'count', 'redeemedCount', 'redeemedJmd', 'voidedCount', 'activatedAt', 'createdAt'], limit: 300 }),
+    q({ collectionId: 'topupBatches', fields: ['holder', 'valueJmd', 'count', 'redeemedCount', 'redeemedJmd', 'voidedCount', 'needsActivation', 'activatedAt', 'createdAt'], limit: 300 }),
     // WhatsApp assistant: messages and AI tokens per day (Runner: functions/src/whatsapp.ts)
     q({ collectionId: 'whatsappStats', fields: ['messages', 'inputTokens', 'outputTokens', 'cacheReadTokens'], limit: 400 }),
+    // Businesses that asked to sell on Runner, not answered yet
+    q({ collectionId: 'sellerApplications', where: cmp('status', 'EQUAL', str('new')), fields: ['createdAt'], limit: 50 }),
+    // WhatsApp customers who asked for a person, last hour. Runner logs the last 4 digits of the number only.
+    part(async () => { const j = await logs('jsonPayload.message:"WhatsApp customer asked for a person"'); return { rows: (j.entries || []).map(e => ({ at: Date.parse(e.timestamp), last4: String(e.jsonPayload?.phone || '').slice(-4) })) }; }),
+    // Places students asked Runner to add (Ask Runner), most recent first
+    q({ collectionId: 'storeSuggestions', orderBy: 'lastAt', fields: ['place', 'count', 'lastAt'], limit: 20 }),
+    // When the database and photo rules last went live
+    part(async () => {
+      const j = await g(`https://firebaserules.googleapis.com/v1/projects/${project}/releases?pageSize=20`);
+      const when = re => Math.max(0, ...(j.releases || []).filter(x => re.test(x.name)).map(x => Date.parse(x.updateTime) || 0)) || null;
+      return { firestoreAt: when(/cloud\.firestore/), storageAt: when(/firebase\.storage/) };
+    }),
+    part(() => settings(dir, project)),
   ]);
+  // Batch kitchens: today's dishes for each daily-menu store. Normal stores take no reads.
+  const today = new Date(now + JAMAICA_OFFSET_MS).toISOString().slice(0, 10);
+  const dailyMenus = await part(async () => {
+    const daily = (stores.ok ? stores.rows : []).filter(s => s.dailyMenu === true);
+    const lists = await Promise.all(daily.map(async s => [s.id, (await query(project, token, { parent: `stores/${s.id}`, collectionId: 'menuItems', where: cmp('onDate', 'EQUAL', str(today)), fields: ['onDate'], limit: 100 })).rows.length]));
+    return { by: Object.fromEntries(lists) };
+  });
   return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, at: now };
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, sellerApps, botHelp, suggestions, rulesLive, keys, dailyMenus, at: now };
 }
 
 async function slow(project, token, ctx) {
@@ -368,7 +414,7 @@ async function slow(project, token, ctx) {
     // Confirmed orders: cash eligibility per customer, cash not paid, admin
     // referral commission and payouts, and refunds held for a decision.
     part(async () => {
-      const [wallets, issues, stats, payouts, held, stock, transfers] = await Promise.all([
+      const [wallets, issues, stats, payouts, held, stock] = await Promise.all([
         query(project, token, { collectionId: 'wallets', where: cmp('confirmedSpendJmd', 'GREATER_THAN', num(0)), orderBy: 'confirmedSpendJmd',
           fields: ['confirmedSpendJmd', 'cashEligibleAt', 'cashRevokedAt', 'cashRevokeReason', 'cashRefusals'], limit: 300 }),
         query(project, token, { collectionId: 'cashIssues', orderBy: 'createdAt', fields: ['orderId', 'studentId', 'storeName', 'amountJmd', 'mode', 'reporterRole', 'note', 'createdAt'], limit: 100 }),
@@ -377,8 +423,6 @@ async function slow(project, token, ctx) {
         query(project, token, { collectionId: 'orders', where: cmp('refundHeld', 'EQUAL', { booleanValue: true }), fields: ['storeName', 'totalAmount', 'cancelReason', 'cancelledAt', 'receipt.code', 'paymentMethod'], limit: 50 }),
         // Admin runners' coin stock and the cash they owe for coins sold (Runner: functions/src/adminRunners.ts)
         query(project, token, { collectionId: 'coinStock', fields: ['name', 'balanceJmd', 'allocatedJmd', 'returnedJmd', 'soldJmd', 'cashInJmd', 'cashOwedJmd', 'lastSaleAt', 'lastCashInAt'], limit: 100 }).catch(() => ({ rows: [] })),
-        // WhatsApp bank transfers waiting for an admin (Runner: functions/src/botOrders.ts)
-        query(project, token, { collectionId: 'transferPayments', where: cmp('status', 'EQUAL', str('pending_review')), fields: ['amountJmd', 'proofAt'], limit: 50 }).catch(() => ({ rows: [] })),
       ]);
       const uids = [...new Set([...wallets.rows.map(w => w.id), ...issues.rows.map(i => i.studentId), ...stats.rows.map(a => a.id)].filter(Boolean))].slice(0, 350);
       const names = await batchGet(project, token, uids.map(u => `users/${u}`), ['name', 'role']);
@@ -389,7 +433,6 @@ async function slow(project, token, ctx) {
         // Admins and admin runners (who earn the same commission)
         admins: stats.rows.map(({ movedAt, parent, ...a }) => ({ ...a, uid: a.id, name: nameOf(a.id), runner: names[a.id]?.role === 'dasher' })),
         coinStock: stock.rows.map(({ movedAt, parent, ...x }) => ({ ...x, uid: x.id })),
-        transfers: transfers.rows.map(({ movedAt, parent, ...x }) => x),
         payouts: payouts.rows.map(({ movedAt, parent, ...x }) => x),
         held: held.rows.map(({ movedAt, parent, receipt, ...o }) => ({ ...o, code: receipt?.code || o.id.slice(-6).toUpperCase() })),
       };
@@ -401,8 +444,8 @@ async function slow(project, token, ctx) {
 async function menus(project, token, ctx) {
   // Every menu item, across stores, without descriptions. Read a few times a day.
   const items = await part(async () => {
-    const r = await query(project, token, { collectionId: 'menuItems', allDescendants: true, fields: ['storeId', 'name', 'price', 'image', 'isAvailable', 'waitUntil', 'soldOutAt'], limit: 4000 });
-    return { rows: r.rows.map(({ image, movedAt, ...m }) => ({ ...m, storeId: m.storeId || m.parent, hasPhoto: !!image })), hitLimit: r.hitLimit };
+    const r = await query(project, token, { collectionId: 'menuItems', allDescendants: true, fields: ['storeId', 'name', 'price', 'image', 'imageThumb', 'isAvailable', 'waitUntil', 'soldOutAt'], limit: 4000 });
+    return { rows: r.rows.map(({ image, imageThumb, movedAt, ...m }) => ({ ...m, storeId: m.storeId || m.parent, hasPhoto: !!image, hasThumb: !!imageThumb })), hitLimit: r.hitLimit };
   });
   return { items, at: ctx.now };
 }
@@ -440,7 +483,7 @@ async function snapshot(project, dir, token) {
   if (due('menus', MENU_MS)) { c.menus = await menus(project, token, ctx); c.menusAt = macNow; c.menusDay = today; read += reads(c.menus.items); }
   if (due('speed', SPEED_MS)) { c.speed = await speed(project, token, ctx); c.speedAt = macNow; c.speedDay = today; read += reads(c.speed.reports); }
   const f = await fast(project, token, ctx);
-  read += ['ordersActive', 'ordersToday', 'paymentsOpen', 'paymentsToday', 'walletToday', 'floatToday'].reduce((t, k) => t + reads(f[k]), 0);
+  read += ['ordersActive', 'ordersToday', 'paymentsOpen', 'paymentsToday', 'walletToday', 'floatToday', 'transfers'].reduce((t, k) => t + reads(f[k]), 0);
   return {
     ok: true, project, dir, fetchedAt: now, clockOffMs: macNow - now, today, adminUrl: ctx.siteUrl.replace(/\/$/, ''), reads: read,
     ages: { medium: Math.round((macNow - c.mediumAt) / 1000), slow: Math.round((macNow - c.slowAt) / 1000), menus: Math.round((macNow - c.menusAt) / 1000), speed: Math.round((macNow - c.speedAt) / 1000) },
@@ -469,6 +512,31 @@ async function ops(project, dir, cliToken) {
     } finally { inFlight = null; }
   })();
   return inFlight;
+}
+
+// ── Find one order by its code ────────────────────────────────────────────
+// Read when someone types a code. An order gets its receipt when it is
+// confirmed, so the screen finds newer unconfirmed orders in what it has
+// already read and passes their full id. No customer name, phone or address.
+const FIND_FIELDS = [...ORDER_FIELDS, 'confirmedAt', 'refundHeld', 'problem', 'reversal.reason', 'cashCollectedAt', 'cashRefusedAt', 'items'];
+async function findOrder(project, cliToken, { code, id } = {}) {
+  if (!/^[a-z0-9-]+$/.test(project || '')) return { ok: false, error: 'Unknown project' };
+  const clean = String(code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+  if (!(id && /^[A-Za-z0-9_-]{1,128}$/.test(id)) && clean.length !== 6) return { ok: false, error: 'An order code has 6 letters and numbers.' };
+  const run = async token => {
+    let row = null;
+    if (id) { const got = await batchGet(project, token, [`orders/${id}`], FIND_FIELDS); if (got[id]) row = { id, ...got[id] }; }
+    else row = (await query(project, token, { collectionId: 'orders', where: cmp('receipt.code', 'EQUAL', str(clean)), fields: FIND_FIELDS, limit: 2 })).rows[0] || null;
+    if (!row) return { ok: true, order: null };
+    const { items, movedAt, parent, reversal, ...o } = tidyOrder(row);
+    return { ok: true, order: { ...o, reversalReason: reversal?.reason || '', items: (Array.isArray(items) ? items : []).slice(0, 30).map(x => ({ name: String(x?.menuItem?.name || x?.name || 'Item').slice(0, 80), quantity: Number(x?.quantity) || 1 })) } };
+  };
+  try {
+    const token = await cliToken(false);
+    if (!token) return { ok: false, error: 'This Mac\'s Firebase sign-in has run out.' };
+    try { return await run(token); }
+    catch (e) { if (e.code !== 401) throw e; return await run(await cliToken(true)); }
+  } catch (e) { return { ok: false, error: e.message || 'Could not read Runner' }; }
 }
 
 // ── Owner actions: the only writes ────────────────────────────────────────
@@ -503,4 +571,4 @@ async function ownerAction(project, cliToken, body = {}) {
   }
 }
 
-module.exports = { ops, ownerAction, snapshot, dayStart, sharedLists, FAST_MS };
+module.exports = { ops, ownerAction, findOrder, snapshot, dayStart, sharedLists, FAST_MS };

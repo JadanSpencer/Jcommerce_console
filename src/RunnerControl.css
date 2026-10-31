@@ -102,7 +102,7 @@
 .rc-fold > summary span { font-family: var(--title); font-size: 18px; color: var(--paper, #f3e6cf); }
 .rc-fold-body { padding: 0 0.9rem 0.8rem; }
 .rc-small { margin: 0.35rem 0 0.5rem; font-size: 12.5px; line-height: 1.55; color: var(--ink-2); max-width: 85ch; }
-.rc-small a, .rc-facts a, .rc-playbook a, .rc-table a { color: var(--gold-300, #e6c47c); }
+.rc-small a, .rc-facts a, .rc-playbook a, .rc-table a, .rc-found-order a { color: var(--gold-300, #e6c47c); }
 
 .rc-table { width: 100%; border-collapse: collapse; font-size: 13px; color: var(--ink-1); margin: 0.3rem 0 0.6rem; display: block; overflow-x: auto; }
 .rc-table th { text-align: left; font-family: var(--fm, monospace); font-size: 10.5px; letter-spacing: 0.04em; font-weight: 500; color: var(--ink-3); padding: 0.35rem 0.6rem 0.35rem 0; border-bottom: 1.5px solid rgba(255,255,255,0.15); white-space: nowrap; }
@@ -182,3 +182,11 @@
 .rc-day.today .rc-day-l { color: var(--ink-0); font-weight: 600; }
 .rc-day-n { font: 600 12px var(--fm); color: var(--ink-1); }
 .rc-day-l { font: 10.5px var(--fm); color: var(--ink-3); white-space: nowrap; }
+
+/* Find an order, today's jobs and the How to tab */
+.rc-jobs { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; width: 100%; padding: 0.7rem 0.9rem; text-align: left; cursor: pointer; font: inherit; color: var(--paper, #f3e6cf); background: rgba(0,0,0,0.3); border: 1.5px solid rgba(255,255,255,0.12); }
+.rc-jobs:hover { border-color: rgba(255,255,255,0.3); }
+.rc-jobs span { font-size: 13px; color: var(--ink-2); }
+.rc-found-order { margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid rgba(255,255,255,0.12); }
+.rc-say, .rc-never { margin: 0.4rem 0.8rem 0.6rem; font-size: 13px; line-height: 1.55; color: var(--ink-1); max-width: 75ch; }
+.rc-say b, .rc-never b { margin-right: 0.35rem; color: var(--paper, #f3e6cf); }

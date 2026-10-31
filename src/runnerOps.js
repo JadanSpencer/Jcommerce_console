@@ -42,7 +42,12 @@ export const LIMITS = {
   errorsLook: 1, errorsAct: 5, deadTokensLook: 20, pushFailAct: 20,
   appCheckLook: 98, appCheckAct: 90, backupDays: 2, codeAheadDays: 1,
   floatOrders: 5,                            // a float should cover about this many orders
+  transferAct: 15,                           // bank transfer unchecked (minutes): half the customer's 30-minute wait
+  menuLookHour: 9, menuActHour: 10.5,        // daily-menu store with no dishes, Jamaica time
 };
+
+// Runner's own limits for the WhatsApp assistant (shared.ts)
+const GUEST_CASH_CAP = 50000, WHATSAPP_DAILY = 3000;
 
 // Plain words for everything that comes out of Runner's data
 export const CANCEL_WORDS = {
@@ -54,6 +59,8 @@ export const CANCEL_WORDS = {
   store_not_found: 'The store no longer exists', invalid_item: 'An item was not valid', too_many_items: 'Too many items',
   empty_order: 'The order was empty', account_inactive: 'The account is switched off',
   slot_closed: 'Ordering for that pickup time had closed',
+  water_unavailable: 'Water runs are not on at that store', ask_invalid: 'The Ask Runner request was not valid', ask_not_found: 'The Ask Runner request was not found',
+  store_cancelled: 'The store cancelled after confirming', cash_unavailable: 'Cash is not available for this customer', cash_refused: 'The customer did not pay the cash',
 };
 const cancelWord = r => (r ? CANCEL_WORDS[r] || `"${r}" (not understood)` : 'The student cancelled');
 const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review', 'failed'];
@@ -115,7 +122,9 @@ export const ROUTINES = [
   { kind: 'day', title: 'Every day (about 10 minutes)', items: [
     ['d-morning', 'Morning: the verdict is green, stores opened on time, enough runners booked for lunch.'],
     ['d-billing', 'Google Cloud billing shows no "past due" or payment warning (the control room can\'t see this until Google closes the account).', 'billing'],
+    ['d-menu', 'Batch kitchens: put today\'s dishes on, from each store\'s WhatsApp message.', '/stores'],
     ['d-verify', 'Verify or reject new runners.', '/verify-runners'],
+    ['d-transfers', 'Check WhatsApp bank transfers against the bank, and keep someone on this through lunch.', '/transfers'],
     ['d-cards', 'Clear "Card payments to check" (once Fygaro is on).', '/dashboard'],
     ['d-cash', 'Match cash taken for coin top-ups against coins added (Money section lists them).'],
     ['d-support', 'Answer support emails; note any deletion request and its 30-day deadline.', 'inbox'],
@@ -167,6 +176,7 @@ export const STORE_STEPS = [
     ] },
     { title: 'The Android app', items: [
       ['st-build', 'Build the Android app', 'The developer runs eas build -p android --profile production (an .aab file). The app ID is com.jcommerce.runner and never changes. Card payments stay hidden unless EXPO_PUBLIC_CARD_PAYMENTS=on.'],
+      ['st-r8', 'Test the release build on a real phone first', 'It now uses code shrinking, which can occasionally break a release build. Check sign-in, maps and notifications before sending it to testers.'],
       ['st-sha', 'Google sign-in: add Play\'s signing key to Firebase', 'Play Console → Test and release → App integrity → App signing: copy the SHA-1 and SHA-256 of the app signing key into Firebase → Project settings → the Android app. Without this, "Continue with Google" fails in the store version.'],
       ['st-appcheck', 'Leave App Check in watch-only mode', 'The Android app has no App Check provider yet, so enforcing it would lock the store app out (see "Is it running").'],
     ] },
@@ -235,7 +245,9 @@ export function judgeRunner(data, local = {}) {
   const dashers = P.dashers?.ok ? P.dashers.rows : [];
   const online = P.stats?.ok && P.stats.doc && typeof P.stats.doc.onlineDashers === 'number' ? P.stats.doc.onlineDashers : null;
   const busy = dashers.filter(d => d.isOnline && (d.activeOrderId || (d.activeOrderIds || []).length)).length;
-  const waiting = live.filter(o => o.status === 'pending' && !isPickup(o) && o.verifiedAt);
+  // Not a runner's yet: an order waiting for the store's yes, or a batch kitchen's order held until shortly before its pickup time
+  const awaitingStore = o => o.status === 'pending' && o.storeAskedAt > 0 && !(o.storeConfirmedAt > 0);
+  const waiting = live.filter(o => o.status === 'pending' && !isPickup(o) && o.verifiedAt && !awaitingStore(o) && !(o.slotDispatchAt > now));
   const openNow = live.filter(o => ['pending', 'accepted', 'picking_up', 'on_the_way'].includes(o.status));
   const runnerTag = o => (o.dasherId ? { runnerId: o.dasherId } : {});
 
@@ -243,7 +255,7 @@ export function judgeRunner(data, local = {}) {
   const orders = [];
   if (!usable(P.ordersActive)) orders.push(cant('orders.read', 'the orders that are open right now', P.ordersActive));
   else {
-    const late = waiting.map(o => ({ ...o, wait: mins(now - (o.verifiedAt || o.createdAt)) })).filter(o => o.wait >= LIMITS.waitLook).sort((a, b) => b.wait - a.wait);
+    const late = waiting.map(o => ({ ...o, wait: mins(now - Math.max(o.verifiedAt || o.createdAt, o.storeConfirmedAt || 0, o.slotDispatchAt || 0)) })).filter(o => o.wait >= LIMITS.waitLook).sort((a, b) => b.wait - a.wait);
     if (late.length) orders.push({
       key: 'orders.waiting', lv: late[0].wait >= LIMITS.waitAct ? 'act' : 'look', playbook: 'piling',
       what: `${plural(late.length, 'order')} nobody has taken. The oldest has waited ${ago(late[0].wait)}: ${listOrders(late)}.`,
@@ -253,7 +265,7 @@ export function judgeRunner(data, local = {}) {
     const STAGE = {
       accepted: ['taken by a runner who has not reached the store', LIMITS.acceptedLook, LIMITS.acceptedAct, 'Call the runner (their number is in Runners below).'],
       picking_up: ['at the store and not collected', LIMITS.pickingLook, LIMITS.pickingAct, 'Call the runner, then the store.'],
-      on_the_way: ['on the way to the student', LIMITS.onWayLook, LIMITS.onWayAct, 'Call the runner. If the food is lost, the order must be cancelled so the student is refunded (see "An order must be cancelled").'],
+      on_the_way: ['on the way to the student', LIMITS.onWayLook, LIMITS.onWayAct, 'Call the runner. If the food is lost, approve a reversal under Cash & referrals: it refunds the customer as coins.'],
     };
     live.filter(o => STAGE[o.status] && !isPickup(o) && o.hasRunner && o.paymentStatus !== 'awaiting_payment').forEach(o => {
       const since = Math.max(o.movedAt || 0, o.status === 'accepted' ? (o.paidAt || o.acceptedAt || 0) : 0) || o.acceptedAt || o.createdAt;
@@ -263,18 +275,18 @@ export function judgeRunner(data, local = {}) {
         what: `Order ${orderName(o)} has been ${words} for ${ago(held)}. Normal is under ${look} minutes.`,
         why: 'The student has paid and is waiting. Either the runner has a problem or forgot to tap the next step.', next });
     });
-    const unanswered = live.filter(o => isPickup(o) && o.status === 'pending' && o.storeAskedAt).map(o => ({ ...o, held: mins(now - o.storeAskedAt) })).filter(o => o.held >= LIMITS.storeAnswerLook);
+    const unanswered = live.filter(awaitingStore).map(o => ({ ...o, held: mins(now - o.storeAskedAt) })).filter(o => o.held >= LIMITS.storeAnswerLook);
     if (unanswered.length) orders.push({ key: 'orders.storeAnswer', lv: unanswered.some(o => o.held >= LIMITS.storeAnswerAct) ? 'act' : 'look', playbook: 'store-missed',
-      what: `${plural(unanswered.length, 'pickup request')} the store has not answered: ${unanswered.slice(0, 3).map(o => `#${o.code} at ${o.storeName || 'a store'} (${ago(o.held)})`).join(', ')}.`,
-      why: `A pickup order waits for the store to say yes before the student pays. At ${mins(L.STORE_CONFIRM_MS)} minutes the server cancels it.`,
-      next: `Call ${unanswered[0].storeName || 'the store'}: "Please check the Runner tablet."` });
-    live.filter(o => isPickup(o) && o.status === 'accepted' && o.paymentStatus === 'paid' && !o.readyAt && o.paidAt)
-      .map(o => ({ ...o, held: mins(now - o.paidAt), stated: statedMinutes(storeById[o.storeId]?.estimatedTime) }))
+      what: `${plural(unanswered.length, 'order')} the store has not answered: ${unanswered.slice(0, 3).map(o => `#${o.code} at ${o.storeName || 'a store'} (${ago(o.held)})`).join(', ')}.`,
+      why: `An order waits for the store to say yes before anyone is charged. At ${mins(L.STORE_CONFIRM_MS)} minutes the server cancels it.`,
+      next: `Call ${unanswered[0].storeName || 'the store'}${storeById[unanswered[0].storeId]?.phone ? ` on ${storeById[unanswered[0].storeId].phone}` : ''}: "Please check the Runner tablet."` });
+    live.filter(o => isPickup(o) && o.status === 'accepted' && o.paymentStatus === 'paid' && !o.readyAt && o.paidAt && !(o.pickupSlotAt > now))
+      .map(o => ({ ...o, held: mins(now - Math.max(o.paidAt, o.pickupSlotAt || 0)), stated: statedMinutes(storeById[o.storeId]?.estimatedTime) }))
       .filter(o => o.held >= o.stated + LIMITS.storeGrace)
       .forEach(o => orders.push({ key: `orders.notReady.${o.code}`, lv: o.held >= o.stated + LIMITS.storeLateAct ? 'act' : 'look', playbook: 'store-missed',
         what: `${o.storeName || 'A store'} has had paid pickup order #${o.code} for ${ago(o.held)} and has not marked it ready. It tells students about ${o.stated} minutes.`,
         why: 'The student has paid and is coming to collect it. The store may not have seen it on its tablet.',
-        next: `Call ${o.storeName || 'the store'} and give the order code #${o.code}.` }));
+        next: `Call ${o.storeName || 'the store'}${storeById[o.storeId]?.phone ? ` on ${storeById[o.storeId].phone}` : ''} and give the order code #${o.code}.` }));
     live.filter(o => isPickup(o) && o.status === 'accepted' && o.readyAt && now - o.readyAt >= LIMITS.readyLook * MIN)
       .forEach(o => orders.push({ key: `orders.ready.${o.code}`, lv: 'look',
         what: `Order #${o.code} at ${o.storeName || 'a store'} has been ready to collect for ${ago(mins(now - o.readyAt))} and is not marked as handed over.`,
@@ -288,8 +300,8 @@ export function judgeRunner(data, local = {}) {
   if (problemsOpen.length) orders.push({ key: 'orders.problems', lv: 'act', resolve: problemsOpen.map(o => `problem.${o.code}`),
     what: `${plural(problemsOpen.length, 'student')} reported a problem with a delivered order: ${problemsOpen.slice(0, 4).map(o => `#${o.code}${o.storeName ? ` from ${o.storeName}` : ''} (${PROBLEM_WORDS[o.problem.kind] || 'other'}${o.problem.note ? `: "${String(o.problem.note).slice(0, 80)}"` : ''})`).join('; ')}${problemsOpen.length > 4 ? ` and ${problemsOpen.length - 4} more` : ''}.`,
     why: 'Runners mark orders delivered themselves. A report is how a delivery that never happened, or a wrong order, comes to light. The runner\'s pay for these orders is held below until you mark it sorted.',
-    next: 'Look the order up in Runner admin, message or call the student and the runner, and decide. If the student is right, give their coins back with "Adjust Runner coins" (note the order code) and don\'t pay the runner for it. Then press "Sorted, hide it". A runner with repeated reports should be switched off.',
-    link: BOARD });
+    next: 'Look the order up with "Find an order" on the Now tab, then speak to the student and the runner, and decide. A delivered order can\'t be reversed, so if the student is right, give their coins back by hand with "Adjust Runner coins" (put the order code in the note) and don\'t pay the runner for it. Then press "Sorted, hide it". A runner with repeated reports should be switched off.',
+    link: link('Open Runner admin: Users', '/users') });
   const heldCodes = new Set(problemsOpen.map(o => o.code));
   const cancelledToday = todayOrders.filter(o => o.status === 'cancelled');
   const noRunner = cancelledToday.filter(o => o.cancelReason === 'no_dasher').length;
@@ -299,9 +311,9 @@ export function judgeRunner(data, local = {}) {
     next: 'Recruit or schedule more runners for those hours. The hour-by-hour chart under People shows when.' });
   const payTimeouts = cancelledToday.filter(o => o.cancelReason === 'payment_timeout').length;
   if (payTimeouts >= LIMITS.payTimeoutInfo) orders.push({ key: 'orders.payTimeout', lv: 'info',
-    what: `${plural(payTimeouts, 'order')} today ended because the student did not pay within 10 minutes of a runner accepting.`,
-    why: 'Waiting to pay is normal for a few minutes and nobody is charged. Many in a day usually means students do not understand they must pay after a runner accepts.',
-    next: 'Nothing urgent. If it keeps happening, explain the "pay after a runner accepts" step in your marketing and WhatsApp messages.' });
+    what: `${plural(payTimeouts, 'order')} today ended because payment did not arrive within 10 minutes of a runner accepting.`,
+    why: 'This step only applies to card payments. Coins are held when the order is placed, so coin orders don\'t reach it. Nobody was charged.',
+    next: 'Nothing urgent. If cards are off and this keeps happening, tell the developer.' });
   // Anything Runner sends that this screen does not know
   if (P.lists?.ok) {
     const all = [...live, ...todayOrders, ...weekOrders];
@@ -363,7 +375,7 @@ export function judgeRunner(data, local = {}) {
   else {
     const coinPaid = new Set(walletToday.filter(t => ['order_charge', 'order_payment'].includes(t.type)).map(t => t.orderId));
     const cardPaid = new Set(pays.filter(p => ['paid', 'verified'].includes(p.status)).map(p => p.orderId));
-    const orphans = paidLately.filter(o => (o.paymentMethod === 'card' ? usable(P.paymentsToday) && !cardPaid.has(o.id) : !coinPaid.has(o.id))).filter(o => !resolved[`orphan.${o.code}`]);
+    const orphans = paidLately.filter(o => o.paymentMethod !== 'cash').filter(o => (o.paymentMethod === 'card' ? usable(P.paymentsToday) && !cardPaid.has(o.id) : !coinPaid.has(o.id))).filter(o => !resolved[`orphan.${o.code}`]);
     if (orphans.length) money.push({ key: 'money.orphan', lv: 'act', resolve: orphans.map(o => `orphan.${o.code}`),
       what: `${plural(orphans.length, 'order')} marked paid with no matching payment or coin record: ${listOrders(orphans)}.`,
       why: 'Every paid order should have a matching card payment or coin line. One without it means food may be going out that nobody paid for.',
@@ -374,7 +386,7 @@ export function judgeRunner(data, local = {}) {
     what: `${plural(cardOff.length, 'student')} tried to pay by card today while cards are switched off.`,
     why: 'Nobody was charged; they were told to use Runner coins. Each one may be a lost order.', next: 'A count of likely lost orders until Fygaro is set up.' });
   if (P.walletToday?.ok && P.walletToday.rows.some(t => t.type && !['order_reserve', 'order_charge', 'order_payment', 'order_release', 'order_refund', 'order_refund_card', 'topup_card', 'late_payment_credit', 'admin_adjust',
-    'launch_pack', 'referral_reward', 'free_delivery_used', 'free_delivery_returned', 'topup_redeemed'].includes(t.type)))
+    'launch_pack', 'referral_reward', 'free_delivery_used', 'free_delivery_returned', 'topup_redeemed', 'runner_topup', 'transfer_topup'].includes(t.type)))
     money.push(notUnderstood('money.oddTx', 'a new kind of coin movement'));
   if (pays.some(p => p.status && !KNOWN_PAYMENT_DOCS.includes(p.status))) money.push(notUnderstood('money.oddPay', 'a new card payment state'));
   // Cash top-ups an admin made by hand today, so cash and coins can be matched
@@ -432,7 +444,7 @@ export function judgeRunner(data, local = {}) {
       if (oldest >= LIMITS.runnerWaitLook) people.push({ key: 'people.verify', lv: oldest >= LIMITS.runnerWaitAct ? 'act' : 'look',
         what: `${plural(toVerify.length, 'new runner')} waiting to be verified. The longest has waited ${ago(oldest)}.`,
         why: 'A new runner cannot go online or see orders until you approve them.',
-        next: 'Runner admin → Users → Runner verification. Check the 9-digit UWI ID and the Jamaican phone number look real, message them on WhatsApp if unsure, then press Verify or Reject.',
+        next: 'Runner admin → Board → Runner verification. Check the 9-digit UWI ID and the Jamaican phone number look real, message them on WhatsApp if unsure, then press Verify or Reject.',
         link: link('Open runner verification', '/verify-runners') });
     }
   }
@@ -452,7 +464,7 @@ export function judgeRunner(data, local = {}) {
       if (noTablet.length) people.push({ key: 'people.pickupNoTablet', lv: 'act', playbook: 'store-missed',
         what: `${plural(noTablet.length, 'store')} ${noTablet.length === 1 ? 'offers' : 'offer'} pickup but ${noTablet.length === 1 ? 'has' : 'have'} no tablet login: ${noTablet.map(s => s.name).join(', ')}.`,
         why: 'Pickup orders there are refused at once, because nobody can say yes to them.',
-        next: 'Create a login in Runner admin → Stores → the store → Store access, or switch pickup off for that store.', link: link('Open Runner admin: Stores', '/stores') });
+        next: 'Create a login in Runner admin → Stores → the store → Pickup, water runs and store logins, or switch pickup off for that store.', link: link('Open Runner admin: Stores', '/stores') });
       const deaf = logins.filter(u => !u.canNotify);
       if (deaf.length) people.push({ key: 'people.tabletAlerts', lv: 'look', playbook: 'store-missed',
         what: `${plural(deaf.length, 'store tablet')} ${deaf.length === 1 ? 'is' : 'are'} not set up for notifications: ${deaf.map(u => u.storeName || storeById[u.storeId]?.name || 'a store').join(', ')}.`,
@@ -492,7 +504,7 @@ export function judgeRunner(data, local = {}) {
     if (left <= 7) people.push({ key: `people.deletion.${d.id}`, lv: left < 0 ? 'act' : 'look',
       what: `A deletion request from ${d.who || 'a student'} (${jmDate(d.at)}) ${left < 0 ? `is ${plural(-left, 'day')} overdue` : `is due in ${plural(left, 'day')}`}.`,
       why: 'Runner promises to act on deletion requests within 30 days. Missing it breaks your own privacy policy.',
-      next: 'Do it in Runner admin → Users → the account (delete), then tick it done below.', link: link('Open Runner admin: Users', '/users') });
+      next: 'Runner admin has no delete button. Ask them to open Profile → Account controls → Delete account. If they can\'t sign in, send the request to the developer. Then tick it done below.', playbook: 'delete-account' });
   });
 
   // ── Is it running ──────────────────────────────────────────────────────────
@@ -583,6 +595,18 @@ export function judgeRunner(data, local = {}) {
         next: 'If users report being blocked, press Unenforce in Firebase → App Check → APIs, then tell the developer.', link: { label: 'Open Firebase App Check', url: fb('/appcheck/apis') } });
     }
   } else running.push(cant('run.appcheck', 'App Check', P.appCheck));
+  // Photo uploads go to Storage. The phone apps have no App Check, so enforcing it there blocks them.
+  const storageEnforced = P.appCheck?.ok ? P.appCheck.enforced['firebasestorage.googleapis.com'] === true : null;
+  if (storageEnforced) running.push({ key: 'run.storageAppCheck', lv: 'look', playbook: 'appcheck-blocked',
+    what: 'App Check is enforced on photo storage.',
+    why: 'The website can still upload, but the Android and iPhone apps have no App Check yet, so their photo uploads would be refused.',
+    next: 'Before the phone apps ship, press Unenforce on Storage in Firebase → App Check → APIs.', link: { label: 'Open Firebase App Check', url: fb('/appcheck/apis') } });
+  // Rules that were changed in the code but never went live
+  const rulesBehind = P.code?.ok && P.rulesLive?.ok ? [['database', P.code.firestoreRulesAt, P.rulesLive.firestoreAt], ['photo storage', P.code.storageRulesAt, P.rulesLive.storageAt]].filter(([, code, liveRules]) => code && liveRules && code > liveRules).map(x => x[0]) : [];
+  if (rulesBehind.length) running.push({ key: 'run.rulesBehind', lv: 'look',
+    what: `The ${rulesBehind.join(' and ')} rules in the code are newer than the live ones.`,
+    why: 'Rules decide what the app may read and write. Until they go live, a new feature can fail for everyone, even though the app looks up to date.',
+    next: 'In a quiet hour run npm run deploy:data in the Runner folder. The Guide tab has the steps.' });
   // Live version against the newest code in Runner's folder
   const liveAt = Math.max(P.release?.ok ? P.release.at || 0 : 0, P.functions?.ok ? P.functions.at || 0 : 0) || null;
   if (P.code?.ok && liveAt && P.code.at - liveAt > LIMITS.codeAheadDays * DAY) running.push({ key: 'run.version', lv: 'look',
@@ -676,8 +700,9 @@ export function judgeRunner(data, local = {}) {
   const storeTable = stores.map(s => {
     const login = logins.find(u => u.storeId === s.id), fl = floats.stores.find(f => f.id === s.id);
     const items = menuItems.filter(m => m.storeId === s.id);
-    return { id: s.id, name: s.name, isOpen: s.isOpen === true, hoursSay: saysOpen(s.hours, now), hours: s.hours || '', model: s.model || '', pickup: !!s.offersPickup, tablet: !!login, alerts: !!login?.canNotify,
-      float: fl ? fl.float : null, menu: items.length, noPhoto: items.filter(m => !m.hasPhoto).length, noPrice: items.filter(m => !(Number(m.price) > 0)).length,
+    return { id: s.id, name: s.name, phone: s.phone || '', isOpen: s.isOpen === true, hoursSay: saysOpen(s.hours, now), hours: s.hours || '', model: s.model || '', pickup: !!s.offersPickup, tablet: !!login, alerts: !!login?.canNotify,
+      float: fl ? fl.float : null, menu: items.length, noPhoto: items.filter(m => !m.hasPhoto).length, noPrice: items.filter(m => !(Number(m.price) > 0)).length, noThumb: items.filter(m => m.hasPhoto && !m.hasThumb).length,
+      batch: s.dailyMenu === true || (s.pickupSlots || []).length > 0, slots: s.pickupSlots || [], daily: s.dailyMenu === true, dishesToday: P.dailyMenus?.ok ? P.dailyMenus.by[s.id] ?? null : null,
       soldOut: items.filter(m => m.soldOutAt && now - m.soldOutAt < 14 * HOUR).length };
   }).sort((a, b) => b.isOpen - a.isOpen || a.name.localeCompare(b.name));
   // Hour by hour, last 7 days: orders placed, and runners who took an order in that hour
@@ -740,11 +765,124 @@ export function judgeRunner(data, local = {}) {
   const botSum = k => botDays.reduce((t, d) => t + (Number(d[k]) || 0), 0);
   const bot = { ok: !!P.whatsappStats?.ok, messages: botSum('messages'), usd: (botSum('inputTokens') * 4 + botSum('outputTokens') * 20 + botSum('cacheReadTokens') * 0.2) / 1e6 };
 
+  const botToday = (P.whatsappStats?.ok ? P.whatsappStats.rows : []).find(d => d.id === jmDate(now));
+  bot.today = Number(botToday?.messages) || 0;
+  bot.ordersToday = todayOrders.filter(o => o.placedVia === 'whatsapp').length;
+  bot.guestsToday = todayOrders.filter(o => o.waGuest).length;
+  // Guest cash at risk, counted as Runner counts it: guest cash orders in progress, plus cash not paid today
+  bot.guestCash = openNow.filter(o => o.waGuest && o.paymentMethod === 'cash').reduce((t, o) => t + (Number(o.totalAmount) || 0), 0)
+    + (P.trust?.ok ? P.trust.issues.filter(i => i.createdAt >= data.today).reduce((t, i) => t + (Number(i.amountJmd) || 0), 0) : 0);
+  if (bot.guestCash >= GUEST_CASH_CAP * 0.8) money.push({ key: 'money.guestCash', lv: 'look',
+    what: `Guest cash at risk is ${J(bot.guestCash)} of the ${J(GUEST_CASH_CAP)} limit.`,
+    why: 'WhatsApp guests have no Runner account. At the limit the bot stops offering them cash and asks for a bank transfer instead.',
+    next: 'Nothing is broken. Check that runners are collecting the cash. If guests are paying well, ask the developer to raise the limit.' });
+  if (bot.today >= WHATSAPP_DAILY * 0.8) running.push({ key: 'run.botLimit', lv: 'look',
+    what: `The WhatsApp assistant has handled ${bot.today.toLocaleString('en-US')} of its ${WHATSAPP_DAILY.toLocaleString('en-US')} messages for today.`,
+    why: 'At the limit it stops answering until tomorrow, so nobody can run up the AI bill. Real customers would be left waiting too.',
+    next: 'If this is real demand, ask the developer to raise the limit. If it looks like abuse, look at the error log first.' });
+  const botHelp = P.botHelp?.ok ? P.botHelp.rows : [];
+  if (botHelp.length) people.push({ key: 'people.botHelp', lv: 'act',
+    what: `${plural(botHelp.length, 'WhatsApp customer')} asked for a person in the last hour${botHelp[0].last4 ? `, number ending ${botHelp.slice(0, 3).map(h => h.last4).join(', ')}` : ''}.`,
+    why: 'The assistant told them someone from Runner would message them. Admins also got a notification with the full number.',
+    next: 'Reply from Runner\'s WhatsApp Business account. This clears by itself after an hour.', playbook: 'bot' });
+  if (P.botHelp && !P.botHelp.ok) running.push(cant('run.botHelp', 'whether WhatsApp customers asked for a person', P.botHelp));
+
+  // Bank transfers: the order waits for a person, and the customer is offered cash when the time runs out
+  if (!usable(P.transfers)) money.push(cant('money.transfers', 'bank transfers waiting for an admin', P.transfers));
+  const transferRows = P.transfers?.ok ? P.transfers.rows : [];
+  const waitingTransfers = transferRows.filter(x => x.status === 'pending_review').sort((a, b) => (a.proofAt || 0) - (b.proofAt || 0));
+  const toTotal = l => l.reduce((t, x) => t + (Number(x.amountJmd) || 0), 0);
+  const transfers = { ok: usable(P.transfers), waiting: waitingTransfers, total: toTotal(waitingTransfers) };
+  if (waitingTransfers.length) { const held = mins(now - (waitingTransfers[0].proofAt || now));
+    money.push({ key: 'money.transfers', lv: held >= LIMITS.transferAct ? 'act' : 'look', playbook: 'transfer', link: link('Open Runner admin: Bank transfers', '/transfers'),
+      what: `${plural(waitingTransfers.length, 'bank transfer')} (${J(transfers.total)}) waiting to be checked. The oldest has waited ${ago(held)}.`,
+      why: 'A WhatsApp customer sent a picture of their transfer and their order is on hold. A picture can be faked, so a person must see the money in the bank. After 30 minutes the bot offers them cash instead.',
+      next: 'Open the bank app, find the money, then in Runner admin enter the amount received and the bank\'s reference.' }); }
+  const lateTransfers = transferRows.filter(x => x.status === 'timed_out' && x.proofAt && now - x.proofAt < 7 * DAY);
+  if (lateTransfers.length) money.push({ key: 'money.lateTransfers', lv: 'look', playbook: 'transfer', link: link('Open Runner admin: Bank transfers', '/transfers'),
+    what: `${plural(lateTransfers.length, 'bank transfer')} (${J(toTotal(lateTransfers))}) timed out before anyone checked ${lateTransfers.length === 1 ? 'it' : 'them'}.`,
+    why: 'The customer may really have paid. Their order did not go through, so that money belongs on their balance.',
+    next: 'Check the bank. If the money arrived, approve it in Runner admin and it becomes their coins. If not, reject it.' });
+
+  // Businesses waiting for an answer
+  const newSellers = P.sellerApps?.ok ? P.sellerApps.rows : [];
+  if (P.sellerApps && !P.sellerApps.ok) people.push(cant('people.sellers', 'store applications', P.sellerApps));
+  if (newSellers.length) { const oldest = mins(now - Math.min(...newSellers.map(x => x.createdAt || now)));
+    people.push({ key: 'people.sellers', lv: oldest >= 2 * 1440 ? 'look' : 'info', link: link('Open Runner admin: Store applications', '/sellers'),
+      what: `${plural(newSellers.length, 'business', 'businesses')} asked to sell on Runner. The oldest has waited ${ago(oldest)}.`,
+      why: 'Each one is a new store that came to you.', next: 'Review it in Runner admin, then call them.' }); }
+
+  // Batch kitchens: an admin copies the day's menu from the store's own message, so no dishes means nobody can order
+  if (P.dailyMenus && !P.dailyMenus.ok) people.push(cant('people.dailyMenu', 'today\'s menus at batch kitchens', P.dailyMenus));
+  const hourNow = new Date(now - JM).getUTCHours() + new Date(now - JM).getUTCMinutes() / 60;
+  if (P.dailyMenus?.ok && hourNow >= LIMITS.menuLookHour) {
+    const noMenu = stores.filter(s => s.dailyMenu === true && P.dailyMenus.by[s.id] === 0 && saysOpen(s.hours, now) !== false);
+    if (noMenu.length) people.push({ key: 'people.dailyMenu', lv: hourNow >= LIMITS.menuActHour ? 'act' : 'look', playbook: 'daily-menu', link: link(`Open ${noMenu[0].name}`, `/manage-store/${noMenu[0].id}`),
+      what: `${noMenu.map(s => s.name).slice(0, 3).join(', ')} ${noMenu.length === 1 ? 'has' : 'have'} no dishes on today's menu yet.`,
+      why: 'A daily-menu store shows students nothing until an admin puts today\'s dishes on, so nobody can order from it.',
+      next: 'Copy today\'s dishes from the store\'s WhatsApp message into its page in Runner admin, with the number of plates.' });
+  }
+
+  // Top-up cards: the server refuses new batches at the limit, and held cards don't work until activated
+  const CARD_CAP = L.TOPUP_OUTSTANDING_MAX_JMD || 150000;
+  const cardsOut = sellers.reduce((t, x) => t + x.unredeemed, 0);
+  if (cardsOut >= CARD_CAP * 0.8) money.push({ key: 'money.cardCap', lv: 'look', link: link('Open Runner admin: Top-up cards', '/topup-cards'),
+    what: `${J(cardsOut)} of unredeemed top-up cards exist, out of the ${J(CARD_CAP)} limit.`,
+    why: 'At the limit Runner refuses to make a new batch, so sellers can run out of cards.',
+    next: 'Void batches nobody is selling, or ask sellers to push the cards they hold.' });
+  const heldBatches = batches.filter(b => b.needsActivation && !b.activatedAt && !(Number(b.voidedCount) >= Number(b.count)));
+  if (heldBatches.length) money.push({ key: 'money.heldBatches', lv: 'info', link: link('Open Runner admin: Top-up cards', '/topup-cards'),
+    what: `${plural(heldBatches.length, 'top-up card batch', 'top-up card batches')} not activated: ${[...new Set(heldBatches.map(b => b.holder || 'no seller named'))].slice(0, 4).join(', ')}.`,
+    why: 'Cards don\'t work until their batch is activated. That keeps printed cards safe until the seller has them.',
+    next: 'Press "Activate (handed to seller)" only once you have counted the cards with the seller.' });
+  // Refunds Runner held back: only a person can settle these
+  const heldRefunds = P.trust?.ok ? P.trust.held.filter(o => !resolved[`held.${o.code}`]) : [];
+  if (heldRefunds.length) money.push({ key: 'money.heldRefunds', lv: 'act', resolve: heldRefunds.map(o => `held.${o.code}`), playbook: 'held-refund',
+    what: `${plural(heldRefunds.length, 'cancelled order')} with a refund held for you: ${heldRefunds.slice(0, 3).map(o => `#${o.code} (${J(o.totalAmount)})`).join(', ')}.`,
+    why: 'A confirmed order was cancelled outside the approved ways, so Runner did not refund it automatically. The customer may be waiting for their money.',
+    next: 'Decide whether they should be refunded. If yes, add the coins by hand with "Adjust Runner coins", with the order code in the note. Then press "Sorted, hide it".', link: link('Open Runner admin: Users', '/users') });
+  // Places students keep asking for
+  const asked = P.suggestions?.ok ? P.suggestions.rows : [];
+  if (asked.some(x => x.count >= 3)) people.push({ key: 'people.suggestions', lv: 'info', link: link('Open Runner admin: Store applications', '/sellers'),
+    what: `Students keep asking for: ${[...asked].sort((a, b) => b.count - a.count).slice(0, 4).map(x => `${x.place} (${x.count})`).join(', ')}.`,
+    why: 'These came from Ask Runner. Each is a store students already want.', next: 'Consider calling the most-asked place.' });
+
   const due = {
     ok: usable(P.dashers) && usable(P.storeFloats),
     storesOwed: settle.stores.reduce((t, x) => t + (x.owed || 0), 0),
     runnersHoldingCash: dashers.filter(d => Number(d.cashOwedJmd) > 0).map(d => ({ id: d.id, name: (runners.find(r => r.id === d.id) || {}).name || 'Runner', amount: Number(d.cashOwedJmd) })),
     sellers, sellersOk: !!P.topupBatches?.ok,
+  };
+
+  // How today's orders came in, for the Now tab
+  const ofToday = f => todayOrders.filter(f).length;
+  const orderMix = [['Delivery', ofToday(o => !isPickup(o))], ['Pickup', ofToday(isPickup)], ['WhatsApp', ofToday(o => o.placedVia === 'whatsapp')], ['Guests', ofToday(o => o.waGuest)],
+    ['Ask Runner', ofToday(o => !!o.ask?.place)], ['Water runs', ofToday(o => !!o.waterRun?.trip)], ['Coins', ofToday(o => o.paymentMethod === 'tokens')], ['Cash', ofToday(o => o.paymentMethod === 'cash')]];
+
+  // What is switched on, in plain words, from Runner's own settings
+  const F = P.lists?.ok ? P.lists.flags || {} : {};
+  const flag = k => (P.lists?.ok ? F[k] === true : null);
+  const hasFn = n => (P.functions?.ok ? P.functions.names.includes(n) : null);
+  const bankSet = P.keys?.ok ? P.keys.bank : null, cardsOn = P.keys?.ok ? P.keys.cards : null;
+  const botLive = bot.messages > 0 ? true : hasFn('whatsappWebhook') === false ? false : null;
+  const onOff = v => (v === null ? 'unknown' : v ? 'on' : 'off');
+  const features = [
+    { name: 'Runner coins', state: 'on', note: 'The main way to pay. 1 coin = J$1.' },
+    { name: 'Card payments', state: onOff(cardsOn), note: cardsOn ? 'Showing in the app. Check payments every day.' : 'Hidden. Fygaro is not finished. See PAYMENTS_SETUP.md.' },
+    { name: 'Cash for trusted customers', state: onOff(flag('CASH_ENABLED')), note: `Unlocks after ${J(L.CASH_UNLOCK_SPEND_JMD || 5000)} of confirmed coin spend. Largest cash order ${J(L.CASH_MAX_ORDER_JMD || 3000)}.` },
+    { name: 'Stores confirm deliveries', state: onOff(flag('STORE_CONFIRMS_DELIVERY')), note: 'A store says yes before runners see the order.' },
+    { name: 'Admin referrals', state: onOff(flag('ADMIN_REFERRALS_ENABLED')), note: '2.5% of the delivery or pickup fee on confirmed orders.' },
+    { name: 'Admin runners', state: onOff(flag('ADMIN_RUNNERS_ENABLED')), note: `Runners who sell coins for cash, up to ${J(L.COIN_STOCK_MAX_JMD || 50000)} of stock each.` },
+    { name: 'Batch kitchens', state: onOff(flag('BATCH_KITCHEN_ENABLED')), note: `${plural(stores.filter(s => s.dailyMenu === true || (s.pickupSlots || []).length).length, 'store')} set up.` },
+    { name: 'WhatsApp assistant', state: flag('WHATSAPP_BOT_ENABLED') === false ? 'off' : botLive ? 'on' : botLive === false ? 'not deployed' : 'waiting', note: botLive ? 'Answering customers.' : 'Built, but it hasn\'t answered anyone this month. Going live needs the Meta number and keys.' },
+    { name: 'WhatsApp guests', state: onOff(flag('WA_GUEST_ENABLED')), note: `Only matters once the assistant is live. Guest cash limit ${J(L.WA_CASH_MAX_ORDER_JMD || 1500)} an order.` },
+    { name: 'WhatsApp bank transfers', state: bankSet === null ? 'unknown' : bankSet ? 'on' : 'off', note: bankSet ? 'The bank details are filled in.' : 'WA_BANK_DETAILS is blank, so transfers aren\'t offered.' },
+    { name: 'WhatsApp late updates', state: onOff(flag('WA_TEMPLATES_APPROVED')), note: flag('WA_TEMPLATES_APPROVED') ? 'Meta approved the templates.' : 'Updates after 24 hours aren\'t sent until Meta approves the templates.' },
+  ];
+  const shipping = {
+    unsaved: P.code?.ok ? P.code.unsaved : null, codeAt: P.code?.ok ? P.code.at : null, codeMessage: P.code?.ok ? P.code.message : '',
+    liveAt, behind: !!(P.code?.ok && liveAt && P.code.at > liveAt),
+    firestoreRulesAt: P.rulesLive?.ok ? P.rulesLive.firestoreAt : null, storageRulesAt: P.rulesLive?.ok ? P.rulesLive.storageAt : null, storageEnforced,
   };
 
   // ── Before launch: the owner's list, ticking itself where the data can tell ─
@@ -778,14 +916,14 @@ export function judgeRunner(data, local = {}) {
     ] },
     { title: 'Stores', items: [
       B('storeinfo', 'Every store has its name, campus food spot, opening hours, "How it works" setting and menu with prices', 'Runner admin → Stores → each store.', { link: link('Open Runner admin: Stores', '/stores'), ...auto('storeinfo', storeGaps === null ? null : storeGaps === '', storeGaps === null ? null : storeGaps ? `Still missing: ${storeGaps}.` : 'Every store is complete.') }),
-      B('tablets', 'Every store has a tablet login, signed in on its tablet, with notifications allowed', 'Runner admin → Stores → the store → Store access; then sign in on the tablet and allow notifications.', auto('tablets', tabletGaps === null ? null : tabletGaps === 0, tabletGaps === null ? null : tabletGaps ? `${plural(tabletGaps, 'store')} without a tablet that can get alerts.` : 'Every store tablet can get alerts.')),
+      B('tablets', 'Every store has a tablet login, signed in on its tablet, with notifications allowed', 'Runner admin → Stores → the store → Pickup, water runs and store logins; then sign in on the tablet and allow notifications.', auto('tablets', tabletGaps === null ? null : tabletGaps === 0, tabletGaps === null ? null : tabletGaps ? `${plural(tabletGaps, 'store')} without a tablet that can get alerts.` : 'Every store tablet can get alerts.')),
       B('pickuponly', 'Pickup is switched on only for stores whose tablet is set up', 'Runner admin → Stores → the store → pickup switch.', auto('pickuponly', pickupGaps === null ? null : pickupGaps === 0, pickupGaps === null ? null : pickupGaps ? `${plural(pickupGaps, 'store')} offer pickup with no tablet.` : 'Pickup is only on where a tablet exists.')),
       B('floats', 'Floats decided: which stores get one, and how much', 'Runner admin → Stores → "Adjust float", with a note.', { found: floats.ok ? `${plural(floats.stores.length, 'store float')} set.` : null }),
       B('colours', 'Open Runner admin → Stores once, so every store\'s colour is saved', 'Opening the Stores page saves a colour for every store. Once is enough.', { link: link('Open Runner admin: Stores', '/stores'), ...auto('colours', noColour === null ? null : noColour === 0 && stores.length > 0, noColour === null ? null : noColour ? `${noColour} of ${plural(stores.length, 'store')} have no colour saved yet.` : 'Every store has a colour.') }),
     ] },
     { title: 'Runners', items: [
       B('firstrunners', 'The first runners are verified and in one WhatsApp group with the owner', 'Runner admin → Runner verification; then add each to the group.', { link: link('Open runner verification', '/verify-runners'), found: usable(P.runners) ? `${plural(verified, 'verified runner')} so far.` : null }),
-      B('briefed', 'Each runner knows the rules', 'Orders arrive in waves, students pay after accepting, never buy food before "Payment received", and idle runners are switched off after 2 hours.'),
+      B('briefed', 'Each runner knows the rules', 'Orders arrive in waves after the store says yes. The first runner to accept confirms the order, which charges the coins. On a cash order, collect the money first, then tap "Cash paid, delivered". If the customer doesn\'t pay, tap "Not paid" and keep the food safe. Idle runners are switched off after 2 hours and 30 minutes.'),
       B('runnerfloats', 'Runner floats topped up where runners buy the food', 'Runner admin → Users → the runner → "Adjust float".', { found: floats.ok ? `${plural(floats.runners.filter(f => f.float > 0).length, 'runner')} with a float above zero.` : null }),
     ] },
     { title: 'Launch', items: [
@@ -801,12 +939,21 @@ export function judgeRunner(data, local = {}) {
       B('cashroutine', 'A routine for cash without a card', 'If someone pays you cash directly, add coins with "Adjust Runner coins" and a note such as "Cash J$2,000, receipt 014". Money below lists each day\'s manual top-ups so cash and coins can be matched.'),
       B('fygarooff', 'Card payments stay hidden until Fygaro is finished', 'Follow PAYMENTS_SETUP.md in the Runner code (this venture\'s Docs tab). Turning them on is one setting (EXPO_PUBLIC_CARD_PAYMENTS=on) and a website deploy.'),
     ] },
+    { title: 'WhatsApp assistant and batch kitchens', items: [
+      B('wa-secrets', 'Put the real WhatsApp and AI keys in', 'The developer sets WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN and ANTHROPIC_API_KEY. Guide: docs/WHATSAPP_ORDERING.md in the Runner code.'),
+      B('wa-number', 'Add Runner\'s number and give it its own webhook', 'The D&D bot doesn\'t check which number a message was sent to, so Runner\'s number needs the per-number webhook override or D&D will answer Runner\'s customers.'),
+      B('wa-pay', 'A payment method on the Meta account', 'Since 1 Oct 2026 replies are free only for the first 1,000 per number each month. Check Jamaica\'s rate on Meta\'s rate card.'),
+      B('wa-bank', 'Bank details set', 'WA_BANK_DETAILS in Runner\'s settings. Until then the bot can\'t offer bank transfer.'),
+      B('wa-test', 'About 30 real test conversations on a test phone', 'Jamaican phrasing, typos, voice notes, changed minds. The AI has only ever been tested with a stand-in.'),
+      B('wa-thumbs', 'Make small copies of older menu photos', 'After deploying, the developer runs node scripts/backfill-thumbnails.mjs --write.', auto('wa-thumbs', menuItems.length ? menuItems.every(m => !m.hasPhoto || m.hasThumb) : null, `${menuItems.filter(m => m.hasPhoto && !m.hasThumb).length} photos still need one.`)),
+      B('wa-kitchen', 'Social Welfare set up as a batch kitchen', 'Runner admin → the store: daily menu, pickup times, label printer and tablet ready.', auto('wa-kitchen', stores.some(s => s.dailyMenu === true) || null, 'No store is on a daily menu yet.')),
+    ] },
     { title: 'Test it like a student', items: [
       B('t-phones', 'On a real Android phone and a real iPhone, with Runner added to the home screen', 'Sign up, add a top-up card, order, have a second phone accept as a runner, pay with coins, deliver.'),
       B('t-short', 'Try to order with too few coins', 'Checkout should stop you and offer to add a card. Nothing should reach a runner.'),
       B('t-paycard', 'Add a top-up card on the pay screen', 'Order with exactly enough coins, have another order eat into them, then on the pay screen type a card\'s code and pay.'),
       B('t-pickup', 'A pickup order at a store with its tablet', 'Store says yes, student pays, store marks ready, then handed over.'),
-      B('t-cancel', 'Cancel an order after paying, and check the coins come back', ''),
+      B('t-cancel', 'Cancel an order before a runner accepts, and check the coins are released', 'Confirmed orders are paid and final, so test this before confirmation. A reversal after it is under Cash & referrals.'),
       B('t-problem', 'Report a problem on a delivered test order', 'The order screen\'s "Problem with this order?". Within 10 minutes the control room shows it in red and holds that runner\'s pay; then press "Sorted, hide it".'),
       B('t-push', 'Notifications arrive with Runner closed, on both phones', ''),
       B('t-green', 'The control room shows All good afterwards', 'Ticks itself whenever the verdict is green.'),
@@ -877,5 +1024,5 @@ export function judgeRunner(data, local = {}) {
   if (verdict === 'good' && testing) testing.items.find(i => i.id === 't-green').done = true;
   return { verdict, headline: { good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict], reason, sections, items: counted, counts,
     today, live: liveCounts, cancellations, cash, floats, settle, runnerTable, storeTable, hourly, students, admins: admins.map(a => ({ email: a.email || '(no email)', expected: !expected || expected.includes(a.email) })),
-    checklist, keeping, limits: L, launch, freeHeld, speed, trading, fnHealth, due, bot };
+    checklist, keeping, limits: L, launch, freeHeld, speed, trading, fnHealth, due, bot, transfers, orderMix, features, shipping, asked };
 }

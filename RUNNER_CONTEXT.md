@@ -1,7 +1,7 @@
 # Runner context for the console
 
 What the Runner control room (`src/RunnerControl.js`, `src/runnerOps.js`,
-`electron/ops.js`) needs to know about Runner as of 16 Oct 2026. Update this
+`electron/ops.js`) needs to know about Runner as of 30 Oct 2026. Update this
 file the same day anything in Runner changes what the control room reads.
 
 The full spec for what the control room should do, written for a
@@ -77,9 +77,8 @@ Fields that do NOT exist in Runner and are no longer checked (removed 14 Oct):
 
 ## What changed in Runner on 15–16 Oct 2026
 
-- Referrals: a student's link (`{APP_URL}/?ref=CODE`); a friend counts when
-  their first order is delivered (since 16 Oct; at sign-up before), and every
-  5 counted friends earn 1 free delivery. Chat notifications are limited to
+- Referrals: a student's link (`{APP_URL}/?ref=CODE`). Since 28 Oct a friend
+  counts at sign-up, every 5 earn 200 coins, and a phone number counts once. Chat notifications are limited to
   one per sender per order every 10 s (`chatPushes/`, server-only). Launch codes: up to 100 one-time codes,
   3 free deliveries each, made in admin and printed as QR cards
   (`{APP_URL}/?launch=CODE`, claimed automatically after sign-in).
@@ -123,8 +122,12 @@ paid), `/launch-codes` (make codes, Print QR cards), `/stores`, `/manage-store/{
 coins, Adjust float), `/verify-runners` (To verify / Verified / Rejected).
 Store tablet: `/counter` (Orders), `/store-kitchen`, `/store-menu`, `/store-today`.
 
-There is no admin Orders page: nobody can find or cancel an order from Runner
-admin yet. Don't tell the operator to cancel there.
+There is no admin Orders page. Orders are found with "Find an order" on the
+control room's Now tab, and confirmed orders in progress are reversed there or
+under Cash & referrals. There is also no admin delete button: a person deletes
+their own account (Profile → Account controls), or the developer does it. A
+delivered order can't be reversed, and a held refund has no button: both are
+settled by hand with Adjust Runner coins.
 
 ## How the control room reads all this (as built 14 Oct 2026)
 
@@ -203,3 +206,21 @@ j-commerce.online is a venture (added once) with a Tech tab: Vercel domain setti
 - Admin runners (Runner functions/src/adminRunners.ts): `coinStock/{uid}` (balanceJmd, allocatedJmd, returnedJmd, soldJmd, cashInJmd, cashOwedJmd, lastSaleAt) read in the trust part; Money → Money due shows cash owed for coins sold and a table per admin runner, flagged when allocated ≠ sold + returned + in stock. They also appear in Admin referrals as "Name (admin runner)".
 - Admin commission (from 29 Oct 2026, later the same day): 2.5% of each confirmed order's delivery or pickup fee, not the food; no first-order bonus. `adminCommissions` docs gain `basis: 'fee'` and `feeJmd`.
 - WhatsApp assistant (30 Oct 2026, Runner functions/src/whatsapp.ts): `whatsappStats/{YYYY-MM-DD}` (messages, inputTokens, outputTokens, cacheReadTokens). Is it running shows this month's messages and estimated AI cost. If the bot's model changes, update the prices in runnerOps.js.
+
+## Added 30 Oct 2026
+
+- **Coins:** 1 coin = J$1. Orders are paid and final once a runner accepts; `paymentMethod` can be `cash`, and a cash order has no `walletTx` line.
+- **Not yet a runner's order:** `storeAskedAt` set with no `storeConfirmedAt` (waiting for the store), or `slotDispatchAt` in the future (batch kitchen). Don't count these as waiting for a runner.
+- **Batch kitchens:** `stores.dailyMenu`, `pickupSlots`, `autoConfirm`; `menuItems.onDate` is the Jamaica day (YYYY-MM-DD); orders carry `pickupSlot`, `pickupSlotAt`, `slotDispatchAt`.
+- **WhatsApp:** orders carry `placedVia: 'whatsapp'` and `waGuest`. `whatsappStats/{day}` counts messages and tokens. `transferPayments` status: awaiting_proof, pending_review, approved, rejected, timed_out. Asking for a person is only logged ("WhatsApp customer asked for a person", last 4 digits) and pushed to admins. Limits copied in `runnerOps.js`: J$50,000 guest cash, 3,000 messages a day.
+- **Coin movements added:** `runner_topup`, `transfer_topup`.
+- **Store applications:** `sellerApplications` with status `new`.
+- **Menu photos:** `menuItems.imageThumb` is the list copy.
+
+## How to tab and new reads (30 Oct 2026)
+
+- **`src/runnerGuide.js`** holds the How to tab: Start here, 45 step-by-step answers, and a map of every admin page. Every button named there must match Runner's screens. Update it the same day a screen, button or rule changes.
+- **Find an order** (Now tab): `electron/ops.js` `findOrder`, through `venture:findOrder`. Code lookup queries `receipt.code`; orders without a receipt are matched from what the screen already read. Reads order fields and item names only, never a customer's name, phone or address.
+- **New reads, every 10 minutes:** `stores.phone`, `storeSuggestions`, `topupBatches.needsActivation`, Firebase Rules release times, and two settings reduced to yes or no (`WA_BANK_DETAILS` filled in, `EXPO_PUBLIC_CARD_PAYMENTS` on). The values never leave `settings()`.
+- **Also read:** on/off switches in `shared.ts` (`flags`), unsaved file count, and when the rules files last changed.
+- **New alerts:** `run.storageAppCheck`, `run.rulesBehind`, `money.cardCap`, `money.heldBatches`, `money.heldRefunds`, `people.suggestions`.

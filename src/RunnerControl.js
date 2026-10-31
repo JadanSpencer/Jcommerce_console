@@ -1,11 +1,14 @@
 // src/RunnerControl.js
 // The Runner control room: one screen that tells a person with no software
 // background whether Runner needs them right now, and exactly what to do.
-// Read-only. The reading is done by the Mac app (electron/ops.js), the judging
-// by runnerOps.js. What is kept here (ticks, notes, the alert log, who is
+// It reads Runner through the Mac app (electron/ops.js). The only changes it
+// makes are the buttons under Cash & referrals and Find an order, which go
+// through Runner's checked ownerAction endpoint. The judging is in runnerOps.js,
+// the how-to text in runnerGuide.js. What is kept here (ticks, notes, the alert log, who is
 // handling what) stays on this Mac and never goes to Runner.
 import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
+import { BASICS, PLACES, OTHER_SCREENS, GROUPS, HOWTO } from './runnerGuide';
 import './RunnerControl.css';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
@@ -243,12 +246,22 @@ const STATIC_PLAN = [
 ];
 const WORDS = [
   ['Order code', 'The last 6 characters of an order, such as A7K2QD. It is on the receipt; use it to talk about one order.'],
-  ['Runner coins', 'A prepaid balance. 1 coin = J$100. Students top up and pay with them.'],
+  ['Runner coins', 'A prepaid balance. 1 coin = J$1. Students top up and pay with them.'],
   ['Float', 'Cash Runner gave a store or a runner to buy food with. Each paid order takes its food cost out of it.'],
   ['Pending', 'Placed, waiting for a runner (or, for pickup, waiting for the store to say yes).'],
-  ['Accepted', 'A runner took it. For a card order the student now has 10 minutes to pay.'],
+  ['Accepted', 'A runner took it, which confirms the order: coins are charged and cash is locked in. From here it is paid and final.'],
   ['Picking up, On the way, Delivered', 'The runner is at the store, then heading to the student, then done.'],
-  ['Cancelled', 'Stopped, with a reason. The server returns any money automatically.'],
+  ['Cancelled', 'Stopped, with a reason. Before confirmation held coins are released. After it there are no refunds, except a store cancelling or a reversal you approve.'],
+  ['Batch kitchen', 'A store that cooks a daily menu and hands orders over at set pickup times. An admin puts its dishes on each morning.'],
+  ['Guest', 'A WhatsApp customer with no Runner account. Cash up to J$1,500, one open order at a time.'],
+  ['Bank transfer', 'A WhatsApp customer pays by transfer and sends a picture. A person checks the bank, then the money becomes coins and pays for the order.'],
+  ['Confirmed', 'The moment an order becomes paid and final: a runner accepts a delivery, or a store says yes to a pickup.'],
+  ['Reversal', 'Undoing a confirmed order that is still in progress. You approve it with a reason, and the customer gets coins back.'],
+  ['Admin runner', 'A trusted runner who sells coins for cash from a stock you gave them.'],
+  ['Top-up card', 'A printed card with a one-time code, sold for cash. It adds coins when scanned, once its batch is activated.'],
+  ['Launch code', 'A one-time code worth 3 free deliveries.'],
+  ['Ask Runner', 'A student gives a runner a shopping list and a spending limit for a place not on Runner. The runner enters what it really cost and the change goes back as coins.'],
+  ['Water run', 'A 5-gallon water bottle delivered, returned or refilled.'],
   ['Waves', 'A new order is offered to 3 runners at a time, 3 more every 45 seconds, then to everyone after about 2 minutes.'],
   ['Group order', 'A runner takes 2 or 3 orders at once from nearby stores.'],
   ['The server', 'Runner\'s own programs in Google\'s cloud. They price orders, move money and send notifications.'],
@@ -257,6 +270,130 @@ const WORDS = [
   ['App Check', 'Proof that a request came from the real Runner website, not a script.'],
   ['Deploy', 'Putting a new version of Runner live. Only the developer does this.'],
 ];
+
+// ── Find an order ───────────────────────────────────────────────────────────
+// Runner admin has no Orders page, so this is where one order is looked up.
+const STEP_WORDS = { pending: 'Not confirmed yet', accepted: 'A runner has it', picking_up: 'Runner is at the store', on_the_way: 'On the way to the customer', delivered: 'Delivered', cancelled: 'Cancelled' };
+const PAY_WORDS = { tokens: 'Runner coins', cash: 'Cash', card: 'Card' };
+function FindOrder({ api, project, seen, runners, stores }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState(null);
+  const [why, setWhy] = useState('');
+  const [done, setDone] = useState(null);
+  const look = async e => {
+    e.preventDefault();
+    const code = text.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    if (!code || busy) return;
+    setBusy(true); setRes(null); setDone(null);
+    const known = seen.find(o => o.code === code);
+    const r = await api.findOrder(project, known ? { id: known.id } : { code });
+    setBusy(false); setRes({ ...r, code });
+  };
+  const o = res?.order, runner = o?.dasherId ? runners.find(x => x.id === o.dasherId) : null, shop = o ? stores.find(x => x.id === o.storeId) : null;
+  const when = t => (t ? `${jmDate(t)} ${jmTime(t)}` : null);
+  const timeline = o ? [['Placed', o.createdAt], ['Store said yes', o.storeConfirmedAt], ['Runner accepted', o.acceptedAt], ['Confirmed, paid and final', o.confirmedAt], ['Ready', o.readyAt], ['Delivered', o.deliveredAt], ['Cancelled', o.cancelledAt]].filter(x => x[1]) : [];
+  const confirmed = o?.confirmedAt > 0, inProgress = o && ['accepted', 'picking_up', 'on_the_way'].includes(o.status);
+  const whatNext = !o ? '' : o.status === 'delivered' ? 'It was delivered, so it can\'t be reversed. If the customer is owed, use Adjust Runner coins with this code in the note.'
+    : o.status === 'cancelled' ? (o.refundHeld ? 'The refund is held for you. See "A refund is held for me" in the How to tab.' : 'It is finished. Any money was already returned as coins.')
+      : confirmed && inProgress ? 'It can be reversed below if it can\'t be completed.'
+        : 'It isn\'t confirmed, so nothing has been charged. The customer can cancel it, or it cancels by itself.';
+  const reverse = async () => {
+    setBusy(true);
+    const r = await api.ownerAction(project, { action: 'reverseOrder', orderId: o.id, reason: why.trim() });
+    setBusy(false);
+    setDone(r.ok ? { ok: true, text: 'Reversed. The customer is refunded as coins, and the store and runner are told.' } : { ok: false, text: r.error });
+    if (r.ok) { setWhy(''); store.last = 0; refresh(); }
+  };
+  return (
+    <section className="card rc-sec" id="rc-find">
+      <header><span className="rc-dot good"/><h3>Find an order</h3>
+        <Help>Type the 6-character code from the customer's receipt, such as A7K2QD. Unconfirmed orders are found if they are open, or from the last 8 days.</Help></header>
+      <form className="rc-row" onSubmit={look}>
+        <input className="input" style={{ maxWidth: 220 }} placeholder="Order code" value={text} onChange={e => setText(e.target.value)} aria-label="Order code"/>
+        <button className="btn-ghost" disabled={busy || !text.trim()}>{busy ? 'Looking…' : 'Find'}</button>
+      </form>
+      {res && !res.ok && <p className="rc-item unknown rc-plain">{res.error}</p>}
+      {res?.ok && !o && <p className="rc-small">No order has the code {res.code}. Check it with the customer. An unconfirmed order older than a week can't be found by code.</p>}
+      {o && <div className="rc-found-order">
+        <p className="rc-what">#{o.code} · {o.storeName || 'Store'} · {J(o.totalAmount)} · {STEP_WORDS[o.status] || o.status}</p>
+        <p className="rc-why">{o.fulfilment === 'pickup' ? 'Pickup' : 'Delivery'} · {PAY_WORDS[o.paymentMethod] || 'Payment not chosen'}{o.placedVia === 'whatsapp' ? ' · WhatsApp' : ''}{o.waGuest ? ' · guest' : ''}{o.pickupSlotAt ? ` · pickup time ${jmTime(o.pickupSlotAt)}` : ''}</p>
+        {o.items.length > 0 && <p className="rc-why">{o.items.map(i => `${i.quantity} × ${i.name}`).join(', ')}</p>}
+        <ul className="rc-lines">{timeline.map(([w, t]) => <li key={w}>{w}: {when(t)}</li>)}</ul>
+        {o.status === 'cancelled' && <p className="rc-why"><b>Why cancelled</b> {o.cancelReason ? CANCEL_WORDS[o.cancelReason] || o.cancelReason : 'The student cancelled'}{o.reversalReason ? `: ${o.reversalReason}` : ''}</p>}
+        {o.problem && <p className="rc-why"><b>Problem reported</b> {o.problem.kind}{o.problem.note ? `: ${o.problem.note}` : ''}</p>}
+        <p className="rc-why"><b>Who to call</b> {runner ? <>{runner.name} {runner.phone && <a href={`tel:${runner.phone}`}>{runner.phone}</a>}</> : 'No runner yet'}{shop?.phone ? <> · {shop.name} <a href={`tel:${shop.phone}`}>{shop.phone}</a></> : ''}</p>
+        <p className="rc-next"><b>What you can do</b> {whatNext}</p>
+        {confirmed && inProgress && <div className="rc-row">
+          <input className="input" style={{ maxWidth: 320 }} placeholder="Reason for the reversal" value={why} onChange={e => setWhy(e.target.value)} aria-label="Reason for the reversal"/>
+          <button className="btn-ghost" disabled={busy || why.trim().length < 5} onClick={reverse}>Approve reversal</button>
+        </div>}
+        {done && <div className={`rc-note ${done.ok ? '' : 'rc-bad'}`}>{done.text}</div>}
+      </div>}
+    </section>
+  );
+}
+
+// ── How to: the guide ───────────────────────────────────────────────────────
+function Rich({ text, project, admin, setTab }) {
+  const parts = []; let at = 0;
+  for (const m of text.matchAll(/\[([^\]]+)\]\(([^)]+)\)/g)) {
+    parts.push(text.slice(at, m.index));
+    const [, label, to] = m;
+    if (to.startsWith('tab:')) parts.push(<button key={m.index} className="link-btn" onClick={() => setTab(to.slice(4))}>{label}</button>);
+    else {
+      const url = to.startsWith('fb:') ? `https://console.firebase.google.com/project/${project}${to.slice(3)}` : to.startsWith('gc:') ? `https://console.cloud.google.com${to.slice(3)}?project=${project}` : to.startsWith('http') ? to : `${admin}${to}`;
+      parts.push(<a key={m.index} href={url} target="_blank" rel="noreferrer">{label}</a>);
+    }
+    at = m.index + m[0].length;
+  }
+  parts.push(text.slice(at));
+  return parts;
+}
+function Guide({ project, admin, setTab }) {
+  const [find, setFind] = useState('');
+  const words = find.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+  const hit = h => words.every(w => `${h.q} ${h.keys} ${h.steps.join(' ')} ${h.group}`.toLowerCase().includes(w));
+  const found = HOWTO.filter(hit);
+  const rich = t => <Rich text={t} project={project} admin={admin} setTab={setTab}/>;
+  const Answer = ({ h, open }) => (
+    <details className="rc-playbook" open={open}><summary>{h.q}</summary>
+      <ol>{h.steps.map((x, n) => <li key={n}>{rich(x)}</li>)}</ol>
+      {h.say && <p className="rc-say"><b>Say this</b> {h.say}</p>}
+      {h.never && <p className="rc-never"><b>Careful</b> {h.never}</p>}
+    </details>
+  );
+  return (<>
+    <section className="card rc-sec">
+      <header><span className="rc-dot good"/><h3>How do I…</h3><span className="rc-quiet">{HOWTO.length} answers, step by step</span></header>
+      <input className="input" autoFocus placeholder="Type what you need: refund, new store, card not working…" value={find} onChange={e => setFind(e.target.value)} aria-label="Search the guide" style={{ margin: '0.5rem 0' }}/>
+      {words.length > 0 && (found.length ? found.map(h => <Answer key={h.id} h={h} open={found.length <= 3}/>) : <p className="rc-small">Nothing matches that. Try one simple word, such as coins, store or runner. If it isn't here, ask the developer and add it to this guide.</p>)}
+    </section>
+    {!words.length && <>
+      <section className="card rc-sec">
+        <header><span className="rc-dot good"/><h3>Start here</h3><span className="rc-quiet">read these once</span></header>
+        {BASICS.map(b => (
+          <Fold key={b.id} id={`g-${b.id}`} title={b.title}>
+            {b.body && b.body.map((p, n) => <p key={n} className="rc-small">{p}</p>)}
+            {b.steps && <ol className="rc-steps">{b.steps.map((x, n) => <li key={n}>{x}</li>)}</ol>}
+            {b.after && <p className="rc-small">{b.after}</p>}
+          </Fold>))}
+      </section>
+      {GROUPS.map(g => (
+        <section className="card rc-sec" key={g}>
+          <header><span className="rc-dot good"/><h3>{g}</h3></header>
+          {HOWTO.filter(h => h.group === g).map(h => <Answer key={h.id} h={h}/>)}
+        </section>))}
+      <section className="card rc-sec">
+        <header><span className="rc-dot good"/><h3>Where everything is</h3></header>
+        <table className="rc-table"><thead><tr><th>Runner admin page</th><th>What it is for</th></tr></thead>
+          <tbody>{PLACES.map(([n, to, what]) => <tr key={n}><td>{to ? <a href={`${admin}${to}`} target="_blank" rel="noreferrer">{n}</a> : n}</td><td>{what}</td></tr>)}</tbody></table>
+        <table className="rc-table"><thead><tr><th>Other screens</th><th>What is there</th></tr></thead>
+          <tbody>{OTHER_SCREENS.map(([n, what]) => <tr key={n}><td>{n}</td><td>{what}</td></tr>)}</tbody></table>
+      </section>
+    </>}
+  </>);
+}
 
 // ── The screen ──────────────────────────────────────────────────────────────
 // ── Trading: how the business is doing since it opened ─────────────────────
@@ -309,7 +446,7 @@ function Trading({ T, launchDate }) {
   </>);
 }
 
-const TABS = [['now', 'Now'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
+const TABS = [['now', 'Now'], ['guide', 'How to'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
 
 // ── Cash & referrals (Runner's confirmed orders) ────────────────────────────
 // Each customer's progress toward paying by cash (J$5,000 of confirmed coin
@@ -386,10 +523,18 @@ function CashReferrals({ T, admins, api, project }) {
       {T.held.length > 0 && <table className="rc-table"><thead><tr><th>Order</th><th>Store</th><th>Total</th><th>Cancelled</th><th>Why</th></tr></thead>
         <tbody>{T.held.map(o => <tr key={o.id}><td>#{o.code}</td><td>{o.storeName}</td><td>{J(o.totalAmount)}</td><td>{jmDate(o.cancelledAt)}</td><td>{o.cancelReason || 'no reason'}</td></tr>)}</tbody></table>}
       <div className="row-gap" style={{ marginTop: '0.75rem', flexWrap: 'wrap' }}>
-        <input className="input" style={{ width: 220 }} placeholder="Order id (the long one)" value={orderId} onChange={e => setOrderId(e.target.value.trim())}/>
+        <input className="input" style={{ width: 220 }} placeholder="Order code, such as A7K2QD" value={orderId} onChange={e => setOrderId(e.target.value.trim())}/>
         <input className="input" style={{ width: 280 }} placeholder="Reason for the reversal" value={orderWhy} onChange={e => setOrderWhy(e.target.value)}/>
         <button className="btn-ghost" disabled={!!busy || !orderId || orderWhy.trim().length < 5}
-          onClick={() => act('rev', { action: 'reverseOrder', orderId, reason: orderWhy.trim() }, () => { setOrderId(''); setOrderWhy(''); return 'Reversed: the customer is refunded and the store and runner are told.'; })}>{busy === 'rev' ? 'Reversing…' : 'Approve reversal'}</button>
+          onClick={async () => {
+            let id = orderId;
+            if (id.replace(/[^A-Za-z0-9]/g, '').length === 6) {
+              const f = await api.findOrder(project, { code: id });
+              if (!f.ok || !f.order) { setMsg({ ok: false, text: f.ok ? `No order has the code ${id}. Check it with Find an order on the Now tab.` : f.error }); return; }
+              id = f.order.id;
+            }
+            act('rev', { action: 'reverseOrder', orderId: id, reason: orderWhy.trim() }, () => { setOrderId(''); setOrderWhy(''); return 'Reversed: the customer is refunded and the store and runner are told.'; });
+          }}>{busy === 'rev' ? 'Reversing…' : 'Approve reversal'}</button>
       </div>
     </section>
   </>);
@@ -490,6 +635,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         })}
       </nav>
 
+      {tab === 'guide' && <Guide project={project} admin={data.adminUrl} setTab={setTab}/>}
+
       {tab === 'now' && (<>
         <div className="rc-big">
           {[['Orders today', r.live.orders], ['Waiting for a runner', r.live.waiting, r.live.waiting > 0], ['Runners online', r.live.online ?? '?', r.live.online !== null && r.live.online < 3], ['Delivered', r.live.delivered], ['Open right now', r.live.open], ['Stores open', `${r.live.storesOpen}/${r.live.stores}`]].map(([l, v, bad]) => (
@@ -505,17 +652,23 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             </section>
           );
         })()}
+        <FindOrder api={api} project={project} seen={[...(data.parts.ordersToday?.rows || []), ...(data.parts.ordersActive?.rows || []), ...(data.parts.ordersWeek?.rows || [])]} runners={r.runnerTable} stores={r.storeTable}/>
+        {(() => {
+          const jobs = ROUTINES[0].items, done = jobs.filter(([id]) => routineDone('day', id)).length;
+          return <button className="rc-jobs" onClick={() => { setTab('handbook'); setTimeout(() => goTo('rc-r-day'), 80); }}><b>Today's jobs: {done} of {jobs.length} done</b><span>{done < jobs.length ? `Next: ${jobs.find(([id]) => !routineDone('day', id))[1]}` : 'All done for today.'}</span></button>;
+        })()}
         <section className="card rc-sec" id="sec-today">
           <header><span className="rc-dot good"/><h3>Today at a glance</h3><Help>Totals since midnight (Jamaica time), each against the same time yesterday, so you can see whether today is busier or quieter than normal.</Help></header>
           {r.today.ok ? <div className="rc-tiles">{r.today.tiles.map(t => <div key={t.label} className={`fin-tile ${t.bad ? 'rc-bad' : ''}`}><span>{t.label}</span><b>{t.value}</b><span className="fin-delta">{t.note}</span></div>)}</div>
             : <p className="rc-item unknown rc-plain">{r.today.note}</p>}
+          {r.today.ok && <p className="rc-small">How they came in: {r.orderMix.filter(([, n]) => n > 0).map(([w, n]) => `${w} ${n}`).join(' · ') || 'no orders yet'}. An order can count in more than one of these.</p>}
         </section>
 
       {/* ── Orders ─────────────────────────────────────────────────────── */}
       <Section s={r.sections[0]} extra={r.cancellations.length > 0 && (
         <div className="rc-sub"><h4>Today's cancellations</h4>
           <ul className="rc-list">{r.cancellations.map(([w, n]) => <li key={w}><b>{n}</b> {w}</li>)}</ul>
-          <p className="rc-small">Runner admin has no Orders page yet, so nobody can look up or cancel an order there. An emergency cancel uses the steps in "An order must be cancelled" in the Handbook.</p></div>)}/>
+          <p className="rc-small">Runner admin has no Orders page. Look an order up with Find an order above.</p></div>)}/>
       </>)}
 
       {tab === 'trading' && <Trading T={r.trading} launchDate={launchDate}/>}
@@ -548,8 +701,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
                   <small>Value of every card redeemed so far, all time. Each seller owes you this in cash, less what they have already handed over.</small></div>
                 <div><span>Admin runners: cash for coins sold</span><b>{trust ? J(coinCash) : "couldn't check"}</b>
                   <small>{coinRunners.length ? `${coinRunners.reduce((t, x) => t + (Number(x.balanceJmd) || 0), 0).toLocaleString('en-US')} coins still in their stock.` : 'No admin runner has coins yet.'}</small></div>
-                <div><span>Bank transfers to verify</span><b>{trust ? (trust.transfers || []).length : "couldn't check"}</b>
-                  <small>{(trust?.transfers || []).length ? `${J((trust.transfers).reduce((t, x) => t + (Number(x.amountJmd) || 0), 0))} from WhatsApp customers who are waiting. Approve in Runner admin.` : 'Nobody is waiting.'}</small></div>
+                <div><span>Bank transfers to verify</span><b>{r.transfers.ok ? r.transfers.waiting.length : "couldn't check"}</b>
+                  <small>{r.transfers.waiting.length ? `${J(r.transfers.total)} from WhatsApp customers who are waiting. Approve in Runner admin.` : 'Nobody is waiting.'}</small></div>
                 <div><span>Cash orders not paid</span><b>{unpaidCash === null ? "couldn't check" : J(unpaidCash)}</b>
                   <small>Logged by runners and stores; details in Cash &amp; referrals.</small></div>
               </div>
@@ -605,12 +758,14 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         </Fold>
         <Fold id="rc-hours" title="Hour by hour, last 7 days" note="which hours need more runners booked"><HourChart hourly={r.hourly}/></Fold>
         <Fold id="rc-stores" title="Stores" note={`${r.live.storesOpen} of ${plural(r.live.stores, 'store')} open`}>
-          <table className="rc-table"><thead><tr><th>Store</th><th>Now</th><th>Hours</th><th>Tablet</th><th>Alerts</th><th>Pickup</th><th>Float</th><th>Menu</th></tr></thead>
+          <table className="rc-table"><thead><tr><th>Store</th><th>Phone</th><th>Now</th><th>Hours</th><th>Tablet</th><th>Alerts</th><th>Pickup</th><th>Float</th><th>Menu</th><th>Batch</th></tr></thead>
             <tbody>{r.storeTable.map(x => (
               <tr key={x.id} className={!x.isOpen && x.hoursSay === true ? 'warn' : ''}><td><a href={`${data.adminUrl}/manage-store/${x.id}`} target="_blank" rel="noreferrer">{x.name}</a></td>
+                <td>{x.phone ? <a href={`tel:${x.phone}`}>{x.phone}</a> : <em>not set</em>}</td>
                 <td>{x.isOpen ? <span className="rc-on">open</span> : 'closed'}{!x.isOpen && x.hoursSay === true && <em> (hours say open)</em>}</td><td>{x.hours || <em>not set</em>}</td>
                 <td>{x.tablet ? 'yes' : <em>no login</em>}</td><td>{x.tablet ? (x.alerts ? 'on' : <em>off</em>) : '–'}</td><td>{x.pickup ? 'on' : 'off'}</td><td>{x.float === null ? '–' : J(x.float)}</td>
-                <td>{x.menu ? plural(x.menu, 'item') : <em>empty</em>}{x.noPhoto ? `, ${x.noPhoto} no photo` : ''}{x.noPrice ? `, ${x.noPrice} price 0` : ''}{x.soldOut ? `, ${x.soldOut} sold out` : ''}</td></tr>))}</tbody></table>
+                <td>{x.menu ? plural(x.menu, 'item') : <em>empty</em>}{x.noPhoto ? `, ${x.noPhoto} no photo` : ''}{x.noPrice ? `, ${x.noPrice} price 0` : ''}{x.soldOut ? `, ${x.soldOut} sold out` : ''}{x.noThumb ? `, ${x.noThumb} no small copy` : ''}</td>
+                <td>{!x.batch ? '–' : `${x.slots.join(', ') || 'no times'}${x.daily ? ` · ${x.dishesToday === null ? 'dishes unknown' : plural(x.dishesToday, 'dish', 'dishes')} today` : ''}`}</td></tr>))}</tbody></table>
           <p className="rc-small">Stores sign in on their own tablet (tabs: Orders, Kitchen, Menu, Today). Order alerts go only to that tablet.</p>
         </Fold>
         <Fold id="rc-students" title="Students" note={r.students.ok ? `${r.students.days.reduce((t, d) => t + d.signups, 0)} sign-ups this week` : "couldn't check"}>
@@ -618,7 +773,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             <table className="rc-table"><thead><tr><th>Day</th><th>Sign-ups</th><th>New students' first orders</th></tr></thead>
               <tbody>{r.students.days.map(d => <tr key={d.day}><td>{d.day}</td><td>{d.signups}</td><td>{d.firstOrders}</td></tr>)}</tbody></table>
           ) : <p className="rc-item unknown rc-plain">Couldn't check sign-ups this time.</p>}
-          <p className="rc-small">If sign-ups rise but first orders don't, students are curious but not ordering. Support requests arrive by email: {ext('open the inbox', INBOX)}. A problem account is paused with Deactivate in Runner admin → Users; it signs them out everywhere within an hour.</p>
+          <p className="rc-small">If sign-ups rise but first orders don't, students are curious but not ordering. Support requests arrive by email: {ext('open the inbox', INBOX)}. A problem account is paused with Deactivate in Runner admin → Users; it signs them out everywhere within an hour. Deleting is done by the person themselves: Profile → Account controls → Delete account.</p>
           <h4>Deletion requests (Runner promises to act within 30 days)</h4>
           <ul className="rc-list">{local.deletions.map(d => { const left = Math.ceil((d.at + 30 * 86400000 - nowT) / 86400000); return (
             <li key={d.id} className={d.done ? 'done' : left < 7 ? 'warn' : ''}><label><input type="checkbox" checked={!!d.done} onChange={() => setLocal(l => ({ deletions: l.deletions.map(x => (x.id === d.id ? { ...x, done: x.done ? null : Date.now() } : x)) }))}/> {d.who || 'A student'} · asked {jmDate(d.at)} · {d.done ? 'done' : left < 0 ? `${-left} days overdue` : `${left} days left`}</label></li>); })}
@@ -635,13 +790,27 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
 
       {/* ── Is it running ──────────────────────────────────────────────── */}
       {tab === 'running' && <Section s={r.sections[3]}>
+        <div className="rc-sub" id="rc-shipping"><h4>Waiting to go live</h4>
+          <div className="rc-facts">
+            <div><span>Work not saved to the code history</span><b>{r.shipping.unsaved === null ? "couldn't check" : plural(r.shipping.unsaved, 'file')}</b><small>{r.shipping.unsaved ? 'Finished or half-finished changes in the Runner folder. They are not live, and can\'t be until they are committed and deployed.' : 'Nothing is sitting unsaved.'}</small></div>
+            <div><span>Website and server</span><b>{r.shipping.behind ? 'behind the code' : r.shipping.liveAt ? 'up to date' : "couldn't check"}</b><small>{r.shipping.liveAt ? `Last live ${jmDate(r.shipping.liveAt)} ${jmTime(r.shipping.liveAt)}.` : ''}{r.shipping.codeAt ? ` Newest saved code ${jmDate(r.shipping.codeAt)} ${jmTime(r.shipping.codeAt)}.` : ''}</small></div>
+            <div><span>Database rules</span><b>{r.shipping.firestoreRulesAt ? `live ${jmDate(r.shipping.firestoreRulesAt)}` : "couldn't check"}</b><small>Decide what the app may read and write.</small></div>
+            <div><span>Photo rules</span><b>{r.shipping.storageRulesAt ? `live ${jmDate(r.shipping.storageRulesAt)}` : "couldn't check"}</b><small>{r.shipping.storageEnforced === null ? 'App Check for photos: couldn\'t check.' : r.shipping.storageEnforced ? 'App Check is enforced on photos: phone apps would be refused.' : 'App Check isn\'t enforced on photos, so phone apps can upload.'}</small></div>
+          </div>
+          <p className="rc-small">The steps are in the How to tab under "Put a new version live".</p>
+        </div>
+        <Fold id="rc-features" title="What is switched on" note={`${r.features.filter(f => f.state === 'on').length} of ${r.features.length} on`} open>
+          <table className="rc-table"><thead><tr><th>Feature</th><th>State</th><th>What that means</th></tr></thead>
+            <tbody>{r.features.map(f => <tr key={f.name}><td>{f.name}</td><td>{f.state === 'on' ? <span className="rc-on">on</span> : f.state}</td><td>{f.note}</td></tr>)}</tbody></table>
+          <p className="rc-small">Read from Runner's folder, so a switch changed there but not deployed shows here before it is live.</p>
+        </Fold>
         <div className="rc-facts">
           <div><span>App Check: verified share, last 7 days</span>{k.appCheck.length ? k.appCheck.map(a => <b key={a.label}>{a.label}: {a.share === null ? 'no traffic' : `${a.share}%`} <em>{a.enforced ? 'enforced' : a.share !== null && a.share >= 98 ? 'safe to enforce once it holds 98% for a week' : 'not safe to enforce yet'}</em></b>) : <b>couldn't check</b>}
             <small>The server's own functions already refuse requests without proof. The database and sign-in are only watched until verified traffic stays at 98% or more for a week. Before the Android app ships, App Check must be set up for it too.</small></div>
           <div><span>Last deploy</span><b>{k.release?.at ? `${jmDate(k.release.at)} ${jmTime(k.release.at)}` : "couldn't check"}</b><small>{k.release?.by ? `by ${k.release.by}` : ''}{k.release?.message ? ` · "${k.release.message}"` : ' · no change-log line'}{k.server ? ` · server updated ${jmDate(k.server)}` : ''}</small></div>
           <div><span>Newest code in Runner's folder</span><b>{k.code ? `${jmDate(k.code.at)} ${jmTime(k.code.at)}` : "couldn't check"}</b><small>{k.code ? `"${k.code.message}"` : ''}</small></div>
           <div><span>Database backups</span><b>{k.backups ? (k.backups.last ? `last one ${jmDate(k.backups.last)}` : 'none yet') : "couldn't check"}</b><small>{k.backups?.scheduled ? 'A daily backup is scheduled.' : k.backups ? 'No daily backup is scheduled.' : ''}</small></div>
-          <div><span>WhatsApp assistant, this month</span><b>{r.bot.ok ? `${r.bot.messages.toLocaleString('en-US')} messages · about US$${r.bot.usd.toFixed(2)}` : "couldn't check"}</b><small>AI cost only, worked out from the tokens used. WhatsApp's own charges are separate. Limit: 3,000 messages a day.</small></div>
+          <div><span>WhatsApp assistant, this month</span><b>{r.bot.ok ? `${r.bot.messages.toLocaleString('en-US')} messages · about US$${r.bot.usd.toFixed(2)}` : "couldn't check"}</b><small>Today: {plural(r.bot.ordersToday, 'order')}, {plural(r.bot.guestsToday, 'guest order')}, {J(r.bot.guestCash)} guest cash at risk of the J$50,000 limit. AI cost only, worked out from the tokens used. WhatsApp's own charges are separate. Limit: 3,000 messages a day.</small></div>
           <div><span>Google Cloud billing</span><b>{k.billing ? (k.billing.enabled ? 'on' : 'OFF') : "couldn't check"}</b><small>{ext('Open billing reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}</small></div>
           <div><span>Budget alert</span><b>{k.budgets ? (k.budgets.length ? k.budgets.map(b => `${b.currency} ${b.amount}`).join(', ') : 'none set') : 'not connected'}</b>
             <small>{k.budgets ? 'Recommended: US$25 a month.' : <>The console can't see budgets until Google's Budget API is switched on for Runner. {ext('Switch it on', `https://console.cloud.google.com/apis/library/billingbudgets.googleapis.com?project=${project}`)}, then {ext('set a US$25 budget', `https://console.cloud.google.com/billing/budgets?project=${project}`)}.</>}</small></div>
@@ -654,7 +823,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         </Fold>
         <Fold id="rc-cost" title="What it costs to keep running" note="about US$11 to 13 a month with no orders">
           <table className="rc-table"><thead><tr><th>Item</th><th>Monthly</th></tr></thead><tbody>
-            {[['Server copy kept awake for orders', 'about US$10'], ['The 5-minute clean-up', 'US$0 to 2'], ['Stored server images', 'under US$1'], ['Hosting, database, file storage, secrets, monitoring', 'US$0 within free limits'], ['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, once bought', 'about US$1']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>
+            {[['Server copy kept awake for orders', 'about US$10'], ['The 5-minute clean-up', 'US$0 to 2'], ['Stored server images', 'under US$1'], ['Hosting, database, file storage, secrets, monitoring', 'US$0 within free limits'], ['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, uwi-runner.online', 'about US$1'], ['WhatsApp assistant, once live', 'AI cost shows above, plus Meta\'s charges']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>
           <p className="rc-small">Everything else grows with use: maps, the bot check above 10,000 checks a month, hosting traffic and database reads. Spend so far this month is only in Google's {ext('billing reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}; the console can't read it without a billing export. A budget alert is what stops a runaway bug costing hundreds.</p>
         </Fold>
         <Fold id="rc-speed" title="Speed on real phones" note={!r.speed.ok ? "couldn't check" : r.speed.n ? `${plural(r.speed.n, 'visit')} this week` : 'no reports yet'}>
@@ -738,9 +907,14 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         {[
           ['site-down', 'The website is down', ['Open the site on a phone, on mobile data. If it works, the problem is local.', <>Check {ext('status.firebase.google.com', 'https://status.firebase.google.com')} for a Google outage.</>, <>Check Google Cloud {ext('billing', `https://console.cloud.google.com/billing/linkedaccount?project=${project}`)} is active; a failed card suspends everything.</>, <>If it broke right after a deploy, roll back the website: {ext('Firebase → Hosting', `https://console.firebase.google.com/project/${project}/hosting/sites/${project}`)} → Release history → the previous release → Rollback. You can do this.</>, 'Tell the developer, with the time it started.']],
           ['piling', 'Orders are piling up and nobody takes them', ['Check runners online. If 0, message the runners\' group now.', 'If runners are online, ask in the group whether the orders show on their phones. If not, they close and reopen Runner.', 'If many stores are open with no runners, ask stores to switch to closed until runners arrive.', 'Orders left 30 minutes are cancelled by the server, and nobody is charged.']],
-          ['cancel', 'An order must be cancelled', ['Until Runner admin has an Orders page, this is done in the Firebase console, and only for an order not yet delivered.', <>Open {ext('Firebase → Firestore Database → orders', `https://console.firebase.google.com/project/${project}/firestore/databases/-default-/data/~2Forders`)}.</>, 'Find the order: its ID ends with the 6-character order code.', 'Edit two fields: status to cancelled; add cancelReason as text admin.', 'Change nothing else. The server then returns the student\'s money and tells the student and runner.', 'Within a minute the order should show Cancelled here. If it does not, tell the developer.']],
+          ['cancel', 'An order must be cancelled', ['Confirmed and still in progress: don\'t use these steps. Use the reversal under Cash & referrals, which refunds the customer and logs why.', 'Not confirmed yet: it usually cancels by itself, or the customer can cancel it. The steps below are only for when it must stop now.', <>Open {ext('Firebase → Firestore Database → orders', `https://console.firebase.google.com/project/${project}/firestore/databases/-default-/data/~2Forders`)}.</>, 'Find the order: its ID ends with the 6-character order code.', 'Edit two fields: status to cancelled; add cancelReason as text admin, spelled exactly like that.', 'Change nothing else. The server then releases the student\'s coins and tells the student and runner.', 'Within a minute the order should show Cancelled here. If it does not, tell the developer.']],
           ['paid-nothing', 'A student says they paid but nothing happened', [<>Coins: {ext('Runner admin → Users', `${data.adminUrl}/users`)} → the student. Their coin history shows every payment and refund.</>, <>Card (once Fygaro is on): {ext('Board → "Card payments to check"', `${data.adminUrl}/dashboard`)}. Compare with the Fygaro dashboard before pressing Paid.</>, 'If the order was cancelled after they paid, the money is already in their wallet as coins. Tell them.']],
-          ['store-missed', 'A store did not get an order', ['Ask the store to open the Orders tab on its tablet. Orders always show there, even if the notification did not.', 'If nothing shows, sign out and back in on the tablet, and allow notifications when asked.', <>Check the store has a tablet login in {ext('Runner admin → Stores', `${data.adminUrl}/stores`)} → the store → Store access.</>]],
+          ['held-refund', 'A refund is held', ['A confirmed order was cancelled outside the approved ways, so Runner did not refund it by itself.', 'Decide whether the customer should be paid back. Reversal can\'t be used now, because the order is already cancelled.', <>If yes, {ext('Runner admin → Users', `${data.adminUrl}/users`)} → the customer → Adjust Runner coins, with the order code in the note.</>, 'Press "Sorted, hide it" on the alert.']],
+          ['delete-account', 'Someone wants their account deleted', ['Runner admin has no delete button.', 'Ask them to open Profile → Account controls → Delete account.', 'If they can\'t sign in, send the request to the developer.', 'Tick it done under People → Students.']],
+          ['transfer', 'A bank transfer needs checking', ['Open the bank app and find the money. Never go by the picture alone.', <>{ext('Runner admin → Bank transfers', `${data.adminUrl}/transfers`)}: enter the amount that really arrived and the bank's reference.</>, 'Approved: the money becomes coins and pays for the order. If the food has gone, it stays on their balance, so no refund is needed.', 'Not in the bank: reject it. The bot tells the customer.']],
+          ['bot', 'The WhatsApp assistant has a problem', ['Customer asked for a person: reply from Runner\'s WhatsApp Business account. Admins got the full number by notification.', 'It stopped answering: look for onWhatsappMessage or whatsappWebhook under "Every server function" and send the error to the developer. An expired Meta token is the usual cause.', 'Customers are always told they can still order on the website, so nothing is lost while it is fixed.']],
+          ['daily-menu', 'A batch kitchen has no menu today', ['Open the store\'s WhatsApp message for today.', <>{ext('Runner admin → Stores', `${data.adminUrl}/stores`)} → the store → today\'s menu: switch on each dish and enter the plates.</>, 'If it isn\'t cooking today, close it so students aren\'t waiting.']],
+          ['store-missed', 'A store did not get an order', ['Ask the store to open the Orders tab on its tablet. Orders always show there, even if the notification did not.', 'If nothing shows, sign out and back in on the tablet, and allow notifications when asked.', <>Check the store has a tablet login in {ext('Runner admin → Stores', `${data.adminUrl}/stores`)} → the store → Pickup, water runs and store logins.</>]],
           ['misuse', 'Someone is misusing an account', [<>{ext('Runner admin → Users', `${data.adminUrl}/users`)} → the account → Deactivate. It signs them out everywhere within an hour.</>, <>If it is an admin account, also disable it in {ext('Firebase → Authentication', `https://console.firebase.google.com/project/${project}/authentication/users`)}, then change its password.</>, 'Note what happened and tell the developer.']],
           ['appcheck-blocked', 'Users are blocked after switching on App Check', [<>{ext('Firebase → App Check → APIs', `https://console.firebase.google.com/project/${project}/appcheck/apis`)}: press Unenforce on the database or sign-in. It takes effect within minutes.</>, 'For the server\'s functions, the developer sets APP_CHECK_ENFORCE=false and redeploys.']],
           ['bill', 'The bill jumped', [<>{ext('Google Cloud → Billing → Reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}: group by service to see which one grew.</>, 'If it is still growing by the hour, tell the developer at once: it may be a loop.']],
@@ -751,7 +925,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
       {/* ── When the software changes ──────────────────────────────────── */}
       <Fold id="rc-changes" title="When the software changes" note={k.release?.at ? `last deploy ${jmDate(k.release.at)}` : ''}>
         <table className="rc-table"><thead><tr><th>Job</th><th>Owner (you)</th><th>Developer</th></tr></thead><tbody>
-          {[['Decide what changes and when', 'Yes', 'Advises'], ['Change the code, run the checks', 'No', 'Yes'], ['Put a version live (deploy)', 'Approves the time', 'Runs it'], ['Roll the website back to the last version', 'Yes, in Firebase Hosting', 'Yes'], ['Change settings in Firebase or Google Cloud', 'Yes, from a written step', 'Writes the step']].map(r2 => <tr key={r2[0]}>{r2.map(c => <td key={c}>{c}</td>)}</tr>)}</tbody></table>
+          {[['Decide what changes and when', 'Yes', 'Advises'], ['Change the code, run the checks', 'No', 'Yes'], ['Put a version live (deploy)', 'Yes, with the How to steps', 'Yes'], ['Roll the website back to the last version', 'Yes, in Firebase Hosting', 'Yes'], ['Change settings in Firebase or Google Cloud', 'Yes, from a written step', 'Writes the step']].map(r2 => <tr key={r2[0]}>{r2.map(c => <td key={c}>{c}</td>)}</tr>)}</tbody></table>
         <ol className="rc-steps">
           <li>The change goes into GitHub, where the automatic checks run. A red check means it does not go live.</li>
           <li>It goes live in a quiet hour: never 11 am to 2 pm, never during exams, never the day before an event.</li>
@@ -765,7 +939,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <div><span>Automatic checks on the newest code</span><b>not connected</b><small>Needs a GitHub sign-in on this Mac, which the console does not have. See them on {ext('GitHub', 'https://github.com/JadanSpencer/Runner/actions')}.</small></div>
           <div><span>Updates waiting (monthly round)</span><b>not connected</b><small>Dependabot's list is on {ext('GitHub', 'https://github.com/JadanSpencer/Runner/security/dependabot')}. Once a year the app framework (Expo 54) needs a bigger upgrade, planned for a holiday.</small></div>
         </div>
-        <p className="rc-small">One question on every Runner change: "Does this change anything the control room reads?" If yes, the control room is updated the same day, along with RUNNER_CONTEXT.md in the console folder. Expected: card payments switched on (turn on card alerts, add a daily Fygaro match), Runner's own domain (read automatically from Runner's settings), the Android app (show versions, watch App Check for Android), App Check enforced on the database (already turns red below 90%), an Orders page in Runner admin (point "cancel it" there).</p>
+        <p className="rc-small">One question on every Runner change: "Does this change anything the control room reads?" If yes, the control room is updated the same day, along with RUNNER_CONTEXT.md in the console folder. Expected: card payments switched on (turn on card alerts, add a daily Fygaro match), the Android app (show versions, watch App Check for Android), App Check enforced on the database (already turns red below 90%), an Orders page in Runner admin (point "cancel it" there).</p>
       </Fold>
 
       <Fold id="rc-words" title="Words you will see" note="plain meanings">
@@ -775,7 +949,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
 
       </>)}
 
-      <p className="rc-foot">Read-only: this screen never changes anything in Runner, never deploys and never asks for a key. {data.ok ? `This check read about ${data.reads} records from Runner's database` : ''} (stores, runners and Google's status pages are re-read every 10 minutes; past days every hour). Order names, phone numbers and emails of students are never read; runner names and phones are, so you can call them.</p>
+      <p className="rc-foot">This screen only changes Runner when you press a button under Cash &amp; referrals or use a reversal. It never deploys and never asks for a key. {data.ok ? `This check read about ${data.reads} records from Runner's database` : ''} (stores, runners and Google's status pages are re-read every 10 minutes; past days every hour). Students' phone numbers, emails and addresses are never read. Names are read only for the cash list; runner names and phones are read so you can call them.</p>
     </div>
   );
 }

@@ -11,7 +11,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
 const dns = require('dns').promises;
-const { ops, ownerAction } = require('./ops');
+const { ops, ownerAction, findOrder } = require('./ops');
 
 const SHELL = '/bin/zsh'; // login shell, so npm/firebase are on PATH when launched from Finder
 
@@ -313,6 +313,7 @@ function register(getWindow) {
   ipcMain.handle('venture:ops', (_e, { project, dir } = {}) => ops(project, dir, cliToken));
   // The control room's only writes, through Runner's own checked endpoint
   ipcMain.handle('venture:ownerAction', (_e, { project, body } = {}) => ownerAction(project, cliToken, body));
+  ipcMain.handle('venture:findOrder', (_e, { project, query } = {}) => findOrder(project, cliToken, query));
   ipcMain.handle('venture:pick', async () => {
     const r = await dialog.showOpenDialog(getWindow(), { properties: ['openDirectory'], message: 'Choose the project folder' });
     return r.canceled ? null : r.filePaths[0];
