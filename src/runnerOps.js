@@ -763,7 +763,9 @@ export function judgeRunner(data, local = {}) {
   const month = jmDate(now).slice(0, 7);
   const botDays = (P.whatsappStats?.ok ? P.whatsappStats.rows : []).filter(d => String(d.id).startsWith(month));
   const botSum = k => botDays.reduce((t, d) => t + (Number(d[k]) || 0), 0);
-  const bot = { ok: !!P.whatsappStats?.ok, messages: botSum('messages'), usd: (botSum('inputTokens') * 4 + botSum('outputTokens') * 20 + botSum('cacheReadTokens') * 0.2) / 1e6 };
+  const bot = { ok: !!P.whatsappStats?.ok, messages: botSum('messages'), usd: (botSum('inputTokens') * 4 + botSum('outputTokens') * 20 + botSum('cacheReadTokens') * 0.2 + botSum('cacheWriteTokens') * 8) / 1e6 };
+  const lessonRows = P.botLessons?.ok ? P.botLessons.rows : [];
+  bot.lessons = { ok: !!P.botLessons?.ok, draft: lessonRows.find(d => d.id === 'draft' && d.status === 'waiting') || null, live: lessonRows.find(d => d.id === 'live') || null };
 
   const botToday = (P.whatsappStats?.ok ? P.whatsappStats.rows : []).find(d => d.id === jmDate(now));
   bot.today = Number(botToday?.messages) || 0;
@@ -946,6 +948,12 @@ export function judgeRunner(data, local = {}) {
       B('wa-bank', 'Bank details set', 'WA_BANK_DETAILS in Runner\'s settings. Until then the bot can\'t offer bank transfer.'),
       B('wa-test', 'About 30 real test conversations on a test phone', 'Jamaican phrasing, typos, voice notes, changed minds. The AI has only ever been tested with a stand-in.'),
       B('wa-thumbs', 'Make small copies of older menu photos', 'After deploying, the developer runs node scripts/backfill-thumbnails.mjs --write.', auto('wa-thumbs', menuItems.length ? menuItems.every(m => !m.hasPhoto || m.hasThumb) : null, `${menuItems.filter(m => m.hasPhoto && !m.hasThumb).length} photos still need one.`)),
+      B('wa-keys-own', 'Re-enter the WhatsApp keys for Runner\'s own number', 'The keys in place were set on 30 Oct, before Runner had its own number. Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID again, then run npm run deploy:all.'),
+      B('wa-first-msg', 'One test message: only Runner\'s bot answers', 'Send it from a test phone after the webhook is set. D&D\'s bot must stay silent.'),
+      B('wa-templates', 'The four message templates approved by Meta', 'Then have WA_TEMPLATES_APPROVED set to true in Runner and put live.'),
+      B('wa-show', 'Show "Order on WhatsApp" on the website', 'Last step, after the test conversations. How to → Show or hide "Order on WhatsApp" in the app.'),
+      B('wa-show-phone', 'Show "Order on WhatsApp" in the phone apps', 'Set EXPO_PUBLIC_WHATSAPP_NUMBER on expo.dev under Environment variables, then make a new build. Only needed once the phone apps ship.'),
+      B('photo-test', 'Upload one real menu photo on the live site', 'Runner admin → Stores → Menu items. Ticks itself once a menu item has a photo.', auto('photo-test', menuItems.some(m => m.hasPhoto) || null, 'No menu item has a photo yet.')),
       B('wa-kitchen', 'Social Welfare set up as a batch kitchen', 'Runner admin → the store: daily menu, pickup times, label printer and tablet ready.', auto('wa-kitchen', stores.some(s => s.dailyMenu === true) || null, 'No store is on a daily menu yet.')),
     ] },
     { title: 'Test it like a student', items: [

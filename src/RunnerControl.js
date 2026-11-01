@@ -193,6 +193,39 @@ function StoreSteps() {
   );
 }
 
+/** What the WhatsApp assistant wants to learn. Nothing reaches it until the owner approves. */
+function BotLessons({ lessons, project, api, refresh }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const decide = async decision => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    const r = await api.ownerAction(project, { action: 'botLessons', decision });
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: decision === 'approve' ? 'The assistant now uses these lessons.' : decision === 'clear' ? 'Lessons cleared.' : 'Lessons turned down.' } : { ok: false, text: r.error });
+    if (r.ok) refresh();
+  };
+  if (!lessons?.ok) return <p className="rc-why">Couldn't read the assistant's lessons this time.</p>;
+  const live = String(lessons.live?.text || '').split('\n').filter(Boolean);
+  const draft = String(lessons.draft?.text || '').split('\n').filter(Boolean);
+  return (<>
+    {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
+    {draft.length ? <>
+      <p className="rc-why">New lessons from {lessons.draft.turns} messages. If you approve them, they replace the lessons below. Check nothing here looks wrong.</p>
+      <ul>{draft.map((l, i) => <li key={i}>{l}</li>)}</ul>
+      <div className="rc-actions">
+        <button className="btn-ghost rc-go" disabled={busy} onClick={() => decide('approve')}>Approve</button>
+        <button className="btn-ghost rc-go" disabled={busy} onClick={() => decide('reject')}>Turn down</button>
+      </div>
+    </> : <p className="rc-why">Nothing waiting. The assistant reviews its chats every 3 days, once it has at least 20 new messages.</p>}
+    <p className="rc-why">In use now: {live.length ? '' : 'no lessons yet.'}</p>
+    {live.length ? <>
+      <ul>{live.map((l, i) => <li key={i}>{l}</li>)}</ul>
+      <div className="rc-actions"><button className="btn-ghost rc-go" disabled={busy} onClick={() => decide('clear')}>Clear all lessons</button></div>
+    </> : null}
+  </>);
+}
+
 function Fold({ id, title, note, children, open = false }) {
   return (
     <details className="rc-fold" id={id} open={open}>
@@ -815,6 +848,9 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <div><span>Budget alert</span><b>{k.budgets ? (k.budgets.length ? k.budgets.map(b => `${b.currency} ${b.amount}`).join(', ') : 'none set') : 'not connected'}</b>
             <small>{k.budgets ? 'Recommended: US$25 a month.' : <>The console can't see budgets until Google's Budget API is switched on for Runner. {ext('Switch it on', `https://console.cloud.google.com/apis/library/billingbudgets.googleapis.com?project=${project}`)}, then {ext('set a US$25 budget', `https://console.cloud.google.com/billing/budgets?project=${project}`)}.</>}</small></div>
         </div>
+        <Fold id="rc-bot-lessons" title="What the WhatsApp assistant has learned" note={r.bot.lessons?.draft ? 'New lessons waiting for you' : 'Nothing waiting'} open={!!r.bot.lessons?.draft}>
+          <BotLessons lessons={r.bot.lessons} project={project} api={api} refresh={() => { store.last = 0; refresh(); }} />
+        </Fold>
         <Fold id="rc-fns" title="Every server function" note={!r.fnHealth.ok ? "couldn't check" : `${plural(r.fnHealth.rows.length, 'function')}, ${plural(r.fnHealth.rows.filter(f => f.errors).length, 'with errors')} in 24 hours`}>
           <p className="rc-small">Each of Runner's server functions, whether it is running, and its errors over the last 24 hours. Any error also emails you (at most once every 30 minutes) once the alerts are set up: node scripts/setup-alerts.mjs jcommerceandtech@gmail.com in the Runner folder.{r.fnHealth.more ? ' Only the newest 500 errors are counted.' : ''}{!r.fnHealth.errorsOk ? ' The error counts could not be read this time.' : ''}</p>
           <table className="rc-table"><thead><tr><th>Function</th><th>State</th><th>Kind</th><th>Errors, 24 h</th><th>Newest error</th></tr></thead>

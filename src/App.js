@@ -285,7 +285,7 @@ const XP_STAMPS_FROM = '2026-10-29';
 // never reach back before that day, and nothing is ever taken for today:
 // penalties only land once a day, week or month is over.
 const XP_STRICT_FROM = '2026-10-09';
-function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], debtDays = {}, fresh = {}, serviceRounds = [], controlTicks = [] }) {
+function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], timers = [], ventureChecks = [], courses = [], ventureItems = [], ventures = [], finances = [], budgets = [], debts = [], fresh = {}, serviceRounds = [], controlTicks = [] }) {
   // A fresh start (settings/xpFresh) counts nothing before its day. Focus time and
   // study topics keep no dates, so those count only what was added after it.
   const since = fresh.since || '';
@@ -383,9 +383,6 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
   // Control room: +5 for each routine ticked in a venture's control room (daily, weekly, monthly, term)
   row('Control room', 'ventures', controlTicks.filter(c => (c.date || '') >= newFrom).length * XP_PER_ROUTINE, 0, `+${XP_PER_ROUTINE} a control-room routine done`);
 
-  // In the red: every day the total sits below zero costs 100 more, whatever else happens
-  const red = Object.keys(debtDays).filter(d => debtDays[d] && d >= since).length;
-  if (red) row('In the red', 'dashboard', 0, red * 100, '−100 XP for every day your total is below zero');
   return rows;
 }
 // No floor: XP can go below zero, and the levels follow it down
@@ -1883,14 +1880,12 @@ function App() {
   const profit     = totalIncome - totalExpenses;
   // paidLeads and openLeads passed as props from App useMemo
   const habitsToday = habits.length ? Math.round(habits.filter(h=>h.completions?.[todayStr]).length/habits.length*100) : 0;
-  const debtDoc = settings.find(x => x.key === 'xpDebt');
   const freshDoc = settings.find(x => x.key === 'xpFresh');
-  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, debtDays: debtDoc?.days || {}, fresh: freshDoc || {}, serviceRounds, controlTicks };
+  const xpData = { habits, leads, todos, todayStr, goals, journal, timers, ventureChecks, courses, ventureItems, ventures, finances, budgets, debts, fresh: freshDoc || {}, serviceRounds, controlTicks };
   // Fresh start: XP counts again from 0, from today. History is kept; only the score restarts.
-  // Days already charged for being in the red are cleared too, so the score really is 0.
+  // createdAt matters: settings load ordered by it, and a doc without it never reaches the app.
   const freshStart = async () => {
-    await setDoc(doc(db, 'settings', 'xpFresh'), { key: 'xpFresh', since: todayStr, focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr), at: serverTimestamp() });
-    await setDoc(doc(db, 'settings', 'xpDebt'), { key: 'xpDebt', days: {}, lastSeen: todayStr, lastNegative: false, createdAt: debtDoc?.createdAt || serverTimestamp() });
+    await setDoc(doc(db, 'settings', 'xpFresh'), { key: 'xpFresh', since: todayStr, focusBase: focusXP(timers, todayStr), studyBase: studyXP(courses, timers, todayStr), at: serverTimestamp(), createdAt: freshDoc?.createdAt || serverTimestamp() });
   };
   // A fresh start saved without its baselines (for example from outside the app) gets them here,
   // from the same day's data, so focus and study time from before it don't count.
@@ -1901,19 +1896,6 @@ function App() {
   const ledger = xpLedger(xpData);
   const xp = calcXP(xpData);
   const { level, progress, xpInLevel, inRed } = xpToLevel(xp);
-  // Every day the total is below zero is charged once. If it was below zero when the
-  // console was last open, the days in between were too. Only runs on fully loaded data.
-  useEffect(() => {
-    if (loading) return;
-    const days = { ...(debtDoc?.days || {}) }, last = debtDoc?.lastSeen, wasRed = !!debtDoc?.lastNegative;
-    let added = false;
-    if (xp < 0) {
-      if (wasRed && last) for (let d = addDays(last, 1); d < todayStr; d = addDays(d, 1)) if (!days[d]) { days[d] = true; added = true; }
-      if (!days[todayStr]) { days[todayStr] = true; added = true; }
-    }
-    if (added || last !== todayStr || wasRed !== (xp < 0))
-      setDoc(doc(db, 'settings', 'xpDebt'), { key: 'xpDebt', days, lastSeen: todayStr, lastNegative: xp < 0, createdAt: debtDoc?.createdAt || serverTimestamp() }, { merge: true }).catch(() => {});
-  }, [loading, xp < 0, todayStr, debtDoc?.lastSeen, debtDoc?.lastNegative]); // eslint-disable-line react-hooks/exhaustive-deps
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
   useEffect(() => {
@@ -2084,7 +2066,7 @@ function App() {
         const oweNow = debts.filter(d => d.direction === 'owe').reduce((t, d) => t + debtLeft(d), 0), owedNow = debts.filter(d => d.direction === 'owed').reduce((t, d) => t + debtLeft(d), 0);
         if (oweNow) out.push({ t: `You owe ${J(oweNow)}`, tab: 'finance', lv: debts.some(d => d.direction === 'owe' && debtLeft(d) > 0 && d.dueDate && d.dueDate < todayStr) ? 'hot' : '' });
         if (owedNow) out.push({ t: `${J(owedNow)} owed to you`, tab: 'finance' });
-        out.push(inRed ? { t: `In the red: ${-xp} XP to climb out, −100 a day until then`, tab: 'dashboard', lv: 'hot' } : { t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
+        out.push(inRed ? { t: `In the red: ${-xp} XP to climb out`, tab: 'dashboard', lv: 'hot' } : { t: `${500 - xpInLevel} XP to Level ${level + 1}`, tab: 'dashboard' });
         return out;
       })()}/>
 
@@ -2179,11 +2161,11 @@ function App() {
             <span className="nav-key">⌘B</span>
           </button>
         )}
-        <div className={`nav-foot ${inRed ? 'red' : ''}`} title={inRed ? `${levelName(level)} · ${xp} XP · −100 XP every day below zero` : `Level ${level} · ${xpInLevel} / 500 XP`}>
+        <div className={`nav-foot ${inRed ? 'red' : ''}`} title={inRed ? `${levelName(level)} · ${xp} XP` : `Level ${level} · ${xpInLevel} / 500 XP`}>
           <div className="nav-foot-lv">{navMin ? `L${level}` : levelName(level)}</div>
           <div className="nav-rank"><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</div>
           <div className="xp-track"><div className="xp-fill" style={{width:`${progress*100}%`}}/></div>
-          <div className="nav-foot-xp">{inRed ? `${xp} XP · −100/day` : `${xpInLevel} / 500 XP`}</div>
+          <div className="nav-foot-xp">{inRed ? `${xp} XP` : `${xpInLevel} / 500 XP`}</div>
         </div>
       </nav>
 
@@ -2510,7 +2492,7 @@ function Dashboard({ invoices = [], leads, habits, finances, todos, schedule, go
           <span className={`home-lv ${level < 0 ? 'red' : ''}`}>{levelName(level)}</span>
           <span className="home-rank" title={rankOf(level).next ? `${rankOf(level).next.en} at Level ${rankOf(level).next.from}` : 'Top rank'}><b lang="ja">{rankOf(level).jp}</b>{rankOf(level).en}</span>
           <div className="xp-track home-xp"><div className="xp-fill" style={{ width: `${progress * 100}%` }}/></div>
-          <span className={`home-xpn ${xp < 0 ? 'red' : ''}`}>{xp < 0 ? `${xp} XP · in the red, −100 a day` : `${xpInLevel} / 500 XP`}</span>
+          <span className={`home-xpn ${xp < 0 ? 'red' : ''}`}>{xp < 0 ? `${xp} XP · in the red` : `${xpInLevel} / 500 XP`}</span>
         </div>
       </div>
 

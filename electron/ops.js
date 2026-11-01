@@ -265,7 +265,7 @@ async function medium(project, token, ctx, dir) {
   const siteHost = (() => { try { return new URL(address).hostname; } catch { return null; } })();
   const hosts = [...new Set([siteHost, `${project}.web.app`].filter(Boolean))];
   const [stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, sellerApps, botHelp, suggestions, rulesLive, keys] = await Promise.all([
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, botLessons, sellerApps, botHelp, suggestions, rulesLive, keys] = await Promise.all([
     q({ collectionId: 'stores', fields: ['name', 'phone', 'isOpen', 'hours', 'model', 'colorNo', 'estimatedTime', 'offersPickup', 'pickupPointId', 'dailyMenu', 'pickupSlots', 'autoConfirm'], limit: 150 }),
     q({ collectionId: 'storeFloats', fields: ['floatJmd'], limit: 150 }),
     q({ collectionId: 'dashers', fields: ['isOnline', 'floatJmd', 'cashOwedJmd', 'lastSeenAt', 'offlineReason', 'offlineAt', 'activeOrderId', 'activeOrderIds'], limit: 400 }),
@@ -356,7 +356,9 @@ async function medium(project, token, ctx, dir) {
     // Top-up card batches: who holds each, and what has been redeemed (cash the seller owes Runner)
     q({ collectionId: 'topupBatches', fields: ['holder', 'valueJmd', 'count', 'redeemedCount', 'redeemedJmd', 'voidedCount', 'needsActivation', 'activatedAt', 'createdAt'], limit: 300 }),
     // WhatsApp assistant: messages and AI tokens per day (Runner: functions/src/whatsapp.ts)
-    q({ collectionId: 'whatsappStats', fields: ['messages', 'inputTokens', 'outputTokens', 'cacheReadTokens'], limit: 400 }),
+    q({ collectionId: 'whatsappStats', fields: ['messages', 'inputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens'], limit: 400 }),
+    // What the WhatsApp assistant has learned: 'draft' waits for the owner, 'live' is in use (Runner: functions/src/botLearning.ts)
+    q({ collectionId: 'botLearning', fields: ['text', 'status', 'turns', 'createdAt', 'approvedAt'], limit: 5 }),
     // Businesses that asked to sell on Runner, not answered yet
     q({ collectionId: 'sellerApplications', where: cmp('status', 'EQUAL', str('new')), fields: ['createdAt'], limit: 50 }),
     // WhatsApp customers who asked for a person, last hour. Runner logs the last 4 digits of the number only.
@@ -379,7 +381,7 @@ async function medium(project, token, ctx, dir) {
     return { by: Object.fromEntries(lists) };
   });
   return { stores, storeFloats, dashers, runners, storeLogins, admins, errors, pushes, release, functions, policies, billing, backups, lists, url, code,
-    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, sellerApps, botHelp, suggestions, rulesLive, keys, dailyMenus, at: now };
+    launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, botLessons, sellerApps, botHelp, suggestions, rulesLive, keys, dailyMenus, at: now };
 }
 
 async function slow(project, token, ctx) {
