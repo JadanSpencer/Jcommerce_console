@@ -1355,6 +1355,32 @@ const AUTH_ERRORS = {
   'auth/operation-not-allowed':  'Email sign-in isn\'t enabled in the Firebase console yet.',
 };
 
+/** Home's filing shelf: a real folder for each section, kept in its drawer. */
+function OfficeShelf({ items, counts, onOpen }) {
+  const drawers = [...new Set(items.map(n => n.group))];
+  return (
+    <div className="office-shelf">
+      {drawers.map(d => (
+        <section key={d} className="office-drawer-row" aria-label={`${d} folders`}>
+          <h3 className="office-plate">{d}</h3>
+          <div className="office-files">
+            {items.filter(n => n.group === d).map(n => (
+              <button key={n.id} className="office-file" style={{ '--fh': SECTION_HUES[n.id]?.[0] ?? 355 }} onClick={() => onOpen(n.id)}>
+                <span className="office-file-tab" lang="ja" aria-hidden="true">{n.jp}</span>
+                <span className="office-file-body">
+                  <span className="office-file-icon"><n.icon /></span>
+                  <b>{n.label}</b>
+                  {counts[n.id] > 0 && <small>{counts[n.id]} on file</small>}
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function SignIn() {
   const [mode, setMode]         = useState('signin'); // signin | create
   const [email, setEmail]       = useState('');
@@ -2084,7 +2110,16 @@ function App() {
 
       <main className="main">
         <div className="jp-mark" lang="ja" aria-hidden="true" key={`mark-${tab}`}>{currentNav.jp}</div>
+        {/* Each section is a folder on the desk, tinted with the section's colour; its name is on the tab. */}
+        <div className="office-folder" style={{ '--fh': SECTION_HUES[tab]?.[0] ?? 355 }}>
+        <div className="office-tab" key={`tab-${tab}`}>
+          <span className="office-seal" lang="ja" aria-hidden="true">{currentNav.jp}</span>
+          {currentNav.group && <span className="office-drawer">{currentNav.group}</span>}
+          <b>{currentNav.label}</b>
+        </div>
+        <div className="office-body">
         <SectionBoundary key={`section-${tab}`}>
+        {tab==='dashboard' && <OfficeShelf items={navItems.filter(n => n.group)} onOpen={setTab} counts={{ pipeline: leads.length, ventures: ventures.length, habits: habits.length, studies: courses.length, goals: goals.length }}/>}
         {tab==='dashboard' && <Dashboard invoices={invoices} lastBackup={lastBackup} onBackup={backupData} debts={debts} ledger={ledger} freshSince={freshDoc?.since || ''} onFreshStart={freshStart} leads={leads} habits={habits} finances={finances} todos={todos} schedule={schedule} goals={goals} timers={timers} journal={journal} todayStr={todayStr} xp={xp} level={level} progress={progress} xpInLevel={xpInLevel} onToggleHabit={toggleHabit} onToggleTodo={toggleTodo} onAddTodo={d=>add('todos',{...d,doneOn:{},addedDate:todayStr})} onSaveJournal={saveJournal} onNav={setTab} onStartTimer={startTimer} launchToday={ventures.filter(v => v.launchDate && v.stage !== 'Paused').map(v => {
           const steps = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && i.phase === 'launch' && i.due && !i.done);
           return { name: v.name, daysLeft: Math.round((parseLocal(v.launchDate) - parseLocal(todayStr)) / 864e5), today: steps.filter(x => x.due === todayStr).length, late: steps.filter(x => x.due < todayStr).length };
@@ -2135,6 +2170,8 @@ function App() {
           }}/>}
         {tab==='clients'  && <ClientManagement invoices={invoices} invoiceApi={invoiceApi} leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
         </SectionBoundary>
+        </div>
+        </div>
       </main>
 
       <nav className="bottom-nav">
