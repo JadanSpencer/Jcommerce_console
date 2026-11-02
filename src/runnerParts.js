@@ -10,8 +10,8 @@ const fb = p => `https://console.firebase.google.com/project/dormdash-71035${p}`
 
 export const PARTS = [
   { title: 'Accounts', rows: [
-    { id: 'gcp', name: 'Google Cloud and Firebase project', value: 'dormdash-71035, shown as "Runner". The id never changes.', status: 'ok', link: fb('/overview') },
-    { id: 'billing', name: 'Google billing account', value: '018CA0-F12138-6A8B2A: open and paying for Runner, card ending 8378. Past due on 1 Nov 2026 and still unpaid on 2 Nov. 01EDEA-BE8411-E6B70B is the old, closed one.', status: 'look', link: 'https://console.cloud.google.com/billing/018CA0-F12138-6A8B2A/payment' },
+    { id: 'gcp', name: 'Google Cloud and Firebase project', value: 'dormdash-71035, shown as "Runner". The id never changes. Owned by the Google account sp3nc3rjadan29@gmail.com (the only owner, checked 2 Nov 2026); sign in with that one for Firebase and Google Cloud.', status: 'ok', link: fb('/overview') },
+    { id: 'billing', name: 'Google billing account', value: '018CA0-F12138-6A8B2A: open and paying for Runner, card ending 8378. Its only admin is sp3nc3rjadan29@gmail.com: pay and change the card while signed in as that account (pay.google.com for the card). Past due on 1 Nov 2026 and still unpaid on 2 Nov. 01EDEA-BE8411-E6B70B is the old, closed one.', status: 'look', link: 'https://console.cloud.google.com/billing/018CA0-F12138-6A8B2A/payment' },
     { id: 'expo', name: 'Expo (builds the phone app)', value: 'Project @jcommerce-and-tech/dormdash, owned by the jcommerce-and-tech account. Free plan: 15 Android and 15 iPhone builds a month, reset on the 1st.', status: 'ok', link: 'https://expo.dev/accounts/jcommerce-and-tech/projects/dormdash' },
     { id: 'github', name: 'Code on GitHub', value: 'JadanSpencer/Runner and JadanSpencer/Jcommerce_console.', status: 'ok', link: 'https://github.com/JadanSpencer/Runner' },
     { id: 'company', name: 'Jcommerce & Tech: Companies Office', value: 'Registered (owner, 2 Nov 2026). D-U-N-S number not requested yet: a task in the checklist.', status: 'look' },
