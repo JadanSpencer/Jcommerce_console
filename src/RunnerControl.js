@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
 import { BASICS, PLACES, OTHER_SCREENS, GROUPS, HOWTO } from './runnerGuide';
+import { PARTS, CHECKED, partsQuestions } from './runnerParts';
 import './RunnerControl.css';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
@@ -35,6 +36,14 @@ const emit = () => store.subs.forEach(f => f());
 const every = () => (local.launch ? LAUNCH_MS : NORMAL_MS);
 function judge() { store.view = store.data ? judgeRunner(store.data, local) : null; }
 function setLocal(change) { Object.assign(local, typeof change === 'function' ? change(local) : change); save(); judge(); emit(); }
+// A one-off checklist job ticked by hand: kept on this Mac, and saved to the
+// console's data once so it earns XP like a routine (unticking takes it back)
+let reportTick = null;
+function toggleJob(id) {
+  const on = !local.ticks[id];
+  setLocal(l => ({ ticks: { ...l.ticks, [id]: on } }));
+  if (reportTick) reportTick(id, 'check', Date.now(), on);
+}
 function addLog(entry) { local.log = [...local.log, { at: store.data?.fetchedAt || Date.now(), ...entry }].slice(-600); }
 
 function chime() {
@@ -173,7 +182,7 @@ function StoreSteps() {
             <div key={g.title}><p className="rc-what" style={{ marginTop: 8 }}>{g.title}</p>
               {g.items.map(([id, title, how, url]) => (
                 <label key={id} className={`rc-check ${local.ticks[id] ? 'done' : ''}`}>
-                  <input type="checkbox" checked={!!local.ticks[id]} onChange={() => setLocal(l => ({ ticks: { ...l.ticks, [id]: !l.ticks[id] } }))}/>
+                  <input type="checkbox" checked={!!local.ticks[id]} onChange={() => toggleJob(id)}/>
                   <div><p className="rc-what">{title}</p>{how && <p className="rc-why">{how}</p>}{url && !local.ticks[id] && <Go link={{ label: 'Open', url }}/>}</div>
                 </label>))}
               {g.tracker && (
@@ -191,6 +200,33 @@ function StoreSteps() {
         </div>))}
     </Fold>
   );
+}
+
+/** Going live with no deploy or rebuild: Runner's number in the app, and the account customers pay into. */
+function BotSettings({ project, api, refresh }) {
+  const [number, setNumber] = useState('');
+  const [bank, setBank] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const save = async (body, done) => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    const r = await api.ownerAction(project, body);
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: done } : { ok: false, text: r.error || 'That did not save.' });
+    if (r.ok) refresh();
+  };
+  return (<>
+    {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
+    <p className="rc-why">Runner's WhatsApp number, with 1876. Saving it shows "Order on WhatsApp" in the app straight away. Do this only after your practice chats. Save it empty to hide it again.</p>
+    <div className="rc-row">
+      <input className="input" placeholder="1876XXXXXXX" value={number} onChange={e => setNumber(e.target.value)}/>
+      <button className="btn-ghost rc-go" disabled={busy} onClick={() => save({ action: 'whatsappNumber', number }, number.trim() ? 'The app now shows Order on WhatsApp.' : 'Order on WhatsApp is hidden.')}>Save number</button>
+    </div>
+    <p className="rc-why">The bank account customers pay into: bank, account name, number and branch. This is what they will see. Save it empty to turn bank transfers off.</p>
+    <textarea className="input" rows={4} value={bank} onChange={e => setBank(e.target.value)}/>
+    <div className="rc-actions"><button className="btn-ghost rc-go" disabled={busy} onClick={() => save({ action: 'whatsappBank', bankDetails: bank }, bank.trim() ? 'Bank transfers are on, using this account.' : 'Bank transfers are off.')}>Save bank account</button></div>
+  </>);
 }
 
 /** What the WhatsApp assistant wants to learn. Nothing reaches it until the owner approves. */
@@ -224,6 +260,30 @@ function BotLessons({ lessons, project, api, refresh }) {
       <div className="rc-actions"><button className="btn-ghost rc-go" disabled={busy} onClick={() => decide('clear')}>Clear all lessons</button></div>
     </> : null}
   </>);
+}
+
+// ── What Runner runs on: accounts, keys and versions, with open questions ──
+const PART_WORD = { ok: 'Checked', look: 'Needs a look', ask: 'Question for you' };
+function Parts() {
+  const asks = partsQuestions().length;
+  return (
+    <Fold id="rc-parts" title="What Runner runs on: accounts, keys and versions" note={asks ? `${plural(asks, 'question')} for you · checked ${CHECKED}` : `checked ${CHECKED}`} open={asks > 0}>
+      <p className="rc-small">Every account, key and version Runner depends on, as the developer last checked them. Key values are never kept here, only names, dates and limits. Answer a question by telling the developer; they update this list.</p>
+      {PARTS.map(g => (
+        <div key={g.title} className="rc-group"><h4>{g.title}</h4>
+          {g.note && <p className="rc-small">{g.note} {g.link && <Go link={{ label: 'Open', url: g.link }}/>}</p>}
+          {g.rows.map(x => (
+            <div key={x.id} className="rc-check">
+              <span className={`rc-dot ${x.status === 'ok' ? 'good' : 'look'}`} title={PART_WORD[x.status]}/>
+              <div><p className="rc-what">{x.name}</p>
+                {x.value && <p className="rc-why">{x.value}</p>}
+                {x.ask && <p className="rc-found"><b>Question:</b> {x.ask}</p>}
+                {x.find && <p className="rc-small"><b>Where to find it:</b> {x.find}</p>}
+                {x.link && <Go link={{ label: 'Open', url: x.link }}/>}</div>
+            </div>))}
+        </div>))}
+    </Fold>
+  );
 }
 
 function Fold({ id, title, note, children, open = false }) {
@@ -577,6 +637,7 @@ const dayLabel = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { we
 
 export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile, launchDate = '', onRoutineTick }) {
   const s = useStore();
+  reportTick = onRoutineTick || null;
   const [tab, setTabRaw] = useState(() => { try { return localStorage.getItem('rc_tab') || 'now'; } catch { return 'now'; } });
   const setTab = t => { setTabRaw(t); try { localStorage.setItem('rc_tab', t); } catch {} };
   const [, tick] = useState(0);
@@ -841,6 +902,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <div><span>App Check: verified share, last 7 days</span>{k.appCheck.length ? k.appCheck.map(a => <b key={a.label}>{a.label}: {a.share === null ? 'no traffic' : `${a.share}%`} <em>{a.enforced ? 'enforced' : a.share !== null && a.share >= 98 ? 'safe to enforce once it holds 98% for a week' : 'not safe to enforce yet'}</em></b>) : <b>couldn't check</b>}
             <small>The server's own functions already refuse requests without proof. The database and sign-in are only watched until verified traffic stays at 98% or more for a week. Before the Android app ships, App Check must be set up for it too.</small></div>
           <div><span>Last deploy</span><b>{k.release?.at ? `${jmDate(k.release.at)} ${jmTime(k.release.at)}` : "couldn't check"}</b><small>{k.release?.by ? `by ${k.release.by}` : ''}{k.release?.message ? ` · "${k.release.message}"` : ' · no change-log line'}{k.server ? ` · server updated ${jmDate(k.server)}` : ''}</small></div>
+          <div><span>Deploys used</span><b>{k.deploys ? `${k.deploys.day}${k.deploys.limits ? ` of ${k.deploys.limits.perDay}` : ''} in 24 hours · ${k.deploys.month}${k.deploys.limits ? ` of ${k.deploys.limits.per30Days}` : ''} in 30 days` : "couldn't check"}</b><small>{k.deploys?.overrides?.length ? `Overridden: ${k.deploys.overrides.map(o => `${jmDate(o.at)} "${String(o.override).slice(0, 60)}"`).join(', ')}` : 'A normal deploy past the limit is refused. Rules changes are not limited.'}</small></div>
           <div><span>Newest code in Runner's folder</span><b>{k.code ? `${jmDate(k.code.at)} ${jmTime(k.code.at)}` : "couldn't check"}</b><small>{k.code ? `"${k.code.message}"` : ''}</small></div>
           <div><span>Database backups</span><b>{k.backups ? (k.backups.last ? `last one ${jmDate(k.backups.last)}` : 'none yet') : "couldn't check"}</b><small>{k.backups?.scheduled ? 'A daily backup is scheduled.' : k.backups ? 'No daily backup is scheduled.' : ''}</small></div>
           <div><span>WhatsApp assistant, this month</span><b>{r.bot.ok ? `${r.bot.messages.toLocaleString('en-US')} messages · about US$${r.bot.usd.toFixed(2)}` : "couldn't check"}</b><small>Today: {plural(r.bot.ordersToday, 'order')}, {plural(r.bot.guestsToday, 'guest order')}, {J(r.bot.guestCash)} guest cash at risk of the J$50,000 limit. AI cost only, worked out from the tokens used. WhatsApp's own charges are separate. Limit: 3,000 messages a day.</small></div>
@@ -848,6 +910,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
           <div><span>Budget alert</span><b>{k.budgets ? (k.budgets.length ? k.budgets.map(b => `${b.currency} ${b.amount}`).join(', ') : 'none set') : 'not connected'}</b>
             <small>{k.budgets ? 'Recommended: US$25 a month.' : <>The console can't see budgets until Google's Budget API is switched on for Runner. {ext('Switch it on', `https://console.cloud.google.com/apis/library/billingbudgets.googleapis.com?project=${project}`)}, then {ext('set a US$25 budget', `https://console.cloud.google.com/billing/budgets?project=${project}`)}.</>}</small></div>
         </div>
+        <Parts />
+        <Fold id="rc-bot-settings" title="WhatsApp number and bank account" note="no deploy needed"><BotSettings project={project} api={api} refresh={refresh}/></Fold>
         <Fold id="rc-bot-lessons" title="What the WhatsApp assistant has learned" note={r.bot.lessons?.draft ? 'New lessons waiting for you' : 'Nothing waiting'} open={!!r.bot.lessons?.draft}>
           <BotLessons lessons={r.bot.lessons} project={project} api={api} refresh={() => { store.last = 0; refresh(); }} />
         </Fold>
@@ -857,10 +921,17 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             <tbody>{r.fnHealth.rows.map(f => <tr key={f.name} className={f.state !== 'ACTIVE' || f.errors ? 'warn' : ''}><td>{f.name}</td><td>{f.state === 'ACTIVE' ? 'running' : (f.state || 'unknown').toLowerCase()}</td>
               <td>{f.trigger === 'event' ? 'runs by itself' : 'called by the app'}</td><td>{f.errors || '–'}</td><td>{f.lastError ? `${jmTime(f.lastErrorAt)} · ${f.lastError}` : '–'}</td></tr>)}</tbody></table>
         </Fold>
-        <Fold id="rc-cost" title="What it costs to keep running" note="about US$11 to 13 a month with no orders">
-          <table className="rc-table"><thead><tr><th>Item</th><th>Monthly</th></tr></thead><tbody>
-            {[['Server copy kept awake for orders', 'about US$10'], ['The 5-minute clean-up', 'US$0 to 2'], ['Stored server images', 'under US$1'], ['Hosting, database, file storage, secrets, monitoring', 'US$0 within free limits'], ['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, uwi-runner.online', 'about US$1'], ['WhatsApp assistant, once live', 'AI cost shows above, plus Meta\'s charges']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>
-          <p className="rc-small">Everything else grows with use: maps, the bot check above 10,000 checks a month, hosting traffic and database reads. Spend so far this month is only in Google's {ext('billing reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}; the console can't read it without a billing export. A budget alert is what stops a runaway bug costing hundreds.</p>
+        <Fold id="rc-cost" title="What it costs to keep running" note={k.forecast ? `likely about US$${k.forecast.cases[1].total.toFixed(2)} this month` : "couldn't check"} open>
+          {k.forecast ? <>
+            <table className="rc-table"><thead><tr><th>This month</th><th>Google</th><th>AI</th><th>Total</th><th>What it assumes</th></tr></thead><tbody>
+              <tr><td>So far</td><td>US${k.forecast.soFar.google.toFixed(2)}</td><td>US${k.forecast.soFar.ai.toFixed(2)}</td><td>US${(k.forecast.soFar.google + k.forecast.soFar.ai).toFixed(2)}</td><td>Measured use up to last midnight, after Google's free allowances.</td></tr>
+              {k.forecast.cases.map(c => <tr key={c.name}><td>{c.name}</td><td>US${c.google.toFixed(2)}</td><td>US${c.ai.toFixed(2)}</td><td>US${c.total.toFixed(2)}</td><td>{c.assumes}</td></tr>)}
+            </tbody></table>
+            <p className="rc-small">Worked out from Google's usage meters and refreshed hourly. It is an estimate: the exact bill is in {ext('billing reports', `https://console.cloud.google.com/billing/reports?project=${project}`)}. Stays awake all the time: {k.forecast.awake.join(', ') || 'nothing'}. Meta's WhatsApp charges, Apple and the domain are not included.</p>
+          </> : <p className="rc-small">Google's usage meters could not be read just now.</p>}
+          <table className="rc-table"><thead><tr><th>Other costs</th><th>Monthly</th></tr></thead><tbody>
+            {[['Apple developer account, once enrolled', 'US$8.25 (US$99 a year)'], ['Domain, uwi-runner.online', 'about US$1'], ['WhatsApp assistant, once live', 'AI cost shows above, plus Meta\'s charges']].map(([a, b]) => <tr key={a}><td>{a}</td><td>{b}</td></tr>)}</tbody></table>
+          <p className="rc-small">A budget alert only emails you; it doesn't stop spending or take Runner down. The bot check also costs money above 10,000 checks a month.</p>
         </Fold>
         <Fold id="rc-speed" title="Speed on real phones" note={!r.speed.ok ? "couldn't check" : r.speed.n ? `${plural(r.speed.n, 'visit')} this week` : 'no reports yet'}>
           {!r.speed.ok ? <p className="rc-item unknown rc-plain">Couldn't read the speed reports this time{r.speed.error ? ` (${r.speed.error})` : ''}.</p>
@@ -901,7 +972,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
             <div key={g.title} className="rc-group"><h4>{g.title}</h4>
               {g.items.map(c => (
                 <label key={c.id} className={`rc-check ${c.ticked || c.done ? 'done' : ''}`}>
-                  <input type="checkbox" checked={c.ticked || !!c.done} disabled={!!c.done} onChange={() => setLocal(l => ({ ticks: { ...l.ticks, [c.id]: !l.ticks[c.id] } }))}/>
+                  <input type="checkbox" checked={c.ticked || !!c.done} disabled={!!c.done} onChange={() => toggleJob(c.id)}/>
                   <div><p className="rc-what">{c.title}</p>{c.how && <p className="rc-why">{c.how}</p>}
                     {c.found && <p className={`rc-found ${c.done ? 'ok' : ''}`}>Checked just now: {c.found}</p>}
                     {c.link && !(c.ticked || c.done) && <Go link={c.link}/>}</div>

@@ -66,7 +66,7 @@ export const OTHER_SCREENS = [
   ['Store tablet: Today', 'The day\'s orders, best sellers, and its statement with Runner.'],
   ['Store tablet: Batch', 'Only for batch kitchens. The cooking list for each pickup time, labels and a pause switch.'],
   ['Runner app', 'Go online, accept orders, move each order along, "Cash paid, delivered" or "Not paid". Admin runners also get a Coin desk under Profile.'],
-  ['Student Profile', 'Add coins, referral link, How Runner works, and Account controls (deactivate or delete). "Order on WhatsApp" shows here once Runner\'s number is set.'],
+  ['Student Profile', 'Add coins, referral link, How Runner works, and Account controls (deactivate or delete). "Order on WhatsApp" shows here once you save Runner\'s number in the console, under "WhatsApp number and bank account".'],
 ];
 
 export const GROUPS = ['Orders', 'Coins and cash', 'Paying people', 'Stores', 'Runners and customers', 'WhatsApp', 'Website and updates'];

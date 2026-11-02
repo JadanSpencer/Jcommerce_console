@@ -384,10 +384,52 @@ async function medium(project, token, ctx, dir) {
     launchCodes, problems, freeDeliveries, domains, signInHosts, fnErrors, topupBatches, whatsappStats, botLessons, sellerApps, botHelp, suggestions, rulesLive, keys, dailyMenus, at: now };
 }
 
+// Measured use for the cost forecast (src/runnerCost.js) and the deploy count:
+// the last 30 full days, from Google's own meters, by function and by UTC day.
+async function usageMonth(project, token, { now, dir }) {
+  const end = Math.floor(now / 86400000) * 86400000, start = end - 30 * 86400000;
+  const metric = async (type, aligner, group) => {
+    const qs = new URLSearchParams({ filter: `metric.type="${type}"`, 'interval.startTime': new Date(start).toISOString(), 'interval.endTime': new Date(end).toISOString(),
+      'aggregation.alignmentPeriod': '86400s', 'aggregation.perSeriesAligner': aligner, 'aggregation.crossSeriesReducer': 'REDUCE_SUM' });
+    if (group) qs.append('aggregation.groupByFields', group);
+    const j = await google(token, project, `https://monitoring.googleapis.com/v3/projects/${project}/timeSeries?${qs}`);
+    return (j.timeSeries || []).flatMap(t => (t.points || []).map(p => ({ key: t.resource?.labels?.service_name, d: new Date(Date.parse(p.interval.endTime) - 1000).toISOString().slice(0, 10), v: Number(p.value?.int64Value ?? p.value?.doubleValue ?? 0) })));
+  };
+  const [reads, writes, deletes, hosting, seconds, stored, fns, repos, jobs, releases, builds, limits, log] = await Promise.all([
+    metric('firestore.googleapis.com/document/read_ops_count', 'ALIGN_SUM'),
+    metric('firestore.googleapis.com/document/write_ops_count', 'ALIGN_SUM'),
+    metric('firestore.googleapis.com/document/delete_ops_count', 'ALIGN_SUM'),
+    metric('firebasehosting.googleapis.com/network/sent_bytes_count', 'ALIGN_SUM'),
+    metric('run.googleapis.com/container/billable_instance_time', 'ALIGN_SUM', 'resource.label.service_name'),
+    metric('storage.googleapis.com/storage/total_bytes', 'ALIGN_MEAN'),
+    google(token, project, `https://cloudfunctions.googleapis.com/v2/projects/${project}/locations/-/functions?pageSize=200`),
+    google(token, project, `https://artifactregistry.googleapis.com/v1/projects/${project}/locations/${SCHEDULER_REGION}/repositories`),
+    google(token, project, `https://cloudscheduler.googleapis.com/v1/projects/${project}/locations/${SCHEDULER_REGION}/jobs?pageSize=50`),
+    google(token, project, `https://firebasehosting.googleapis.com/v1beta1/sites/${project}/channels/live/releases?pageSize=100`),
+    google(token, project, `https://cloudbuild.googleapis.com/v1/projects/${project}/locations/${SCHEDULER_REGION}/builds?pageSize=300`),
+    fs.readFile(path.join(dir, 'deploy-limits.json'), 'utf8').then(JSON.parse).catch(() => null),
+    fs.readFile(path.join(dir, '.deploy-log.json'), 'utf8').then(JSON.parse).catch(() => []),
+  ]);
+  const days = {};
+  const day = d => (days[d] = days[d] || { d, reads: 0, writes: 0, deletes: 0, hostingBytes: 0, seconds: {} });
+  for (const [rows, key] of [[reads, 'reads'], [writes, 'writes'], [deletes, 'deletes'], [hosting, 'hostingBytes']]) for (const r of rows) day(r.d)[key] += r.v;
+  for (const r of seconds) if (r.key) day(r.d).seconds[r.key] = r.v;
+  const functions = Object.fromEntries((fns.functions || []).map(f => [f.name.split('/').pop().toLowerCase(), {
+    warm: Number(f.serviceConfig?.minInstanceCount) > 0, cpu: Number(f.serviceConfig?.availableCpu) || 1, gib: (parseInt(f.serviceConfig?.availableMemory, 10) || 256) / 1024 }]));
+  return {
+    days: Object.values(days).sort((a, b) => a.d.localeCompare(b.d)), functions,
+    storageBytes: stored.reduce((t, r) => (r.d > t.d ? r : t), { d: '', v: 0 }).v,
+    imagesBytes: (repos.repositories || []).reduce((t, r) => t + Number(r.sizeBytes || 0), 0),
+    schedulerJobs: (jobs.jobs || []).length,
+    deployTimes: [...(releases.releases || []).map(r => Date.parse(r.releaseTime)), ...(builds.builds || []).map(b => Date.parse(b.startTime))].filter(t => now - t < 30 * 86400000),
+    limits, overrides: Array.isArray(log) ? log.filter(x => x && x.override).slice(-5) : [],
+  };
+}
+
 async function slow(project, token, ctx) {
   const { now, today } = ctx;
   const since = today - 7 * 86400000;
-  const [ordersWeek, signups, appCheck, budgets, trust] = await Promise.all([
+  const [ordersWeek, signups, appCheck, budgets, usage, trust] = await Promise.all([
     part(async () => {
       const r = await query(project, token, { collectionId: 'orders', where: all([cmp('createdAt', 'GREATER_THAN_OR_EQUAL', num(since)), cmp('createdAt', 'LESS_THAN', num(today))]), orderBy: 'createdAt',
         fields: ['status', 'storeId', 'storeName', 'totalAmount', 'deliveryFee', 'platformFeeJmd', 'dasherPayoutJmd', 'createdAt', 'acceptedAt', 'paidAt', 'deliveredAt', 'deliveryMins', 'cancelReason', 'fulfilment', 'dasherId', 'studentId', 'receipt.code', 'paymentMethod', 'paymentStatus', 'refundAttemptFailed', 'refundAttemptReason'], limit: 3000 });
@@ -417,6 +459,7 @@ async function slow(project, token, ctx) {
       const j = await google(token, project, `https://billingbudgets.googleapis.com/v1/billingAccounts/${acct}/budgets`);
       return { rows: (j.budgets || []).map(b => ({ name: b.displayName, amount: Number(b.amount?.specifiedAmount?.units || 0), currency: b.amount?.specifiedAmount?.currencyCode || '' })) };
     }),
+    part(() => usageMonth(project, token, ctx)),
     // Confirmed orders: cash eligibility per customer, cash not paid, admin
     // referral commission and payouts, and refunds held for a decision.
     part(async () => {
@@ -444,7 +487,7 @@ async function slow(project, token, ctx) {
       };
     }),
   ]);
-  return { ordersWeek, signups, appCheck, budgets, trust, at: now };
+  return { ordersWeek, signups, appCheck, budgets, trust, usage, at: now };
 }
 
 async function menus(project, token, ctx) {
@@ -479,7 +522,7 @@ async function snapshot(project, dir, token) {
   const stats = await part(() => getDoc(project, token, 'publicStats/app'));
   const now = (stats.ok && stats.serverNow) || macNow;
   const today = dayStart(now);
-  const ctx = { now, today, siteUrl: c.medium?.url?.ok && c.medium.url.url ? `${c.medium.url.url}/` : `https://${project}.web.app/` };
+  const ctx = { now, today, dir, siteUrl: c.medium?.url?.ok && c.medium.url.url ? `${c.medium.url.url}/` : `https://${project}.web.app/` };
   let read = stats.ok ? 1 : 0;
   const due = (key, ms) => !c[key] || macNow - c[`${key}At`] >= ms || c[`${key}Day`] !== today;
   if (due('medium', MEDIUM_MS)) { c.medium = await medium(project, token, ctx, dir); c.mediumAt = macNow; c.mediumDay = today;

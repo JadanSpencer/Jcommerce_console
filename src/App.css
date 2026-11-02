@@ -3562,10 +3562,11 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
    the folder. --fh is the section's hue (SECTION_HUES). Delete this block and
    the office-* markup in App.js to go back. */
 .office-folder {
-  --folder: hsl(var(--fh) 38% 15%);
-  --folder-back: hsl(var(--fh) 42% 23%);
+  /* See-through, so the petals, the kanji and the waves keep moving behind the work. */
+  --folder: hsl(var(--fh) 38% 15% / 0.34);
+  --folder-back: hsl(var(--fh) 42% 23% / 0.6);
   --folder-edge: hsl(var(--fh) 45% 34%);
-  --sheet: hsl(var(--fh) 16% 10%);
+  --sheet: hsl(var(--fh) 16% 10% / 0.76);
   position: relative; z-index: 1; min-width: 0;
 }
 .office-tab {
@@ -3589,13 +3590,12 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
   background: var(--sheet); border: 1px solid hsl(var(--fh) 22% 21%); border-radius: 5px;
   box-shadow: 0 1px 0 rgba(0,0,0,0.5);
 }
-.office-body .card::before, .office-body .card::after { display: none; }
 .office-body .card:hover { border-color: hsl(var(--fh) 30% 30%); }
 @keyframes office-open { from { transform: translateY(5px); opacity: 0; } }
 
 /* Home: the shelf of folders */
 .office-shelf { display: grid; gap: 0.85rem; margin-bottom: 1.1rem; }
-.office-drawer-row { min-width: 0; padding: 0.7rem 0.8rem 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; }
+.office-drawer-row { min-width: 0; padding: 0.7rem 0.8rem 0.85rem; background: rgba(0,0,0,0.16); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; }
 .office-plate {
   display: inline-block; margin: 0 0 0.65rem; padding: 0.15rem 0.6rem; font-size: 12px; font-weight: 650; color: var(--ink-1);
   background: var(--sheet); border: 1px solid rgba(255,255,255,0.16); border-radius: 3px;
@@ -3606,13 +3606,13 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
 .office-file:focus-visible { outline: 2px solid hsl(var(--fh) 70% 65%); outline-offset: 3px; border-radius: 6px; }
 .office-file-tab {
   display: inline-block; padding: 0.15rem 1.15rem 0.1rem 0.55rem; font-size: 11px; line-height: 1.5; color: hsl(var(--fh) 75% 84%);
-  background: hsl(var(--fh) 42% 25%); clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 100%, 0 100%); border-radius: 5px 0 0 0;
+  background: hsl(var(--fh) 42% 25% / 0.86); clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 100%, 0 100%); border-radius: 5px 0 0 0;
 }
 .office-file:nth-child(3n+2) .office-file-tab { margin-left: 26%; }
 .office-file:nth-child(3n) .office-file-tab { margin-left: 52%; }
 .office-file-body {
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 0.5rem; min-height: 68px; padding: 0.65rem 0.7rem;
-  background: hsl(var(--fh) 42% 19%); border-top: 1px solid hsl(var(--fh) 46% 36%); border-radius: 0 5px 6px 6px;
+  background: hsl(var(--fh) 42% 19% / 0.8); border-top: 1px solid hsl(var(--fh) 46% 36%); border-radius: 0 5px 6px 6px;
 }
 .office-file-body b { font-size: 14px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
 .office-file-body small { grid-column: 2; font-size: 11.5px; color: var(--ink-2); }

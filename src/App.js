@@ -381,7 +381,7 @@ function xpLedger({ habits, leads, todos, todayStr, goals = [], journal = [], ti
   const stamps = serviceRounds.filter(r => (r.date || '') >= newFrom).reduce((t, r) => t + Object.values(r.done || {}).filter(Boolean).length, 0);
   row('Stamps', 'ventures', stamps * XP_PER_STAMP, 0, `+${XP_PER_STAMP} a service stamped as checked on the daily rounds`);
   // Control room: +5 for each routine ticked in a venture's control room (daily, weekly, monthly, term)
-  row('Control room', 'ventures', controlTicks.filter(c => (c.date || '') >= newFrom).length * XP_PER_ROUTINE, 0, `+${XP_PER_ROUTINE} a control-room routine done`);
+  row('Control room', 'ventures', controlTicks.filter(c => (c.date || '') >= newFrom).length * XP_PER_ROUTINE, 0, `+${XP_PER_ROUTINE} a control-room routine or checklist job done`);
 
   return rows;
 }
@@ -2076,6 +2076,8 @@ function App() {
           const today = steps.filter(x => x.due === todayStr).length, late = steps.filter(x => x.due < todayStr).length;
           if (late) out.push({ t: `${pl(late, 'launch step')} behind`, tab: 'ventures', lv: 'hot' });
           if (today) out.push({ t: `${pl(today, 'launch step')} for today`, tab: 'ventures' });
+          const planned = ventureItems.filter(i => i.ventureId === v.id && i.kind === 'move' && !i.done && i.sentOn === todayStr && i.due !== todayStr).length;
+          if (planned) out.push({ t: `${v.name}: ${pl(planned, 'step')} planned for today`, tab: 'ventures' });
         });
         if (todayTodos.length) out.push({ t: `${todayDone.length} of ${todayTodos.length} tasks done`, tab: 'todos', lv: todayDone.length >= Math.min(5, todayTodos.length) ? 'good' : '' });
         else out.push({ t: 'No tasks planned today', tab: 'todos', lv: 'hot' });
@@ -2165,7 +2167,8 @@ function App() {
           // A control-room routine ticked or unticked: one doc per routine per day, for XP
           onRoutineTick={(routineId, kind, at, on) => {
             const date = localDateStr(new Date(at));
-            const ref = doc(db, 'control_ticks', `${date}_${routineId}`);
+            // A one-off checklist job counts once, whatever day it is unticked on
+            const ref = doc(db, 'control_ticks', kind === 'check' ? `check_${routineId}` : `${date}_${routineId}`);
             (on ? setDoc(ref, { date, routineId, kind, at: serverTimestamp() }) : deleteDoc(ref)).catch(() => setError('Failed to save the tick.'));
           }}/>}
         {tab==='clients'  && <ClientManagement invoices={invoices} invoiceApi={invoiceApi} leads={leads} finances={finances} ventures={ventures} onNav={setTab} todayStr={todayStr} onAdd={(col, d) => (col === 'finances' ? addFinance(d) : add(col, d))} onUpdate={update} onRemove={(col, id) => (col === 'leads' ? removeLead(id) : remove(col, id))}/>}
@@ -7651,7 +7654,7 @@ function SiteTech({ domain, site }) {
   </>);
 }
 
-function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onAddTodo, onRoutineTick }) {
+function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], focusSec = 0, rounds = {}, onToggleRound, bills = [], onAddBill, services, items, checks, checkedToday, todayStr, onEdit, onSaveService, onDeleteService, onSaveCheck, onSaveItem, onDeleteItem, onRoutineTick }) {
   const api = DESKTOP.venture;
   const { confirm, ConfirmUI } = useConfirm();
   const o = d?.o, money = d?.money, loading = !!d?.loading;
@@ -7751,7 +7754,9 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
     setMoveTitle(''); setMoveDue('');
   };
   const toggleMove = m => onSaveItem({ id: m.id, done: !m.done, doneAt: m.done ? '' : todayStr });
-  const toTasks = m => { onAddTodo({ title: `${v.name} · ${m.title}`, note: '', starred: false, moveId: m.id }); onSaveItem({ id: m.id, sentOn: todayStr }); };
+  // Planned for today inside the venture only: console work no longer goes into Tasks,
+  // and still earns its XP when ticked here (+XP_PER_MOVE). Old copies in Tasks keep working.
+  const toTasks = m => onSaveItem({ id: m.id, sentOn: todayStr });
   const addLog = () => { if (!logText.trim()) return; onSaveItem({ kind: 'log', text: logText.trim(), date: todayStr }); setLogText(''); };
   const removeItem = async (i, label) => { if (await confirm({ message: `Delete "${label}"?`, label: 'Delete', danger: true })) { onDeleteItem(i.id); setItemForm(null); } };
   const moveRow = m => {
@@ -7761,7 +7766,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
         <button className="check-btn" onClick={() => toggleMove(m)} style={{ color: m.done ? '#ff9a4a' : 'var(--mist-3)' }}>{m.done ? <Icons.check size={22}/> : <Icons.circle size={22}/>}</button>
         <div className="tk-main">
           <div className="tk-title">{m.title}</div>
-          {(m.note || m.sentOn === todayStr) && <div className="tk-note">{m.sentOn === todayStr ? 'In today\'s tasks' : ''}{m.note && m.sentOn === todayStr ? ' · ' : ''}{m.note}</div>}
+          {(m.note || m.sentOn === todayStr) && <div className="tk-note">{m.sentOn === todayStr ? 'Planned for today' : ''}{m.note && m.sentOn === todayStr ? ' · ' : ''}{m.note}</div>}
         </div>
         {m.done && <span className="tk-xp">+{XP_PER_MOVE}</span>}
         {!m.done && n !== null && <span className={`tk-due ${n <= 3 ? 'soon' : ''}`}>{n < 0 ? `${-n}d late` : n === 0 ? 'today' : n === 1 ? 'tomorrow' : `${n} days`}</span>}
@@ -7782,7 +7787,7 @@ function VentureRoom({ v, hex, d, h, reload, client = null, onNav, ledger = [], 
       </div>
       <div className="lp-step-side">
         {m.done ? <span className="tk-xp">+{XP_PER_MOVE}</span>
-          : m.sentOn === todayStr ? <span className="fin-delta">in today's tasks</span>
+          : m.sentOn === todayStr ? <span className="fin-delta">planned for today</span>
           : <button className="btn-ghost tk-carry" onClick={() => toTasks(m)}>Do today</button>}
         <button className="icon-btn" onClick={() => setItemForm({ ...m })}><Icons.edit size={12}/></button>
       </div>

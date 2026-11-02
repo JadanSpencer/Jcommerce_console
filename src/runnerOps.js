@@ -9,7 +9,10 @@
 // check that could not be made, never shown as "none"), 'info' (no colour,
 // does not change the verdict).
 
+import { costForecast, deployCounts } from './runnerCost';
+
 const MIN = 60000, HOUR = 60 * MIN, DAY = 24 * HOUR;
+const DEFAULT_BUDGET_USD = 25;
 const mins = ms => Math.max(0, Math.round(ms / MIN));
 export const J = n => `${n < 0 ? '−' : ''}J$${Math.abs(Math.round(n || 0)).toLocaleString('en-US')}`;
 export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
@@ -70,7 +73,7 @@ const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review',
 // therefore kept here, red and at the top, until the owner marks it sorted.
 // To raise a new one, add its date here.
 // Past-due Google bills to pin at the top ({ id, what }). The 16 Oct one was paid on 19 Oct.
-const BILLING_DUE = [];
+const BILLING_DUE = [{ id: '2026-11-01', what: 'Google says Runner\'s billing account is past due and the project is at risk of suspension (email of 1 Nov 2026).' }];
 export const reviewWords = r => {
   const s = String(r || '');
   if (s.startsWith('amount_short_')) return `Fygaro reported less money than was due (it said ${s.slice(13)}).`;
@@ -140,7 +143,7 @@ export const ROUTINES = [
     ['w-appcheck', 'Check App Check\'s verified share; once it holds 98%, enforce it for the database and sign-in.', 'appcheck'],
   ] },
   { kind: 'month', title: 'Every month', items: [
-    ['m-bill', 'Read the Google Cloud bill: actual against the US$11 to 13 fixed cost, and what grew.', 'billing'],
+    ['m-bill', 'Read the Google Cloud bill: actual against the Likely figure in the console, and what grew.', 'billing'],
     ['m-totals', 'Totals for the month: orders, delivered, Runner\'s share, average delivery time, new students, active runners.'],
     ['m-access', 'Review who has admin access and which store logins exist; remove any no longer needed.', '/users'],
     ['m-updates', 'Ask the developer for the monthly update round.'],
@@ -767,6 +770,36 @@ export function judgeRunner(data, local = {}) {
   const lessonRows = P.botLessons?.ok ? P.botLessons.rows : [];
   bot.lessons = { ok: !!P.botLessons?.ok, draft: lessonRows.find(d => d.id === 'draft' && d.status === 'waiting') || null, live: lessonRows.find(d => d.id === 'live') || null };
 
+  // What the month will cost, and how many deploys have been used (src/runnerCost.js)
+  const budgetUsd = (P.budgets?.ok && P.budgets.rows[0]?.amount) || DEFAULT_BUDGET_USD;
+  const usage = P.usage?.ok ? P.usage : null;
+  const forecast = usage ? costForecast(usage, P.whatsappStats?.ok ? P.whatsappStats.rows : [], now) : null;
+  const deploys = usage ? { ...deployCounts(usage.deployTimes.filter(t => t >= Date.parse(usage.limits?.since || 0)), now), limits: usage.limits, overrides: usage.overrides } : null;
+  const billPage = gc('/billing/reports');
+  if (!usage) running.push(cant('run.usage', 'what Runner is costing', P.usage));
+  if (forecast) {
+    const likely = forecast.cases[1].total;
+    if (likely > budgetUsd) running.push({ key: 'run.costBudget', lv: 'look', playbook: 'bill',
+      what: `This month is on course to cost about US$${likely.toFixed(2)}, over your US$${budgetUsd} budget.`,
+      why: 'At this pace the bill passes what you planned for. Worked out from measured use, so it is close but not Google\'s exact figure.',
+      next: 'Open "What it costs to keep running" to see the three cases, then check Billing → Reports for what grew.', link: { label: 'Open billing reports', url: billPage } });
+    if (forecast.spike) running.push({ key: `run.costSpike.${forecast.spike.day}`, lv: 'look', playbook: 'bill',
+      what: `The database was read ${forecast.spike.reads.toLocaleString('en-US')} times on ${forecast.spike.day}, against a normal ${forecast.spike.normal.toLocaleString('en-US')}.`,
+      why: 'A sudden jump is either a real rush of customers or a bug stuck in a loop, and a loop can run up a bill by the hour.',
+      next: 'Compare it with that day\'s orders. If orders were normal, tell the developer at once.', link: { label: 'Open billing reports', url: billPage } });
+    if (forecast.strays.length) running.push({ key: `run.costAwake.${forecast.strays.join('.')}`, lv: 'look', playbook: 'bill',
+      what: `${forecast.strays.join(', ')} ran nearly all day without being set to stay awake.`,
+      why: 'A server copy that never sleeps is charged around the clock, even with no orders.',
+      next: 'Tell the developer which function it is.', link: { label: 'Open billing reports', url: billPage } });
+  }
+  if (deploys?.limits) {
+    const { day, month: used, limits } = deploys;
+    if (day >= limits.perDay || used >= limits.per30Days) running.push({ key: 'run.deployLimit', lv: 'look',
+      what: day >= limits.perDay ? `The daily deploy limit is used: ${day} of ${limits.perDay} in the last 24 hours.` : `The monthly deploy limit is used: ${used} of ${limits.per30Days} in the last 30 days.`,
+      why: 'The next normal deploy will be refused. Each deploy is a chance to break something live, so changes should go out together.',
+      next: 'Group the next changes into one deploy. For a real emergency the developer can override it, and the reason is recorded here.' });
+  }
+
   const botToday = (P.whatsappStats?.ok ? P.whatsappStats.rows : []).find(d => d.id === jmDate(now));
   bot.today = Number(botToday?.messages) || 0;
   bot.ordersToday = todayOrders.filter(o => o.placedVia === 'whatsapp').length;
@@ -905,6 +938,26 @@ export function judgeRunner(data, local = {}) {
   const auto = (id, done, found) => ({ id, done: done === true, found: done === null || done === undefined ? found || null : found });
   const B = (id, title, how, extra = {}) => ({ id, title, how, ...extra, ticked: !!ticks[id] });
   const checklist = [
+    // From the bot review of 2 Nov 2026: one deploy and one app rebuild left, in this order
+    { title: 'Launch: the one deploy and the one rebuild (2 Nov 2026)', items: [
+      B('l-bill', 'Pay the Google bill', 'Billing account 018CA0-F12138-6A8B2A was past due on 1 Nov and is still unpaid (2 Nov). The card on it ends 8378. Google Cloud → Billing → Payments: pay it, and check the red banner is gone. If the card is declined, ask the bank to allow international online charges from Google. Hold the deploy until it is paid.', { link: { label: 'Open billing', url: billingPage } }),
+      B('l-rehearsal', 'Run the WhatsApp rehearsal and send the developer rehearsal.txt', '16 made-up chats against the real AI, about US$1 to 2, nothing sent to WhatsApp. Instructions are at the top of scripts/whatsapp-rehearsal.mjs in the Runner code. The bot has never talked to the real AI before this.'),
+      B('l-maps', 'Let the phone app use Google Maps', 'Google Cloud → APIs and services → Credentials. In DormDashMapsAndroidApiKey add the package com.jcommerce.runner with the SHA-1 fingerprint of Expo\'s Android signing key (the developer reads it from eas credentials). In DormDashMapsIOSApiKey add com.jcommerce.runner for later. Keep the old entries. Today both keys only allow com.dormdash.app, so maps in the rebuilt app would be grey.', { link: { label: 'Open API keys', url: gc('/apis/credentials') } }),
+      B('l-commit', 'Tell the developer "commit"', 'Nothing from the bot review, the deploy limit or these console changes is saved in git yet.'),
+      B('l-deploy', 'Deploy once: npm run deploy:all, then npm run deploy:data', 'The deploy limit allows 3 a day and 20 in 30 days. deploy:data (rules, indexes, storage) is not limited.'),
+      B('l-rebuild', 'Hold the app rebuild; share the website instead', 'The server requires App Check, which only the website can send, so in an APK paying, accepting orders and reporting problems would all fail. A shared APK also can\'t be updated or recalled. Send people to uwi-runner.online and show them how to add it to the home screen. Rebuild with the Play Store build, once online payments and phone App Check (Play Integrity) are in.'),
+      B('l-bank', 'Save the bank account for WhatsApp transfers', 'Runner control room → Is it running → "WhatsApp number and bank account". Until then the bot doesn\'t offer bank transfer.'),
+    ] },
+    // The owner's answers of 2 Nov 2026 that still need a look at an account
+    { title: 'Accounts to check (2 Nov 2026)', items: [
+      B('acc-mapskey', 'Find which Google key the website uses for maps', 'Google Cloud → APIs and services → Credentials → "Show key" on each, and compare its last 4 characters with EXPO_PUBLIC_GOOGLE_MAPS_API_KEY in Runner\'s .env file. Tell the developer the key\'s name only, never the key.', { link: { label: 'Open API keys', url: gc('/apis/credentials') } }),
+      B('acc-anthropic', 'Check the Anthropic spend limit and auto-reload', 'Probably under jcommerceandtech@gmail.com. console.anthropic.com → Settings → Limits (monthly spend limit) and Settings → Billing (credit balance, auto-reload). Tell the developer what each is set to.', { link: { label: 'Open Anthropic billing', url: 'https://console.anthropic.com/settings/billing' } }),
+      B('acc-meta', 'Write down the Meta details for WhatsApp', 'developers.facebook.com → My apps: the app\'s name and App ID. business.facebook.com → Settings → Accounts → WhatsApp accounts: the WhatsApp Business Account name. Then Billing and payments: is a payment method on it? Tell the developer.', { link: { label: 'Open Meta apps', url: 'https://developers.facebook.com/apps' } }),
+      B('acc-domain', 'Check the domain renews by itself', 'uwi-runner.online is registered with Cloudflare and paid until 16 Oct 2027. Sign in to Cloudflare (try jcommerceandtech@gmail.com) → Domain Registration → Manage domains → turn Auto-renew on, and check the card it will charge.', { link: { label: 'Open Cloudflare', url: 'https://dash.cloudflare.com' } }),
+      B('acc-play-verify', 'Email Google Play support about identity verification', 'Personal developer account; verification keeps failing. Play Console → Help (?) → Contact support, and keep their reply. Needed before any store release.', { link: { label: 'Open Play Console', url: 'https://play.google.com/console' } }),
+      B('acc-wipay', 'Email WiPay\'s admin about the old account', 'Ask whether the account is still open and whether to close it. Then tell the developer, who can switch off the WiPay key stored in Runner.'),
+      B('acc-photoroom', 'Check the Photoroom plan and its monthly image limit', 'Photoroom account → API: the plan, images used this month and the limit. Tell the developer.', { link: { label: 'Open Photoroom API', url: 'https://www.photoroom.com/api' } }),
+    ] },
     { title: 'Accounts and security', items: [
       B('deploy', 'Put the latest version live', 'The developer runs npm run deploy:all and answers yes when asked to delete storeAlertsAdmin (the old ntfy alerts).', auto('deploy', deployed, deployed === null ? null : deployed ? 'The live server is up to date and the old ntfy alerts are gone.' : 'The live version is behind the newest code, or the old ntfy alerts are still there.')),
       B('apikeys', 'Lock the API keys', 'Google Cloud → APIs and services → Credentials: each key limited to the Runner website or the Android app, never "None".', { link: { label: 'Open API keys', url: gc('/apis/credentials') } }),
@@ -942,17 +995,16 @@ export function judgeRunner(data, local = {}) {
       B('fygarooff', 'Card payments stay hidden until Fygaro is finished', 'Follow PAYMENTS_SETUP.md in the Runner code (this venture\'s Docs tab). Turning them on is one setting (EXPO_PUBLIC_CARD_PAYMENTS=on) and a website deploy.'),
     ] },
     { title: 'WhatsApp assistant and batch kitchens', items: [
-      B('wa-secrets', 'Put the real WhatsApp and AI keys in', 'The developer sets WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN and ANTHROPIC_API_KEY. Guide: docs/WHATSAPP_ORDERING.md in the Runner code.'),
+      B('wa-secrets', 'Put the real WhatsApp and AI keys in', 'The developer sets WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN and ANTHROPIC_API_KEY. Guide: docs/WHATSAPP_ORDERING.md in the Runner code. After the 2 Nov deploy, new keys apply within 5 minutes with no deploy; if the command offers to redeploy or destroy old versions, answer No.'),
       B('wa-number', 'Add Runner\'s number and give it its own webhook', 'The D&D bot doesn\'t check which number a message was sent to, so Runner\'s number needs the per-number webhook override or D&D will answer Runner\'s customers.'),
       B('wa-pay', 'A payment method on the Meta account', 'Since 1 Oct 2026 replies are free only for the first 1,000 per number each month. Check Jamaica\'s rate on Meta\'s rate card.'),
-      B('wa-bank', 'Bank details set', 'WA_BANK_DETAILS in Runner\'s settings. Until then the bot can\'t offer bank transfer.'),
-      B('wa-test', 'About 30 real test conversations on a test phone', 'Jamaican phrasing, typos, voice notes, changed minds. The AI has only ever been tested with a stand-in.'),
+      B('wa-bank', 'Bank details set', 'Runner control room → Is it running → "WhatsApp number and bank account" (after the 2 Nov deploy). Until then the bot can\'t offer bank transfer.'),
+      B('wa-test', 'About 30 real test conversations on a test phone', 'Jamaican phrasing, typos, voice notes, changed minds. Run the rehearsal first (Launch list above); the rehearsal tests the AI, these test the real WhatsApp number.'),
       B('wa-thumbs', 'Make small copies of older menu photos', 'After deploying, the developer runs node scripts/backfill-thumbnails.mjs --write.', auto('wa-thumbs', menuItems.length ? menuItems.every(m => !m.hasPhoto || m.hasThumb) : null, `${menuItems.filter(m => m.hasPhoto && !m.hasThumb).length} photos still need one.`)),
-      B('wa-keys-own', 'Re-enter the WhatsApp keys for Runner\'s own number', 'The keys in place were set on 30 Oct, before Runner had its own number. Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID again, then run npm run deploy:all.'),
+      B('wa-keys-own', 'Re-enter the WhatsApp keys for Runner\'s own number', 'The keys in place were set on 30 Oct and 31 Oct, before Runner had its own number. Set WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID again. After the 2 Nov deploy no deploy is needed: they apply within 5 minutes.'),
       B('wa-first-msg', 'One test message: only Runner\'s bot answers', 'Send it from a test phone after the webhook is set. D&D\'s bot must stay silent.'),
-      B('wa-templates', 'The four message templates approved by Meta', 'Then have WA_TEMPLATES_APPROVED set to true in Runner and put live.'),
-      B('wa-show', 'Show "Order on WhatsApp" on the website', 'Last step, after the test conversations. How to → Show or hide "Order on WhatsApp" in the app.'),
-      B('wa-show-phone', 'Show "Order on WhatsApp" in the phone apps', 'Set EXPO_PUBLIC_WHATSAPP_NUMBER on expo.dev under Environment variables, then make a new build. Only needed once the phone apps ship.'),
+      B('wa-show', 'Show "Order on WhatsApp" on the website', 'Last step, after the test conversations: save Runner\'s number in "WhatsApp number and bank account" (Is it running tab). The website and the Account page show it within a minute, with no deploy or rebuild.'),
+      B('wa-show-phone', 'Show "Order on WhatsApp" in the phone apps', 'After the 2 Nov rebuild the Account page shows it from the saved number. Only the "How Runner works" card needs EXPO_PUBLIC_WHATSAPP_NUMBER on expo.dev and a later build.'),
       B('photo-test', 'Upload one real menu photo on the live site', 'Runner admin → Stores → Menu items. Ticks itself once a menu item has a photo.', auto('photo-test', menuItems.some(m => m.hasPhoto) || null, 'No menu item has a photo yet.')),
       B('wa-kitchen', 'Social Welfare set up as a batch kitchen', 'Runner admin → the store: daily menu, pickup times, label printer and tablet ready.', auto('wa-kitchen', stores.some(s => s.dailyMenu === true) || null, 'No store is on a daily menu yet.')),
     ] },
@@ -1008,7 +1060,7 @@ export function judgeRunner(data, local = {}) {
     lists: P.lists?.ok ? { statuses: P.lists.orderStatus?.length || 0, reasons: P.lists.cancelReason?.length || 0 } : null,
     budgets, budgetError: P.budgets?.ok ? null : P.budgets?.error || null, budgetDisabled: !!P.budgets?.disabled,
     appCheck, backups: P.backups?.ok ? P.backups : null, policies: P.policies?.ok ? P.policies.rows : null, billing: P.billing?.ok ? P.billing : null,
-    serverUp: P.server?.ok ? P.server : null, domains: P.domains?.ok ? P.domains.rows : null,
+    forecast, deploys, budgetUsd, serverUp: P.server?.ok ? P.server : null, domains: P.domains?.ok ? P.domains.rows : null,
   };
 
   const sections = [
