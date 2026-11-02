@@ -7,6 +7,16 @@ contextBridge.exposeInMainWorld('desktop', {
   exportData: (json, filename) => ipcRenderer.invoke('data:export', { json, filename }),
   // A Mac notification (with its sound) for something that needs the owner now
   notify: (title, body) => ipcRenderer.invoke('app:notify', { title, body }),
+  // Encrypted backups: the password goes in once and never comes back out
+  backup: {
+    status: () => ipcRenderer.invoke('backup:status'),
+    setPassword: (value, current) => ipcRenderer.invoke('backup:setPassword', { value, current }),
+    make: (payload, auto, label) => ipcRenderer.invoke('backup:make', { payload, auto, label }),
+    verify: file => ipcRenderer.invoke('backup:verify', file),
+    saveCopy: file => ipcRenderer.invoke('backup:saveCopy', file),
+    reveal: file => ipcRenderer.invoke('backup:reveal', file),
+    email: file => ipcRenderer.invoke('backup:email', file),
+  },
   saveInvoicePdf: (html, filename) => ipcRenderer.invoke('invoice:save-pdf', { html, filename }),
   // Live cost figures. Keys go in, but never come back out to the window.
   live: {

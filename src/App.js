@@ -2,6 +2,9 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db, auth } from './firebase';
 import { LANGS, setLanguage, localeOf } from './i18n';
 import RunnerControl, { RunnerWatch } from './RunnerControl';
+import BackupPanel from './BackupPanel';
+import { backupDocument } from './backupDoc';
+import { PARTS } from './runnerParts';
 import {
   onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword,
   sendPasswordResetEmail, signOut,
@@ -1726,14 +1729,26 @@ function App() {
   };
   // One file with everything in it, saved wherever you choose
   const [lastBackup, setLastBackup] = useState(() => { try { return localStorage.getItem('jc_last_backup') || ''; } catch { return ''; } });
-  const backupData = async () => {
-    if (!DESKTOP?.exportData) { toast('Backups only work in the Mac app', 'bad'); return; }
+  // Everything in the console as one encrypted file (electron/backup.js): a
+  // readable Jcommerce document plus the raw data, saved to iCloud Drive.
+  const [backupOpen, setBackupOpen] = useState(false);
+  const makeBackup = async (auto = false) => {
+    if (!DESKTOP?.backup) return { ok: false, error: 'Backups only work in the Mac app' };
     const collections = { invoices, leads, habits, schedule, finances, goals, todos, journal, budgets, timers, courses, settings, debts, ventures, venture_items: ventureItems, venture_services: ventureServices_, venture_checks: ventureChecks, service_rounds: serviceRounds, control_ticks: controlTicks };
-    const r = await DESKTOP.exportData(JSON.stringify({ app: 'JCommerce Console', exportedAt: new Date().toISOString(), collections }, null, 1), `jcommerce-console-backup-${todayStr}.json`);
-    if (!r?.ok) return;
-    try { localStorage.setItem('jc_last_backup', todayStr); } catch {}
-    setLastBackup(todayStr);
-    toast(`Backup saved: ${Object.values(collections).reduce((t, x) => t + x.length, 0)} records`);
+    const exportedAt = new Date().toISOString();
+    let runnerLocal = null; try { runnerLocal = JSON.parse(localStorage.getItem('jc_runner_local')) || null; } catch {}
+    const data = JSON.parse(JSON.stringify({ app: 'JCommerce Console', exportedAt, collections, runnerControlRoom: runnerLocal, runnerParts: PARTS, xp: { xp, level, ledger } }));
+    const html = backupDocument({ collections: data.collections, exportedAt, logo: LOGO_B64, xp, level, ledger, runnerLocal, parts: PARTS,
+      money: { income: J(totalIncome), expenses: J(totalExpenses), net: J(profit) } });
+    const r = await DESKTOP.backup.make(JSON.stringify({ name: `jcommerce-console-${todayStr}`, html, data }), auto, `Everything in JCommerce Console on ${todayStr}`);
+    if (r?.ok) { try { localStorage.setItem('jc_last_backup', todayStr); } catch {} setLastBackup(todayStr); }
+    return r;
+  };
+  const makeBackupRef = useRef(makeBackup);
+  makeBackupRef.current = makeBackup;
+  const backupData = () => {
+    if (!DESKTOP?.backup) { toast('Backups only work in the Mac app', 'bad'); return; }
+    setBackupOpen(true);
   };
   // Only today and yesterday can be changed: back-filling old days used to erase penalties
   const toggleHabit = async (habit, date) => {
@@ -1922,6 +1937,21 @@ function App() {
   const ledger = xpLedger(xpData);
   const xp = calcXP(xpData);
   const { level, progress, xpInLevel, inRed } = xpToLevel(xp);
+  // A daily backup by itself while the console is open, once a password is set
+  useEffect(() => {
+    if (loading || !DESKTOP?.backup) return undefined;
+    let stop = false;
+    const check = async () => {
+      try {
+        const st = await DESKTOP.backup.status();
+        if (stop || !st.ok || !st.hasPassword || Date.now() - (st.lastAuto || 0) < 23 * 3600e3) return;
+        const r = await makeBackupRef.current(true);
+        if (!stop && !r?.ok) toast(`Daily backup failed: ${r?.error || 'unknown reason'}`, 'bad');
+      } catch {}
+    };
+    const first = setTimeout(check, 60000), every = setInterval(check, 3600e3);
+    return () => { stop = true; clearTimeout(first); clearInterval(every); };
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
   const [prevLevel, setPrevLevel] = useState(null);
   const [showLevelUp, setShowLevelUp] = useState(false);
   useEffect(() => {
@@ -2210,6 +2240,7 @@ function App() {
       </nav>
 
       {/* Briefing Modal */}
+      {backupOpen && <BackupPanel api={DESKTOP.backup} onMake={makeBackup} onClose={() => setBackupOpen(false)} toast={toast}/>}
       {briefingOpen && todayBriefing && (
         <div className="modal-overlay" onClick={() => setBriefingOpen(false)}>
           <div className="modal modal-tall" onClick={e=>e.stopPropagation()}>

@@ -8,6 +8,7 @@ const fsSync = require('fs');
 const { pathToFileURL } = require('url');
 const venture = require('./venture');
 const live = require('./live');
+const backup = require('./backup');
 
 const SCHEME = 'app';
 const BUILD_DIR = path.join(__dirname, '..', 'build');
@@ -120,6 +121,7 @@ ipcMain.handle('app:notify', (_e, { title, body } = {}) => {
 venture.register(() => win);
 // Live cost figures (read-only; keys stay encrypted on this Mac)
 live.register(venture.cliToken);
+backup.register(() => win);
 
 function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate([

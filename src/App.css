@@ -3641,3 +3641,6 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
   .office-tab { animation: none; }
   .office-file { transition: none; }
 }
+
+/* Backups panel: secondary text */
+.muted { color: var(--ink-4); font-size: 13px; }
