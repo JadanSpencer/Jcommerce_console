@@ -961,6 +961,8 @@ export function judgeRunner(data, local = {}) {
       B("wa-rename", "Optional: rename the Meta app and WhatsApp account", "They are called D&D_WHOLESALE and \"D&D Wholesale\" but now hold Runner too. Renaming changes nothing for either bot or their customers. Never touch App secret → Reset: D&D uses it too."),
       B("wa-admin", "Plan a second admin for busy times", "Bank transfers need checking within 30 minutes, \"speak to a person\" alerts go to you, and stores must confirm orders. At about 50 orders at lunch you'll need help and runners on shifts."),
       B("wa-dnd-render", "D&D's bot is a single small Render server", "whatsapp-bot on Render: 0.5 CPU, 512 MB, one copy. A crash or redeploy means a minute or two of silence. A second copy costs more: decide with D&D."),
+      B("wa-dnd-3nov", "D&D's bot: blue ticks and the team \"report\" (live 3 Nov: tick it)", "Deployed 3 Nov 2026 (whatsapp-bot 487b407, which also carries the 17 Oct changes). Customers' messages are marked read and show \"typing…\" instead of getting a ✅. D&D's team line 876-826-4820 can text \"report\" for the last 7 days: orders sent to checkout and their value, customers, AI cost, and items asked for but not stocked. Outage alerts (no AI credit, key rejected) go to the same line, at most once an hour. Try it: text \"report\" from 876-826-4820."),
+      B("wa-dnd-own-number", "D&D's bot answers only D&D's number (live 3 Nov: tick it)", "Deployed 3 Nov 2026 (whatsapp-bot 95a561e): D&D's bot ignores any message sent to another number, so it can never answer Runner's customers, even if Runner's webhook override were removed. A safety net on top of the override."),
     ] },
     // The owner's answers of 2 Nov 2026 that still need a look at an account
     { title: 'Accounts to check (2 Nov 2026)', items: [
@@ -1016,7 +1018,8 @@ export function judgeRunner(data, local = {}) {
     ] },
     { title: 'WhatsApp assistant and batch kitchens', items: [
       B('wa-secrets', 'Put the real WhatsApp and AI keys in', 'The developer sets WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN and ANTHROPIC_API_KEY. Guide: docs/WHATSAPP_ORDERING.md in the Runner code. After the 2 Nov deploy, new keys apply within 5 minutes with no deploy; if the command offers to redeploy or destroy old versions, answer No.'),
-      B('wa-number', 'Add Runner\'s number and give it its own webhook', 'The D&D bot doesn\'t check which number a message was sent to, so Runner\'s number needs the per-number webhook override or D&D will answer Runner\'s customers.'),
+      // Was id 'wa-number', which the "number is live" job above also used, so ticking one ticked both.
+      B('wa-webhook', 'Add Runner\'s number and give it its own webhook (done 3 Nov: tick it)', 'Done 3 Nov 2026: Runner\'s number has the per-number webhook override, so only Runner\'s server gets its messages. Since 3 Nov D&D\'s bot also ignores other numbers itself.'),
       B('wa-pay', 'A payment method on the Meta account', 'Since 1 Oct 2026 replies are free only for the first 1,000 per number each month. Check Jamaica\'s rate on Meta\'s rate card.'),
       B('wa-bank', 'Bank details set', 'Runner control room → Is it running → "WhatsApp number and bank account" (after the 2 Nov deploy). Until then the bot can\'t offer bank transfer.'),
       B('wa-test', 'About 30 real test conversations on a test phone', 'Jamaican phrasing, typos, voice notes, changed minds. Run the rehearsal first (Launch list above); the rehearsal tests the AI, these test the real WhatsApp number.'),
