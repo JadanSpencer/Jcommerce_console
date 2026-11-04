@@ -542,6 +542,34 @@ function Trading({ T, launchDate }) {
 const TABS = [['now', 'Now'], ['guide', 'How to'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
 
 // ── Cash & referrals (Runner's confirmed orders) ────────────────────────────
+// Cash a runner collected on cash deliveries and handed to you: recorded on
+// Runner (ownerAction runnerCashIn, functions/src/payments.ts), which lowers
+// what they owe, never below zero, with a note. A runner who still owes cash
+// can't delete their account.
+function RunnerCashIn({ list, api, project }) {
+  const [amount, setAmount] = useState({});
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState(null);
+  if (!list?.length) return null;
+  const save = async x => {
+    const n = Math.round(Number(amount[x.id]));
+    if (busy || !(n > 0)) return;
+    if (!window.confirm(`Record ${J(n)} handed in by ${x.name}?`)) return;
+    setBusy(x.id); setMsg(null);
+    const r = await api.ownerAction(project, { action: 'runnerCashIn', uid: x.id, amountJmd: n, note: `Handed in, recorded from the console ${new Date().toISOString().slice(0, 10)}` });
+    setBusy('');
+    setMsg(r.ok ? { ok: true, text: `${x.name} now owes ${J(r.cashOwedJmd)}.` } : { ok: false, text: r.error });
+    if (r.ok) { setAmount(a => ({ ...a, [x.id]: '' })); store.last = 0; refresh(); }
+  };
+  return (<>
+    {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
+    <table className="rc-table"><thead><tr><th>Runner holding delivery cash</th><th>Owes</th><th>Handed in</th></tr></thead>
+      <tbody>{list.map(x => <tr key={x.id}><td>{x.name}</td><td>{J(x.amount)}</td><td><span className="row-gap">
+        <input className="input" style={{ width: 110 }} inputMode="numeric" placeholder="J$" value={amount[x.id] || ''} onChange={e => setAmount(a => ({ ...a, [x.id]: e.target.value.replace(/[^0-9]/g, '') }))}/>
+        <button className="btn-ghost" disabled={!!busy || !(Number(amount[x.id]) > 0) || Number(amount[x.id]) > x.amount} onClick={() => save(x)}>{busy === x.id ? 'Saving…' : 'Record'}</button></span></td></tr>)}</tbody></table>
+  </>);
+}
+
 // Each customer's progress toward paying by cash (J$5,000 of confirmed coin
 // spend unlocks it, permanently, unless taken away here), cash orders that
 // weren't paid, admins' referral commission and payouts, and refunds Runner
@@ -800,6 +828,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
                 <div><span>Cash orders not paid</span><b>{unpaidCash === null ? "couldn't check" : J(unpaidCash)}</b>
                   <small>Logged by runners and stores; details in Cash &amp; referrals.</small></div>
               </div>
+              <RunnerCashIn list={r.due.runnersHoldingCash} api={api} project={project}/>
               {r.due.sellers.length > 0 && <table className="rc-table"><thead><tr><th>Card seller</th><th>Redeemed (all time)</th><th>Cards</th><th>Still out, unredeemed</th></tr></thead>
                 <tbody>{r.due.sellers.map(x => <tr key={x.name}><td>{x.name}</td><td>{J(x.redeemed)}</td><td>{x.cards}</td><td>{J(x.unredeemed)}</td></tr>)}</tbody></table>}
               {coinRunners.length > 0 && <table className="rc-table"><thead><tr><th>Admin runner</th><th>Given</th><th>Sold</th><th>Taken back</th><th>In stock</th><th>Cash handed in</th><th>Cash owed</th><th>Last sale</th></tr></thead>

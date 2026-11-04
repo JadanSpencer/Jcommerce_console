@@ -592,7 +592,8 @@ async function findOrder(project, cliToken, { code, id } = {}) {
 // Runner's ownerAction endpoint (functions/src/owner.ts) accepts this Mac's
 // Firebase login only if it can already write Runner's database; it then
 // makes the change in a transaction and logs it in ownerActions.
-const OWNER_ACTIONS = ['revokeCash', 'restoreCash', 'payAdminCommissions', 'reverseOrder'];
+// Every action Runner's ownerAction accepts (functions/src/owner.ts); anything else is refused here first.
+const OWNER_ACTIONS = ['revokeCash', 'restoreCash', 'payAdminCommissions', 'reverseOrder', 'runnerCashIn', 'whatsappNumber', 'whatsappBank', 'botLessons'];
 async function ownerAction(project, cliToken, body = {}) {
   if (!/^[a-z0-9-]+$/.test(project || '') || !OWNER_ACTIONS.includes(body.action)) return { ok: false, error: 'Unknown action' };
   const send = async token => {

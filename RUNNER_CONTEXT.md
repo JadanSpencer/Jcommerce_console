@@ -194,7 +194,7 @@ settled by hand with Adjust Runner coins.
 | `adminPayouts` | `adminUid`, `amountJmd`, `grossJmd`, `clawbackJmd`, `count`, `createdAt` |
 | `dashers` | `cashOwedJmd` (cash a runner collected for Runner) |
 
-Writes: only through Runner's `ownerAction` endpoint (`electron/ops.js` ownerAction): revokeCash, restoreCash, payAdminCommissions, reverseOrder. The Runner control room's "Cash & referrals" tab uses them. Customer names are read for the cash list only.
+Writes: only through Runner's `ownerAction` endpoint (`electron/ops.js` ownerAction): revokeCash, restoreCash, payAdminCommissions, reverseOrder, runnerCashIn (delivery cash handed in, 3 Nov 2026), whatsappNumber, whatsappBank, botLessons. Until 3 Nov 2026 the last three were missing from the allowlist, so those buttons answered Unknown action. The Runner control room's "Cash & referrals" tab uses them. Customer names are read for the cash list only.
 
 j-commerce.online is a venture (added once) with a Tech tab: Vercel domain settings with a Vercel token (encrypted on this Mac), and request checks from this Mac every 5 minutes while the tab is open.
 
