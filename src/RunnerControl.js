@@ -550,13 +550,20 @@ function RunnerCashIn({ list, api, project }) {
   const [amount, setAmount] = useState({});
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState(null);
+  // One-time ids (Runner functions/src/once.ts): a retry of the same amount
+  // after a timeout keeps its id, so Runner records it once; a new id after
+  // Runner confirms.
+  const waiting = useRef({});
   if (!list?.length) return null;
   const save = async x => {
     const n = Math.round(Number(amount[x.id]));
     if (busy || !(n > 0)) return;
     if (!window.confirm(`Record ${J(n)} handed in by ${x.name}?`)) return;
     setBusy(x.id); setMsg(null);
-    const r = await api.ownerAction(project, { action: 'runnerCashIn', uid: x.id, amountJmd: n, note: `Handed in, recorded from the console ${new Date().toISOString().slice(0, 10)}` });
+    const key = `${x.id}:${n}`;
+    const requestId = waiting.current[key] || (waiting.current[key] = Array.from(crypto.getRandomValues(new Uint8Array(18)), b => 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[b % 62]).join(''));
+    const r = await api.ownerAction(project, { action: 'runnerCashIn', uid: x.id, amountJmd: n, requestId, note: `Handed in, recorded from the console ${new Date().toISOString().slice(0, 10)}` });
+    if (r.ok) delete waiting.current[key];
     setBusy('');
     setMsg(r.ok ? { ok: true, text: `${x.name} now owes ${J(r.cashOwedJmd)}.` } : { ok: false, text: r.error });
     if (r.ok) { setAmount(a => ({ ...a, [x.id]: '' })); store.last = 0; refresh(); }

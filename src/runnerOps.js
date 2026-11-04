@@ -147,6 +147,7 @@ export const ROUTINES = [
     ['m-totals', 'Totals for the month: orders, delivered, Runner\'s share, average delivery time, new students, active runners.'],
     ['m-access', 'Review who has admin access and which store logins exist; remove any no longer needed.', '/users'],
     ['m-updates', 'Ask the developer for the monthly update round.'],
+    ['m-offsite', 'Off-Google backup of Runner: in the Runner folder, node scripts/offsite-backup.mjs (asks the backup passphrase), then copy the file from Documents → Runner backups to an external drive.'],
   ] },
   { kind: 'term', title: 'Every term', items: [
     ['t-stores', 'Check every store\'s hours, menu and prices for the new term.', '/stores'],
@@ -978,6 +979,12 @@ export function judgeRunner(data, local = {}) {
     // The code review of 3 Nov 2026: fixes made, not live until deployed
     { title: 'Code review fixes (3 Nov 2026)', items: [
       B("rv-deploy", "Deploy the 3 Nov review fixes", "Made and tested 3 Nov 2026, not live yet. 1) Nobody can delete their account while they owe Runner: an admin runner with coins to sell or cash to hand in, or a runner holding cash from deliveries. 2) Delivery cash handed in can now be recorded: Runner admin → Users → the runner → \"Delivery cash handed in\", or here in Money due → Runners holding delivery cash → Record. It lowers what they owe, never below zero, with a note. 3) Admin referral commission is 2.5% of the fee the customer paid: nothing on a free delivery (your decision, 3 Nov). 4) The privacy policy says plainly that the WhatsApp assistant uses AI (Anthropic); nothing else does. 5) A store asked to confirm a delivery order is told it's a delivery, not a pickup. 6) A cancelled paid order's message says where the money went (coins, card, or support will contact you). 7) Stores can set a kitchen timer on cash orders (it showed an error before). In the Runner folder: npm run deploy:all (one new function, adminRecordRunnerCash). The console's Record button works only after that deploy. Undo: revert the commit and deploy again; the Record button then answers Unknown action and changes nothing."),
+    ] },
+    { title: 'Reliability fixes (4 Nov 2026)', items: [
+      B("rl-deploy", "Deploy the 4 Nov reliability fixes", "Made and tested 4 Nov 2026, not live yet. 1) The 5-minute sweep now also finishes counting a confirmed order (spend toward cash, admin commission), taking it back on a cancel, an Ask Runner change, stock taken and given back, and a referral at sign-up, if the first try failed. Same rules, never twice. 2) A coin sale, coin stock, cash handed in (coins or deliveries) and coin or float adjustments are saved once even if the connection drops and someone taps again; the console's Record button too. In the Runner folder: npm run deploy:data first (one new database index), wait about 5 minutes, then npm run deploy:all. Undo: revert the commit and deploy again; the index can stay."),
+      B("rl-alert", "Sweep-stopped alert (done 4 Nov: tick it)", "Google emails sp3nc3rjadan29@gmail.com if the 5-minute sweep hasn't run for 15 minutes: usually the bill, a paused schedule or a bad deploy. Undo: Google Cloud → Monitoring → Alerting → delete \"Runner: the 5-minute sweep stopped\".", { link: { label: 'Open alerting', url: gc('/monitoring/alerting') } }),
+      B("rl-weekly", "Weekly backup kept 14 weeks (done 4 Nov: tick it)", "Runner's database now has a daily backup kept 7 days and a Sunday backup kept 14 weeks, so a mistake found after a week can still be undone. Both live inside Google, so see the next task too. Undo: firebase firestore:backups:schedules:list, then :delete the weekly one."),
+      B("rl-offsite", "Make the first off-Google backup", "In the Runner folder: node scripts/offsite-backup.mjs. Choose a passphrase of 12+ characters and keep it in your password manager (without it nobody can open the file, you included). The file lands in Documents → Runner backups; copy it to an external drive. Then once a month (Routines)."),
     ] },
     // The owner's answers of 2 Nov 2026 that still need a look at an account
     { title: 'Accounts to check (2 Nov 2026)', items: [
