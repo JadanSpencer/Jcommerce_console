@@ -72,8 +72,9 @@ const KNOWN_PAYMENT_DOCS = ['pending', 'verified', 'paid', 'credited', 'review',
 // declined payment has gone unpaid long enough. A known unpaid balance is
 // therefore kept here, red and at the top, until the owner marks it sorted.
 // To raise a new one, add its date here.
-// Past-due Google bills to pin at the top ({ id, what }). The 16 Oct one was paid on 19 Oct.
-const BILLING_DUE = [{ id: '2026-11-01', what: 'Google says Runner\'s billing account is past due and the project is at risk of suspension (email of 1 Nov 2026).' }];
+// Past-due Google bills to pin at the top ({ id, what }). The 16 Oct one was paid on 19 Oct;
+// the 1 Nov one on 4 Nov (US$4.27, balance US$0.00).
+const BILLING_DUE = [];
 export const reviewWords = r => {
   const s = String(r || '');
   if (s.startsWith('amount_short_')) return `Fygaro reported less money than was due (it said ${s.slice(13)}).`;
