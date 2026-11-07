@@ -3644,3 +3644,10 @@ button.pl-follow-main { background: none; border: none; color: inherit; text-ali
 
 /* Backups panel: secondary text */
 .muted { color: var(--ink-4); font-size: 13px; }
+/* JAXON: what research found about a lead */
+.jx-research { display: grid; gap: 0.3rem; margin: 0.5rem 0 0.4rem; }
+.jx-research > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 0.6rem; font-size: 13px; line-height: 1.5; }
+.jx-research dt { font: 600 9.5px var(--fm); letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold-300); padding-top: 3px; }
+.jx-research dd { margin: 0; color: var(--ink-1); }
+.jx-research b { color: var(--ink-0); font-weight: 600; }
+.jx-pending { font-style: normal; color: var(--ink-3); font-size: 12px; }

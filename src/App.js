@@ -6494,8 +6494,14 @@ function JaxonDashboard({leadSearches = [],queue,logs,briefings,todayStr,onAppro
                     <button className="btn-ghost tk-carry" onClick={() => onReject(item.id)}>Reject</button>
                   </span>
                 </div>
-                <p>{item.reasoning}</p>
-                {item.data?.outreachDraft && <details><summary>Draft message</summary><p>{item.data.outreachDraft}</p></details>}
+                {item.research ? (
+                  <dl className="jx-research">
+                    <div><dt>Business</dt><dd>{item.research.model}</dd></div>
+                    <div><dt>Lead with</dt><dd><b>{item.research.best}</b>{item.research.why ? ` · ${item.research.why}` : ''}</dd></div>
+                    {item.research.also?.length > 0 && <div><dt>Also offer</dt><dd>{item.research.also.join(' · ')}</dd></div>}
+                  </dl>
+                ) : <p>{item.reasoning}{item.data?.placeId && <em className="jx-pending"> · JAXON researches this business within the next few hours</em>}</p>}
+                {item.data?.outreachDraft && <details open={!!item.research}><summary>{item.research ? 'Message, written from the research' : 'Draft message'}</summary><p>{item.data.outreachDraft}</p></details>}
               </div>
             ))}
             <Pager pg={pg} noun="leads"/>
