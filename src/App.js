@@ -560,9 +560,9 @@ function useNotifications() {
 }
 
 // ─── SYSTEM HEALTH MONITOR ────────────────────────────────────────────────────
-// JAXON's server is off for now, to save money (30 Oct 2026). True brings back
-// its tab, health check, reinvestment advice and notifications sign-up.
-const JAXON_ON = false;
+// JAXON's server: its tab, health check, reinvestment advice and notifications
+// sign-up. Switched off 30 Oct 2026 to save money; back on 7 Nov 2026 to find clients.
+const JAXON_ON = true;
 
 // Pings JAXON and detects Anthropic credit errors from logs
 function useSystemHealth() {
@@ -2168,7 +2168,17 @@ function App() {
         {tab==='schedule' && <Schedule schedule={schedule} onAdd={d=>add('schedule',d)} onUpdate={(id,d)=>update('schedule',id,d)} onDelete={id=>remove('schedule',id)}/>}
         {tab==='finance'  && <Finance ventures={ventures} debts={debts} onSaveDebt={d => { const { id, createdAt, ...data } = d; return id ? update('debts', id, data) : add('debts', data); }} onDeleteDebt={id => remove('debts', id)} finances={finances} leads={leads} budgets={budgets} level={level} onAdd={addFinance} onStartOver={startFinancesOver} invoices={invoices} invoiceApi={invoiceApi} onUpdate={(id,d)=>update('finances',id,d)} onDelete={id=>remove('finances',id)} onSetBudget={setBudget}/>}
         {tab==='goals'    && <Goals goals={goals} finances={finances} leads={leads} timers={timers} todayStr={todayStr} onAdd={d=>add('goals',d)} onUpdate={(id,d)=>update('goals',id,d)} onDelete={id=>remove('goals',id)}/>}
-        {JAXON_ON && tab==='jaxon' && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}/>}
+        {JAXON_ON && tab==='jaxon' && <JaxonDashboard leadSearches={leadSearches} queue={queue} logs={logs} briefings={briefings} todayStr={todayStr} onApprove={id=>update('jaxon_queue',id,{status:'approved'})} onReject={id=>update('jaxon_queue',id,{status:'rejected'})}
+          onApproveSend={async item => {
+            // The lead goes straight into the pipeline as contacted, and WhatsApp opens on this Mac
+            // with JAXON's message to them. You press Send, from your own number.
+            const d = item.data || {};
+            if (!d.phone) return;
+            window.open(waHref(d.phone, d.outreachDraft || ''), '_blank');
+            await add('leads', { ...d, status: 'Contacted', source: 'JAXON Agent', lastContacted: todayStr, nextAction: 'Follow up on the WhatsApp message', nextActionDate: addDays(todayStr, 3),
+              activity: [{ date: todayStr, text: 'Found by JAXON; first WhatsApp message sent' }] });
+            await update('jaxon_queue', item.id, { status: 'executed', executedAt: new Date(), sentBy: 'console' });
+          }}/>}
         {tab==='ventures' && <Ventures rounds={serviceRounds.filter(r => r.date === todayStr)}
           onToggleRound={(ventureId, serviceId) => {
             const doc = serviceRounds.find(r => r.date === todayStr && r.ventureId === ventureId);
@@ -6427,7 +6437,7 @@ function ProductModal({ client, onSave, onClose }) {
 }
 
 // ─── JAXON DASHBOARD ──────────────────────────────────────────────────────────
-function JaxonDashboard({leadSearches = [],queue,logs,briefings,todayStr,onApprove,onReject}) {
+function JaxonDashboard({leadSearches = [],queue,logs,briefings,todayStr,onApprove,onReject,onApproveSend}) {
   const leadPager = usePager(6);
   // Leads arrive as one search a day. Everything a search found is shown together.
   const pendingLeads = queue.filter(q => q.status === 'pending' && q.action === 'ADD_LEAD');
@@ -6479,6 +6489,7 @@ function JaxonDashboard({leadSearches = [],queue,logs,briefings,todayStr,onAppro
                   </div>
                   <span className="row-gap">
                     <span className={`tk-due ${item.priority === 'high' ? 'soon' : ''}`}>{item.priority}</span>
+                    {item.data?.phone && item.data?.outreachDraft && <button className="btn-primary tk-carry" title="Adds them to the pipeline as contacted and opens WhatsApp with this message. You press Send." onClick={() => onApproveSend(item)}><Icons.whatsapp size={12}/> Approve &amp; WhatsApp</button>}
                     <button className="btn-ghost tk-carry" onClick={() => onApprove(item.id)}>Approve</button>
                     <button className="btn-ghost tk-carry" onClick={() => onReject(item.id)}>Reject</button>
                   </span>
