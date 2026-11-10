@@ -8,6 +8,9 @@
 // numbers, emails or addresses. The only personal fields read are a runner's name and phone (the
 // owner has to be able to call them), admin emails (the admin list), and the
 // name of each customer on the cash list (the owner decides who may pay cash).
+// The order desk (desk, below) is the exception: to facilitate open orders it
+// reads each one's customer first name, place, note and items, and the coin
+// lookup (findUser) reads the one account the owner searched for.
 // A store's phone number is its public business number.
 //
 // Writing: the control room changes Runner only through ownerAction (below):
@@ -588,12 +591,85 @@ async function findOrder(project, cliToken, { code, id } = {}) {
   } catch (e) { return { ok: false, error: e.message || 'Could not read Runner' }; }
 }
 
+// ── The order desk ────────────────────────────────────────────────────────
+// Every open order at every store, read every few seconds while the desk is
+// on screen, so the owner can facilitate them (answer for the store, give one
+// to a runner or take it, move it on, record payment at the door). To do
+// that it reads the customer's first name, where it goes, their note and the
+// items: shown on this Mac only, never stored or logged.
+const DESK_FIELDS = [...ORDER_FIELDS, 'confirmedAt', 'studentName', 'dasherName', 'deliveryAddress.label', 'studentNote', 'items', 'paidBy', 'cashCollectedAt', 'launchOfferNo'];
+async function desk(project, cliToken) {
+  if (!/^[a-z0-9-]+$/.test(project || '')) return { ok: false, error: 'Unknown project' };
+  const run = async token => {
+    const [orders, stores, runners, dashers, offer, transfers] = await Promise.all([
+      query(project, token, { collectionId: 'orders', where: cmp('status', 'IN', oneOf(['pending', 'accepted', 'picking_up', 'on_the_way'])), fields: DESK_FIELDS, limit: 200 }),
+      query(project, token, { collectionId: 'stores', fields: ['name', 'isOpen', 'phone'], limit: 300 }),
+      query(project, token, { collectionId: 'users', where: cmp('role', 'EQUAL', str('dasher')), fields: ['name', 'phone', 'isActive', 'dasherStatus', 'adminRunner'], limit: 400 }),
+      query(project, token, { collectionId: 'dashers', fields: ['isOnline', 'activeOrderId', 'cashOwedJmd'], limit: 400 }),
+      getDoc(project, token, 'publicStats/launchOffer'),
+      query(project, token, { collectionId: 'deliveryTransfers', where: cmp('status', 'EQUAL', str('to_check')), fields: ['amountJmd', 'createdAt'], limit: 100 }),
+    ]);
+    const busy = Object.fromEntries(dashers.rows.map(d => [d.id, d]));
+    // The chat on orders the console's own runner took (Runner shared.ts CONSOLE_RUNNER_UID)
+    const chats = Object.fromEntries(await Promise.all(orders.rows.filter(o => o.dasherId === 'console_runner').map(async o => {
+      const m = await query(project, token, { parent: `orders/${o.id}`, collectionId: 'messages', fields: ['from', 'text', 'createdAt'], limit: 40 });
+      return [o.id, m.rows.map(x => ({ mine: x.from === 'console_runner', text: String(x.text || ''), at: Number(x.createdAt) || x.movedAt || 0 })).sort((a, b) => a.at - b.at)];
+    })));
+    return {
+      ok: true, at: Date.now(),
+      orders: orders.rows.map(row => {
+        const { items, movedAt, parent, deliveryAddress, studentName, ...o } = tidyOrder(row);
+        return { ...o, chat: chats[o.id] || null, place: deliveryAddress?.label || '', customer: String(studentName || 'Customer').split(' ')[0],
+          items: (Array.isArray(items) ? items : []).slice(0, 30).map(x => ({ name: String(x?.menuItem?.name || x?.name || 'Item').slice(0, 80), quantity: Number(x?.quantity) || 1 })) };
+      }).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
+      stores: stores.rows.map(x => ({ id: x.id, name: x.name || x.id, open: x.isOpen !== false, phone: x.phone || '' })).sort((a, b) => a.name.localeCompare(b.name)),
+      runners: runners.rows.filter(u => u.isActive !== false).map(u => ({ id: u.id, name: u.name || 'Runner', phone: u.phone || '', verified: (u.dasherStatus || 'verified') === 'verified', adminRunner: u.adminRunner === true,
+        online: !!busy[u.id]?.isOnline, busy: !!busy[u.id]?.activeOrderId })).sort((a, b) => a.name.localeCompare(b.name)),
+      offer: { on: offer.doc?.on === true, given: Number(offer.doc?.given) || 0, max: Number(offer.doc?.max) || 50 },
+      transfersToCheck: transfers.rows.length,
+    };
+  };
+  try {
+    const token = await cliToken(false);
+    if (!token) return { ok: false, error: 'This Mac\'s Firebase sign-in has run out.' };
+    try { return await run(token); }
+    catch (e) { if (e.code !== 401) throw e; return await run(await cliToken(true)); }
+  } catch (e) { return { ok: false, error: e.message || 'Could not read Runner' }; }
+}
+
+// Superadmin coins: find an account by email or phone (exact), to give coins to.
+async function findUser(project, cliToken, text) {
+  if (!/^[a-z0-9-]+$/.test(project || '')) return { ok: false, error: 'Unknown project' };
+  const q = String(text || '').trim();
+  if (q.length < 4) return { ok: false, error: 'Type their email or phone number.' };
+  const F = ['name', 'email', 'phone', 'role', 'adminRunner', 'isActive'];
+  const run = async token => {
+    const tries = q.includes('@') ? [cmp('email', 'EQUAL', str(q.toLowerCase())), cmp('email', 'EQUAL', str(q))]
+      : [cmp('phone', 'EQUAL', str(q)), cmp('phone', 'EQUAL', str(q.replace(/\D/g, ''))), cmp('phone', 'EQUAL', str(`+${q.replace(/\D/g, '')}`))];
+    const found = new Map();
+    for (const where of tries) (await query(project, token, { collectionId: 'users', where, fields: F, limit: 5 })).rows.forEach(r => found.set(r.id, r));
+    const ids = [...found.keys()];
+    const wallets = ids.length ? await batchGet(project, token, ids.map(id => `wallets/${id}`), ['balanceJmd', 'reservedJmd']) : {};
+    const stock = ids.length ? await batchGet(project, token, ids.map(id => `coinStock/${id}`), ['balanceJmd']) : {};
+    return { ok: true, users: ids.map(id => { const u = found.get(id); return { id, name: u.name || '', email: u.email || '', phone: u.phone || '', role: u.role || '', adminRunner: u.adminRunner === true,
+      coins: Number(wallets[id]?.balanceJmd) || 0, stock: Number(stock[id]?.balanceJmd) || 0 }; }) };
+  };
+  try {
+    const token = await cliToken(false);
+    if (!token) return { ok: false, error: 'This Mac\'s Firebase sign-in has run out.' };
+    try { return await run(token); }
+    catch (e) { if (e.code !== 401) throw e; return await run(await cliToken(true)); }
+  } catch (e) { return { ok: false, error: e.message || 'Could not read Runner' }; }
+}
+
 // ── Owner actions: the only writes ────────────────────────────────────────
 // Runner's ownerAction endpoint (functions/src/owner.ts) accepts this Mac's
 // Firebase login only if it can already write Runner's database; it then
 // makes the change in a transaction and logs it in ownerActions.
 // Every action Runner's ownerAction accepts (functions/src/owner.ts); anything else is refused here first.
-const OWNER_ACTIONS = ['revokeCash', 'restoreCash', 'payAdminCommissions', 'reverseOrder', 'runnerCashIn', 'whatsappNumber', 'whatsappBank', 'botLessons'];
+const OWNER_ACTIONS = ['revokeCash', 'restoreCash', 'payAdminCommissions', 'reverseOrder', 'runnerCashIn', 'whatsappNumber', 'whatsappBank', 'botLessons',
+  // The order desk, stores and superadmin coins (launch, 10 Nov 2026)
+  'answerOrder', 'assignOrder', 'advanceOrder', 'doorPaid', 'cancelOrder', 'orderMessage', 'storeOpen', 'onlyStoresOpen', 'launchOffer', 'giveCoins', 'allocateCoins'];
 async function ownerAction(project, cliToken, body = {}) {
   if (!/^[a-z0-9-]+$/.test(project || '') || !OWNER_ACTIONS.includes(body.action)) return { ok: false, error: 'Unknown action' };
   const send = async token => {
@@ -621,4 +697,4 @@ async function ownerAction(project, cliToken, body = {}) {
   }
 }
 
-module.exports = { ops, ownerAction, findOrder, snapshot, dayStart, sharedLists, FAST_MS };
+module.exports = { ops, ownerAction, findOrder, desk, findUser, snapshot, dayStart, sharedLists, FAST_MS };

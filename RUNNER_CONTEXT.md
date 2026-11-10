@@ -49,8 +49,8 @@ wave 3, `SOLD_OUT_MAX_MS` 14 h). Read these from the Runner folder through
 | `users` | `role` (student, dasher, store, admin), `dasherStatus` (pending, verified, rejected), `isActive`, `storeId` (store logins), `pushToken` (presence only) |
 | `dashers` | `isOnline`, `activeOrderId(s)`, `lastSeenAt`, `offlineReason` |
 | `publicStats/app` | `onlineDashers` |
-| `launchCodes/{code}` | `createdAt`, `usedAt` (also `usedBy`, `usedByName`: not read). 100 at most; each gives 3 free deliveries once |
-| `wallets/{uid}` | `freeDeliveries` (launch packs and referral rewards still held), `referralCount`, `launchPackAt` |
+| `launchCodes/{code}` | `createdAt`, `usedAt` (also `usedBy`, `usedByName`: not read). 100 at most; each gives 1 free delivery once (3 before 9 Nov 2026) |
+| `wallets/{uid}` | `freeDeliveries` (launch packs still held), `referralCount` (friends counted at their first confirmed order, since 9 Nov 2026), `referralsJoined` (friends signed up from the link), `referralsTotal`, `launchPackAt` |
 | `orders` (new) | `deliveryDiscountJmd` (a free delivery covered this much of the fee), `freeDeliveryHeld` |
 | `walletTx` (new types) | `launch_pack`, `referral_reward` (+`freeDeliveries`), `free_delivery_used`, `free_delivery_returned` |
 
@@ -80,7 +80,7 @@ Fields that do NOT exist in Runner and are no longer checked (removed 14 Oct):
 - Referrals: a student's link (`{APP_URL}/?ref=CODE`). Since 28 Oct a friend
   counts at sign-up, every 5 earn 200 coins, and a phone number counts once. Chat notifications are limited to
   one per sender per order every 10 s (`chatPushes/`, server-only). Launch codes: up to 100 one-time codes,
-  3 free deliveries each, made in admin and printed as QR cards
+  1 free delivery each (3 before 9 Nov 2026), made in admin and printed as QR cards
   (`{APP_URL}/?launch=CODE`, claimed automatically after sign-in).
 - New functions: `myReferral`, `claimLaunchCode`, `adminCreateLaunchCodes`,
   `onOrderMessage` (order chat notifications).
@@ -248,3 +248,30 @@ Runner's bot reads its secrets fresh (`liveSecret`), and the console sets Runner
 
 ## Encrypted backups (2 Nov 2026)
 `electron/backup.js` + `src/BackupPanel.js` + `src/backupDoc.js`. Home menu → Back up data opens the panel. Each backup is one HTML file in iCloud Drive → Jcommerce Backups (Documents if iCloud is off): AES-256-GCM, key from the backup password with PBKDF2-SHA256 at 600,000 rounds. The page decrypts itself with the browser's Web Crypto and shows a readable Jcommerce document (summary, every collection as a table, XP by section, Runner parts register) with "Download the raw data" and "Print or save as PDF". The raw data includes every console collection, the Runner control room's local data (`jc_runner_local`) and `PARTS`. Each backup is decrypted again from disk after saving; a failed check deletes it. A daily backup runs while the console is open (once 23 hours have passed). The password lives in the Keychain (safeStorage, `backup-key.json` in userData) and never reaches the window. Lost password = unreadable backups; changing it leaves older backups on the old password. "Email it" uses Apple Mail through AppleScript, or shows the file in Finder. No restore button yet: restoring is done from the raw JSON by the developer. The console's live data is in Firestore (Google encrypts it at rest; rules allow only the owner's account); it is not encrypted field by field.
+
+## Launch, 10 Nov 2026: pay on delivery, the order desk, superadmin coins
+
+- `PAY_ON_DELIVERY_FOR_ALL` (shared.ts): everyone may pay on delivery (order
+  `paymentMethod: 'cash'`) up to `CASH_MAX_ORDER_JMD`, one at a time, unless
+  `wallets.cashRefusals` > 0 or cash was revoked. It is temporary; the app
+  says so. At the door the runner records cash, or a bank transfer to
+  Runner's account (`botSettings/whatsapp.bankDetails`) with a picture
+  (`deliveryProofs/{orderId}`) and/or reference. Order fields: `paidBy`
+  ('cash'|'transfer'), `transferRef`, `transferCheck`. Transfers wait in
+  `deliveryTransfers` (status `to_check` → `received` | `not_received`);
+  admins check them in Runner admin → Bank transfers. A transfer adds
+  nothing to the runner's `cashOwedJmd`; one that never arrives goes to
+  `cashIssues` with `mode: 'delivery_transfer'`.
+- Launch offer: `publicStats/launchOffer` `{ on, given, max: 50 }`. While on,
+  the first 50 people to place a delivery get it free, once each
+  (`wallets.launchOfferAt`, order `launchOfferNo`, walletTx `launch_offer`).
+- New ownerAction actions: `answerOrder`, `assignOrder`, `advanceOrder`,
+  `doorPaid`, `cancelOrder`, `storeOpen`, `onlyStoresOpen`, `launchOffer`,
+  `giveCoins`, `allocateCoins` (no cap). The Order desk tab
+  (`src/OrderDesk.js`, `electron/ops.js` desk/findUser) uses them.
+- The console's own runner: `users/console_runner` + `dashers/console_runner`
+  ("Runner team" to customers), made on first use by `assignOrder` with
+  `runnerUid: 'console_runner'`. Never online, so never offered orders; may
+  hold several at once; cash it collects is Runner's own (no `cashOwedJmd`).
+  `orderMessage` sends the order chat as it. The desk reads the chat
+  (`orders/{id}/messages`) only for orders it holds.

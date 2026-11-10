@@ -56,7 +56,7 @@ export const PLACES = [
   ['Store applications', '/sellers', 'Businesses asking to join, and the "Students asked for" list from Ask Runner.'],
   ['Bank transfers', '/transfers', 'WhatsApp transfers to approve or reject. It also appears as a card on the Board when one is waiting.'],
   ['Top-up cards', '/topup-cards', 'Make, print, activate and void batches. "Check a card" looks up any code.'],
-  ['Launch codes', '/launch-codes', 'Up to 100 one-time codes worth 3 free deliveries each, with printable QR cards.'],
+  ['Launch codes', '/launch-codes', 'Up to 100 one-time codes worth 1 free delivery each (3 until 9 Nov 2026), with printable QR cards.'],
 ];
 export const OTHER_SCREENS = [
   ['Store tablet: Orders', 'New orders with a chime. "We can make it", "Can\'t make it", "Ready for the runner", "Print label" and "Can\'t make it after all". Labels print from the tablet\'s browser.'],
@@ -118,7 +118,7 @@ export const HOWTO = [
   { group: 'Coins and cash', id: 'held-refund', q: 'A refund is held for me', keys: 'refund held waiting decision',
     steps: ['A confirmed order was cancelled in a way Runner doesn\'t refund by itself. It shows under [Cash & referrals](tab:cash).', 'Decide if the customer should be paid back.', 'If yes, use Adjust Runner coins in [Users](/users) with the order code in the note.', 'Press "Sorted, hide it" on the alert.'] },
   { group: 'Coins and cash', id: 'free', q: 'Launch codes and referrals', keys: 'free delivery friend invite link bonus coins',
-    steps: ['Launch codes: [make them here](/launch-codes), up to 100 ever. Each gives one student 3 free deliveries.', 'Print the QR cards on a computer. Test-scan one before handing them out.', 'Referrals look after themselves. A student shares their link from Profile. Every 5 friends who sign up earn them 200 coins. A phone number counts once.'] },
+    steps: ['Launch codes: [make them here](/launch-codes), up to 100 ever. Each gives one student 1 free delivery (3 for codes claimed before 9 Nov 2026).', 'Print the QR cards on a computer. Test-scan one before handing them out.', 'Referrals look after themselves. A student shares their link from Profile. Every 5 friends who sign up earn them 200 coins. A phone number counts once.'] },
 
   // ── Paying people ─────────────────────────────────────────────────────────
   { group: 'Paying people', id: 'pay-runner', q: 'Pay a runner', keys: 'payout weekly delivery share wages',

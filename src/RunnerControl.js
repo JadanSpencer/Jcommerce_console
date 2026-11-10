@@ -10,6 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
 import { BASICS, PLACES, OTHER_SCREENS, GROUPS, HOWTO } from './runnerGuide';
 import { PARTS, CHECKED, partsQuestions } from './runnerParts';
+import OrderDesk from './OrderDesk';
 import './RunnerControl.css';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
@@ -352,7 +353,7 @@ const WORDS = [
   ['Reversal', 'Undoing a confirmed order that is still in progress. You approve it with a reason, and the customer gets coins back.'],
   ['Admin runner', 'A trusted runner who sells coins for cash from a stock you gave them.'],
   ['Top-up card', 'A printed card with a one-time code, sold for cash. It adds coins when scanned, once its batch is activated.'],
-  ['Launch code', 'A one-time code worth 3 free deliveries.'],
+  ['Launch code', 'A one-time code worth 1 free delivery (3 before 9 Nov 2026).'],
   ['Ask Runner', 'A student gives a runner a shopping list and a spending limit for a place not on Runner. The runner enters what it really cost and the change goes back as coins.'],
   ['Water run', 'A 5-gallon water bottle delivered, returned or refilled.'],
   ['Waves', 'A new order is offered to 3 runners at a time, 3 more every 45 seconds, then to everyone after about 2 minutes.'],
@@ -539,7 +540,7 @@ function Trading({ T, launchDate }) {
   </>);
 }
 
-const TABS = [['now', 'Now'], ['guide', 'How to'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
+const TABS = [['desk', 'Order desk'], ['now', 'Now'], ['guide', 'How to'], ['trading', 'Trading'], ['money', 'Money'], ['people', 'People'], ['cash', 'Cash & referrals'], ['running', 'Is it running'], ['handbook', 'Handbook']];
 
 // ── Cash & referrals (Runner's confirmed orders) ────────────────────────────
 // Cash a runner collected on cash deliveries and handed to you: recorded on
@@ -607,7 +608,7 @@ function CashReferrals({ T, admins, api, project }) {
     {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
     <section className="card rc-sec">
       <header><span className="rc-dot good"/><h3>Cash: who may pay cash</h3><span className="rc-quiet">{eligible} can pay cash · {T.customers.length} with confirmed coin spend</span>
-        <Help>Cash unlocks once a customer has spent {J(CASH_UNLOCK)} with Runner coins on confirmed orders, and stays unlocked even if an order is later reversed. Cash orders never count toward it. Take cash away from anyone who doesn't pay; give it back the same way.</Help></header>
+        <Help>For now (launch, from 10 Nov 2026) everyone may pay on delivery, in cash or by showing the runner a bank transfer, up to J$3,000 and one order at a time, unless a pay-on-delivery order went unpaid. When that ends: cash unlocks once a customer has spent {J(CASH_UNLOCK)} with Runner coins on confirmed orders, and stays unlocked even if an order is later reversed. Cash orders never count toward it. Take cash away from anyone who doesn't pay; give it back the same way.</Help></header>
       <input className="input" placeholder="Find a customer" value={filter} onChange={e => setFilter(e.target.value)} style={{ maxWidth: 260, margin: '0.5rem 0' }}/>
       <table className="rc-table"><thead><tr><th>Customer</th><th>Confirmed coin spend</th><th>Cash</th><th>Not paid</th><th></th></tr></thead>
         <tbody>{shown.slice(0, 100).map(c => {
@@ -764,6 +765,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         })}
       </nav>
 
+      {tab === 'desk' && <OrderDesk api={api} project={project} notify={notify}/>}
       {tab === 'guide' && <Guide project={project} admin={data.adminUrl} setTab={setTab}/>}
 
       {tab === 'now' && (<>
