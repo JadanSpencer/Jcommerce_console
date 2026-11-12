@@ -10,7 +10,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { judgeRunner, ago, J, plural, jmDate, jmTime, periodKey, ROUTINES, CANCEL_WORDS, STORE_STEPS, CLOSED_TEST_DAYS, CLOSED_TEST_TESTERS } from './runnerOps';
 import { BASICS, PLACES, OTHER_SCREENS, GROUPS, HOWTO } from './runnerGuide';
 import { PARTS, CHECKED, partsQuestions } from './runnerParts';
-import OrderDesk from './OrderDesk';
+import OrderDesk, { LAUNCH_DAY, daysTo } from './OrderDesk';
 import './RunnerControl.css';
 
 // Speed panel: seconds with one decimal, and a colour for good / so-so / slow
@@ -671,6 +671,31 @@ function CashReferrals({ T, admins, api, project }) {
 const SECTION_TAB = { orders: 'now', money: 'money', people: 'people', running: 'running' };
 const dayLabel = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
 
+// The office's front desk: whose office this is, the day and the time in
+// Jamaica, how far launch is, and one lamp for the state of things.
+function OfficeHead({ verdict, launchDate, name }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, []);
+  const jm = new Date(now - 5 * 3600 * 1000); // Jamaica has no daylight saving
+  const day = launchDate && launchDate > LAUNCH_DAY ? launchDate : LAUNCH_DAY;
+  const n = daysTo(day);
+  const two = v => String(v).padStart(2, '0');
+  const h = jm.getUTCHours();
+  return (
+    <header className="office-head">
+      <div className="office-plate"><b>Runner</b><span>Operations office · Jcommerce &amp; Tech</span></div>
+      <div className="office-clock" aria-label="Time in Jamaica">
+        <b>{two(h % 12 || 12)}:{two(jm.getUTCMinutes())}<i>:{two(jm.getUTCSeconds())}</i> <em>{h < 12 ? 'am' : 'pm'}</em></b>
+        <span>{jm.toLocaleDateString('en-JM', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' })} · Jamaica</span>
+      </div>
+      <div className="office-chips">
+        <span className={`office-chip ${n >= 0 && n <= 1 ? 'hot' : ''}`}><b>{n > 1 ? `${n} days` : n === 1 ? 'Tomorrow' : n === 0 ? 'Today' : 'Launched'}</b>{n > 1 ? 'to launch' : n < 0 ? 'trading' : 'launch'}</span>
+        <span className={`office-chip lamp-${verdict}`}><i aria-hidden="true"/><b>{{ good: 'All good', look: 'Needs a look', act: 'Act now' }[verdict] || 'Checking'}</b>{name ? `on duty: ${name}` : 'status'}</span>
+      </div>
+    </header>
+  );
+}
+
 export default function RunnerControl({ project, dir, api, Mask, notify, bills = [], onRecordPayout, exportFile, launchDate = '', onRoutineTick }) {
   const s = useStore();
   reportTick = onRoutineTick || null;
@@ -741,7 +766,8 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
   const k = r.keeping;
 
   return (
-    <div className={`rc span-12 ${local.launch ? 'launch' : ''}`} data-no-i18n>
+    <div className={`rc office span-12 ${local.launch ? 'launch' : ''}`} data-no-i18n>
+      <OfficeHead verdict={r.verdict} launchDate={launchDate} name={local.name}/>
       {/* ── The verdict ─────────────────────────────────────────────────── */}
       <div className={`rc-verdict ${r.verdict}`} role="status">
         {Mask ? <Mask level={{ good: 'good', look: 'watchout', act: 'danger' }[r.verdict]} color={{ good: '#3ecf8e', look: '#ff9a4a', act: '#ff2d3d' }[r.verdict]} size={96}/> : null}
@@ -757,11 +783,11 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
       </div>
 
       <nav className="rc-tabs">
-        {TABS.map(([id, label]) => {
+        {TABS.map(([id, label], ti) => {
           const sec = id === 'now' ? null : r.sections.find(x => SECTION_TAB[x.id] === id);
           const n = sec ? sec.items.filter(i => i.lv === 'act' || i.lv === 'look').length : 0;
           const act = sec ? sec.items.some(i => i.lv === 'act') : false;
-          return <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}>{label}{n > 0 && <i className={act ? 'act' : 'look'}>{n}</i>}</button>;
+          return <button key={id} className={tab === id ? 'on' : ''} onClick={() => setTab(id)}><small aria-hidden="true">{String(ti + 1).padStart(2, '0')}</small>{label}{n > 0 && <i className={act ? 'act' : 'look'}>{n}</i>}</button>;
         })}
       </nav>
 

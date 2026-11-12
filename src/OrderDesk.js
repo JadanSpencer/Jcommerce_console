@@ -21,14 +21,32 @@ const PAY = o => (o.paymentMethod === 'cash' ? (o.fulfilment === 'pickup' ? 'Cas
 const LAUNCH_MATCH = /mother|nardo/i;
 // Launch day (owner, 11 Nov 2026): Monday 16 November 2026. The venture's own
 // launch date in the console wins if it is set to a later day.
-const LAUNCH_DAY = '2026-11-16';
+export const LAUNCH_DAY = '2026-11-16';
 const STORE_ANSWER_WARN_MS = 3 * 60 * 1000;
-const dayWords = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('en-JM', { weekday: 'long', day: 'numeric', month: 'long' });
+export const dayWords = iso => new Date(`${iso}T12:00:00`).toLocaleDateString('en-JM', { weekday: 'long', day: 'numeric', month: 'long' });
 const todayIso = () => new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10); // Jamaica has no daylight saving
-const daysTo = iso => Math.round((Date.parse(`${iso}T12:00:00Z`) - Date.parse(`${todayIso()}T12:00:00Z`)) / 864e5);
+export const daysTo = iso => Math.round((Date.parse(`${iso}T12:00:00Z`) - Date.parse(`${todayIso()}T12:00:00Z`)) / 864e5);
 const minsLeft = at => Math.max(0, Math.ceil((Number(at) - Date.now()) / 60000));
 // The console's own runner (Runner functions/src/shared.ts CONSOLE_RUNNER_UID): you take orders from here.
 const CONSOLE_RUNNER = 'console_runner';
+
+// The steps on each docket's tracker, and how far an order has got.
+const TRACK = { delivery: ['Placed', 'Store', 'Runner', 'At store', 'On the way', 'Delivered'], pickup: ['Placed', 'Store', 'Being made', 'Ready', 'Collected'] };
+function progress(o) {
+  if (o.fulfilment === 'pickup') return o.status === 'pending' ? (o.verifiedAt ? 1 : 0) : o.readyAt ? 3 : 2;
+  if (o.status === 'pending') return !o.verifiedAt ? 0 : Number(o.storeAskedAt) > 0 && !o.storeConfirmedAt ? 1 : 2;
+  return { accepted: 3, picking_up: 3, on_the_way: 4 }[o.status] ?? 2;
+}
+function Track({ o }) {
+  const steps = TRACK[o.fulfilment === 'pickup' ? 'pickup' : 'delivery'], at = progress(o);
+  // accepted = heading to the store; picking_up = at the store
+  const here = o.fulfilment !== 'pickup' && o.status === 'accepted' ? 2.5 : at;
+  return (
+    <ol className="dk-track" aria-label={`Step: ${steps[Math.floor(here)]}`}>
+      {steps.map((w, i) => <li key={w} className={i < here ? 'done' : i === Math.ceil(here) || i === here ? 'now' : ''}><i/><span>{w}</span></li>)}
+    </ol>
+  );
+}
 
 // What an order needs from someone now.
 function stage(o) {
@@ -115,8 +133,8 @@ export default function OrderDesk({ api, project, notify, launchDate = '' }) {
         {msg && <div className={`rc-note ${msg.ok ? '' : 'rc-bad'}`}>{msg.text}</div>}
         {!d.orders.length && <p className="rc-small">No open orders right now. New ones show here within a few seconds, with a desktop alert.</p>}
         {groups.filter(([k]) => byStage[k].length).map(([k, title, help]) => (
-          <div key={k} className="desk-group">
-            <h4>{title} · {byStage[k].length}</h4>
+          <div key={k} className={`desk-group tray-${k}`}>
+            <h4 className="tray"><span>{title}</span><b>{byStage[k].length}</b></h4>
             {help && <p className="rc-small">{help}</p>}
             {byStage[k].map(o => <DeskOrder key={o.id} o={o} k={k} runners={runners} busy={busy} act={act}/>)}
           </div>
@@ -144,8 +162,14 @@ function DeskOrder({ o, k, runners, busy, act }) {
   const left = k === 'store' && o.storeAnswerBy && !o.storeConfirmedAt ? minsLeft(o.storeAnswerBy) : null;
   const mine = o.dasherId === CONSOLE_RUNNER;
   return (
-    <div className={`desk-order ${k}`}>
-      <p className="rc-what">#{o.code} · {o.storeName || 'Store'} · {J(o.totalAmount)}{o.deliveryDiscountJmd ? ' (free delivery)' : ''} · {PAY(o)}</p>
+    <div className={`desk-order docket ${k}`}>
+      <div className="dk-head">
+        <span className="dk-code">#{o.code}</span>
+        <span className="dk-store">{o.storeName || 'Store'}</span>
+        <span className="dk-pay">{PAY(o)}{o.deliveryDiscountJmd ? ' · free delivery' : ''}</span>
+        <span className="dk-amt">{J(o.totalAmount)}</span>
+      </div>
+      <Track o={o}/>
       <p className="rc-why">
         {o.customer} · {o.fulfilment === 'pickup' ? 'Pickup' : o.place || 'No place'} · placed {jmTime(o.createdAt)}
         {o.dasherId ? ` · runner ${mine ? 'you' : (runners.find(x => x.id === o.dasherId)?.name || o.dasherName || 'Runner')}` : ''}
@@ -238,6 +262,7 @@ function Launch({ d, api, project, busy, setBusy, setMsg, act, load, launchDate,
     ...(d.transfersToCheck ? [['look', `${d.transfersToCheck} door transfer${d.transfersToCheck === 1 ? '' : 's'} to check`, 'Runner admin → Bank transfers.']] : []),
   ];
   const blocked = checks.some(c => c[0] === 'act');
+  const ready = checks.filter(c => c[0] === 'good').length;
   const launch = () => {
     if (!keep.length) return;
     // eslint-disable-next-line no-alert
@@ -260,6 +285,16 @@ function Launch({ d, api, project, busy, setBusy, setMsg, act, load, launchDate,
     <section className="card rc-sec">
       <header><span className={`rc-dot ${live ? 'good' : blocked ? 'act' : 'look'}`}/><h3>Launch: {dayWords(day)}</h3>
         <span className="rc-quiet">{when} · free deliveries {live ? 'on' : 'off'} · {d.offer.given} of {d.offer.max} used</span></header>
+      <div className="launch-board">
+        <div className={`launch-count ${live ? 'live' : ''}`}>
+          <b>{live ? 'Live' : n > 0 ? n : n === 0 ? 'Today' : 'Past'}</b>
+          <span>{live ? `${d.offer.given} of ${d.offer.max} free deliveries used` : n > 0 ? `day${n === 1 ? '' : 's'} to launch` : n === 0 ? 'launch day' : 'the date has passed'}</span>
+        </div>
+        <div className="launch-meter">
+          <p><b>{ready} of {checks.length}</b> checks ready{blocked ? ' · fix the red one before launch' : ready === checks.length ? ' · clear to launch' : ' · the amber ones still work'}</p>
+          <div className="meter" role="img" aria-label={`${ready} of ${checks.length} ready`}>{checks.map(([lv, what]) => <i key={what} className={lv}/>)}</div>
+        </div>
+      </div>
       <p className="rc-small">Set the plan now, then press Launch on the day. Launch opens only the stores you ticked, closes every other store, and starts the free delivery for the first {d.offer.max} people to order. Customers see the places left in the app.</p>
 
       <h4>Ready for launch?</h4>
@@ -278,7 +313,7 @@ function Launch({ d, api, project, busy, setBusy, setMsg, act, load, launchDate,
         {d.stores.map(x => (
           <li key={x.id} className={ids.includes(x.id) ? 'picked' : ''}>
             <label><input type="checkbox" checked={ids.includes(x.id)} onChange={() => toggle(x.id)} aria-label={`Open ${x.name} at launch`}/>
-              <span className={x.open ? 'good' : ''}>{x.name}</span></label>
+              <i className={`lamp ${x.open ? 'on' : ''}`} aria-hidden="true"/><span className={x.open ? 'good' : ''}>{x.name}</span></label>
             <em>{x.open ? 'Open' : 'Closed'}{x.tablet ? (x.alerts ? '' : ' · alerts off') : ' · no tablet'}</em>
             <button className="btn-ghost" disabled={!!busy} onClick={() => act(`s${x.id}`, { action: 'storeOpen', storeId: x.id, open: !x.open }, () => `${x.name} is now ${x.open ? 'closed' : 'open'}.`)}>{x.open ? 'Close' : 'Open'}</button>
           </li>
