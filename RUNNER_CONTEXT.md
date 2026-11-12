@@ -275,3 +275,11 @@ Runner's bot reads its secrets fresh (`liveSecret`), and the console sets Runner
   hold several at once; cash it collects is Runner's own (no `cashOwedJmd`).
   `orderMessage` sends the order chat as it. The desk reads the chat
   (`orders/{id}/messages`) only for orders it holds.
+
+## Order desk and launch plan (11 Nov 2026)
+
+- Launch day is Monday 16 Nov 2026 (`LAUNCH_DAY` in `src/OrderDesk.js`; the venture's launch date wins if it is later).
+- The Launch card is a plan: tick the stores that open (kept on this Mac, `rc_launch_stores_<project>`; Mother's and Nardo's until chosen), a readiness list that checks itself, then one button (`onlyStoresOpen`, then `launchOffer`).
+- `desk()` in `electron/ops.js` also reads: whether `botSettings/whatsapp.bankDetails` is set (only yes or no leaves that file), each store's tablet logins (`users` with role `store`: `storeId`, `pushToken`), and `publicStats/launchOffer.startedAt`.
+- A store's answer clock shows on each order (10 minutes; red in the last 3). Cancelling asks for the reason in the page: the Mac app has no `window.prompt`.
+- Runner's server lets the console's own runner hold several orders, and pushes a runner who is given an order from here.

@@ -765,7 +765,7 @@ export default function RunnerControl({ project, dir, api, Mask, notify, bills =
         })}
       </nav>
 
-      {tab === 'desk' && <OrderDesk api={api} project={project} notify={notify}/>}
+      {tab === 'desk' && <OrderDesk api={api} project={project} notify={notify} launchDate={launchDate}/>}
       {tab === 'guide' && <Guide project={project} admin={data.adminUrl} setTab={setTab}/>}
 
       {tab === 'now' && (<>

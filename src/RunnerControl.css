@@ -205,3 +205,25 @@
 .desk-chat { margin: 0.4rem 0; padding: 0.4rem 0.6rem; border-radius: 8px; background: rgba(0,0,0,0.25); }
 .desk-chat p { margin: 0.2rem 0; font-size: 13px; color: var(--ink-2); }
 .desk-chat p.mine { color: var(--paper, #f3e6cf); }
+
+/* Order desk: at-a-glance tiles, the answer clock, the launch plan */
+.desk-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 0.5rem; margin: 0.7rem 0 0.3rem; }
+.desk-tiles > div { padding: 0.55rem 0.75rem; border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; background: rgba(0,0,0,0.22); }
+.desk-tiles b { display: block; font-family: var(--title); font-size: 26px; line-height: 1.1; color: var(--paper, #f3e6cf); font-variant-numeric: tabular-nums; }
+.desk-tiles span { font-size: 12px; color: var(--ink-2); }
+.desk-tiles > div.look { border-color: var(--rc-look); } .desk-tiles > div.look b { color: var(--rc-look); }
+.rc-note.rc-bad { border-color: var(--rc-act); }
+.desk-clock { margin: 0.15rem 0 0.3rem; font-size: 13px; font-weight: 600; color: var(--rc-look); }
+.desk-clock.late { color: var(--rc-act); }
+.desk-order .rc-row { align-items: center; }
+.desk-order .btn-primary, .desk .rc-row .btn-primary { font-size: 13px; padding: 0.4rem 0.9rem; }
+.desk-checks { list-style: none; margin: 0.4rem 0 0.6rem; padding: 0; display: grid; gap: 0.35rem; }
+.desk-checks li { display: flex; gap: 0.6rem; align-items: flex-start; padding: 0.45rem 0.7rem; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; }
+.desk-checks li.act { border-color: var(--rc-act); } .desk-checks li.look { border-color: rgba(255,154,74,0.55); }
+.desk-checks .rc-dot { margin-top: 4px; }
+.desk-checks b { font-size: 14px; font-weight: 600; color: var(--paper, #f3e6cf); }
+.desk-checks p { margin: 0.1rem 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-2); max-width: 80ch; }
+.desk-stores li label { flex: 1; display: flex; align-items: center; gap: 0.5rem; cursor: pointer; min-width: 0; }
+.desk-stores li input { width: 16px; height: 16px; accent-color: var(--rc-good); flex: none; }
+.desk-stores li.picked { border-color: rgba(62,207,142,0.55); }
+.desk button:disabled { opacity: 0.5; cursor: not-allowed; }

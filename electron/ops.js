@@ -601,14 +601,19 @@ const DESK_FIELDS = [...ORDER_FIELDS, 'confirmedAt', 'studentName', 'dasherName'
 async function desk(project, cliToken) {
   if (!/^[a-z0-9-]+$/.test(project || '')) return { ok: false, error: 'Unknown project' };
   const run = async token => {
-    const [orders, stores, runners, dashers, offer, transfers] = await Promise.all([
+    const [orders, stores, runners, dashers, offer, transfers, bank, logins] = await Promise.all([
       query(project, token, { collectionId: 'orders', where: cmp('status', 'IN', oneOf(['pending', 'accepted', 'picking_up', 'on_the_way'])), fields: DESK_FIELDS, limit: 200 }),
       query(project, token, { collectionId: 'stores', fields: ['name', 'isOpen', 'phone'], limit: 300 }),
       query(project, token, { collectionId: 'users', where: cmp('role', 'EQUAL', str('dasher')), fields: ['name', 'phone', 'isActive', 'dasherStatus', 'adminRunner'], limit: 400 }),
       query(project, token, { collectionId: 'dashers', fields: ['isOnline', 'activeOrderId', 'cashOwedJmd'], limit: 400 }),
       getDoc(project, token, 'publicStats/launchOffer'),
       query(project, token, { collectionId: 'deliveryTransfers', where: cmp('status', 'EQUAL', str('to_check')), fields: ['amountJmd', 'createdAt'], limit: 100 }),
+      // Launch readiness: is the account for transfers entered (only yes or no leaves this file), and which stores have a tablet login with alerts on
+      getDoc(project, token, 'botSettings/whatsapp').catch(e => { if (e.code === 401) throw e; return { doc: null }; }),
+      query(project, token, { collectionId: 'users', where: cmp('role', 'EQUAL', str('store')), fields: ['storeId', 'isActive', 'pushToken'], limit: 300 }),
     ]);
+    const tablet = {};
+    logins.rows.filter(u => u.isActive !== false && u.storeId).forEach(u => { const t = tablet[u.storeId] || (tablet[u.storeId] = { login: true, alerts: false }); if (u.pushToken) t.alerts = true; });
     const busy = Object.fromEntries(dashers.rows.map(d => [d.id, d]));
     // The chat on orders the console's own runner took (Runner shared.ts CONSOLE_RUNNER_UID)
     const chats = Object.fromEntries(await Promise.all(orders.rows.filter(o => o.dasherId === 'console_runner').map(async o => {
@@ -622,10 +627,11 @@ async function desk(project, cliToken) {
         return { ...o, chat: chats[o.id] || null, place: deliveryAddress?.label || '', customer: String(studentName || 'Customer').split(' ')[0],
           items: (Array.isArray(items) ? items : []).slice(0, 30).map(x => ({ name: String(x?.menuItem?.name || x?.name || 'Item').slice(0, 80), quantity: Number(x?.quantity) || 1 })) };
       }).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)),
-      stores: stores.rows.map(x => ({ id: x.id, name: x.name || x.id, open: x.isOpen !== false, phone: x.phone || '' })).sort((a, b) => a.name.localeCompare(b.name)),
+      stores: stores.rows.map(x => ({ id: x.id, name: x.name || x.id, open: x.isOpen !== false, phone: x.phone || '', tablet: !!tablet[x.id], alerts: !!tablet[x.id]?.alerts })).sort((a, b) => a.name.localeCompare(b.name)),
+      bankSet: !!String(bank.doc?.bankDetails || '').trim(),
       runners: runners.rows.filter(u => u.isActive !== false).map(u => ({ id: u.id, name: u.name || 'Runner', phone: u.phone || '', verified: (u.dasherStatus || 'verified') === 'verified', adminRunner: u.adminRunner === true,
         online: !!busy[u.id]?.isOnline, busy: !!busy[u.id]?.activeOrderId })).sort((a, b) => a.name.localeCompare(b.name)),
-      offer: { on: offer.doc?.on === true, given: Number(offer.doc?.given) || 0, max: Number(offer.doc?.max) || 50 },
+      offer: { on: offer.doc?.on === true, given: Number(offer.doc?.given) || 0, max: Number(offer.doc?.max) || 50, startedAt: Number(offer.doc?.startedAt) || 0 },
       transfersToCheck: transfers.rows.length,
     };
   };
